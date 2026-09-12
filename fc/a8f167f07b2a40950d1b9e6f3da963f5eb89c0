@@ -1,0 +1,50 @@
+apps/desktop/package.json
+  s_2a4768d8b32b25::t_0e170900181e50 1,3-30
+  s_2a4768d8b32b25::t_30792da4f6912a 2
+apps/desktop/index.html
+  s_2a4768d8b32b25::t_0e170900181e50 1-6,8-13
+  s_2a4768d8b32b25::t_30792da4f6912a 7
+apps/desktop/src-tauri/Cargo.toml
+  s_2a4768d8b32b25::t_0e170900181e50 1,3,5-19
+  s_2a4768d8b32b25::t_30792da4f6912a 2,4
+.gitignore
+  s_2a4768d8b32b25::t_0223c9c16076c7 1-38
+apps/desktop/src-tauri/src/lib.rs
+  s_2a4768d8b32b25::t_30792da4f6912a 10
+  s_2a4768d8b32b25::t_0e170900181e50 1-9,11
+apps/desktop/src-tauri/tauri.conf.json
+  s_2a4768d8b32b25::t_0e170900181e50 1-2,4,6-15,17-34
+  s_2a4768d8b32b25::t_30792da4f6912a 3,5,16
+docs/desktop-development.md
+  s_2a4768d8b32b25::t_0e170900181e50 2-55
+  s_2a4768d8b32b25::t_30792da4f6912a 1
+apps/desktop/src/App.tsx
+  s_2a4768d8b32b25::t_0e170900181e50 1-18,20-105,107-160,162-178,180-207,209-251
+  s_2a4768d8b32b25::t_30792da4f6912a 19,106,161,179,208
+apps/desktop/package-lock.json
+  s_2a4768d8b32b25::t_b3411d58f9dedf 1-2160
+apps/desktop/src-tauri/Cargo.lock
+  s_2a4768d8b32b25::t_3c6ed6d764f6e8 1-4843
+apps/desktop/src-tauri/binaries/tts-sidecar-aarch64-apple-darwin
+  s_2a4768d8b32b25::t_17b97cf0958d95 1-6
+apps/desktop/src-tauri/icons/android/mipmap-anydpi-v26/ic_launcher.xml
+  s_2a4768d8b32b25::t_009e8672d36b75 1-5
+apps/desktop/src-tauri/icons/android/values/ic_launcher_background.xml
+  s_2a4768d8b32b25::t_5daf3d64485f37 1-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fca8f167f07b2a40950d1b9e6f3da963f5eb89c0",
+  "prompts": {},
+  "sessions": {
+    "s_2a4768d8b32b25": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a094b7-ae07-7323-be37-ecacdb6d83d3",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
