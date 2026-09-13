@@ -27,6 +27,8 @@ the desktop UI is the primary product surface.
   audio file.
 - Supported synthesis languages in the UI: English (`en`) and Vietnamese
   (`vi`), selected manually, with English as the default.
+- The Settings language controls the app interface locale separately from the
+  synthesis language selected in the workspace; both default to English.
 - Cloning accepts an audio file and optional transcript. Microphone recording
   is out of scope.
 - An imported clone reference can optionally be saved as a reusable voice
@@ -64,6 +66,12 @@ carry into cross-language cloning.
 Input validation happens before starting inference: empty text, missing files,
 unsupported audio files, invalid speed, and invalid profile names produce
 human-readable errors without starting the model.
+
+The desktop app includes a session-only Logs tab that lists local sidecar
+requests such as speech generation and voice-profile creation. Each entry
+shows the operation, request ID, timestamp, duration, success state, or
+structured error code and message. Request payloads, full text, and audio
+contents are never stored in the UI log.
 
 ## Architecture
 

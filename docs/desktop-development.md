@@ -15,7 +15,7 @@ not install these runtimes.
 ```sh
 python -m venv .venv
 . .venv/bin/activate
-python -m pip install -e '.[mp3,tn]'
+python -m pip install -e '.[mp3]'
 python -m unittest discover -s tests -v
 npm --prefix apps/desktop install
 npm --prefix apps/desktop run tauri dev
@@ -24,6 +24,32 @@ npm --prefix apps/desktop run tauri dev
 The desktop sidecar is launched by Tauri. The development launcher currently
 supports the checked-in macOS Apple Silicon host target and runs
 `python -m tts_mcp.desktop` from the repository source tree.
+
+The React UI uses `i18next` and `react-i18next` for its English/Vietnamese
+interface locale. Tailwind CSS v4 is loaded from `src/styles.css` through the
+Vite plugin, while source-owned shadcn-style primitives backed by Base UI live
+in `src/components/ui.tsx`. The app uses `lucide-react` for icons and Motion
+for reduced-motion-aware route and state transitions. The
+Settings language is separate from the synthesis language selected in the
+workspace.
+
+The optional `tn` extra is not required by the desktop MVP; it adds native
+OpenFST/Pynini dependencies for text normalization.
+
+## Format code
+
+Install the Python development formatter with the project extras, then run:
+
+```sh
+python -m pip install -e '.[dev]'
+python -m ruff format src tests
+python -m ruff format --check src tests
+npm --prefix apps/desktop run format
+npm --prefix apps/desktop run format:check
+```
+
+Prettier formats the TypeScript, TSX, CSS, JSON, and HTML files under
+`apps/desktop`; Ruff formats Python source and tests.
 
 ## Build the sidecar
 

@@ -29,6 +29,45 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(audio.shape, (8,))
         self.assertEqual(model.kwargs["language"], "vi")
 
+    def test_generate_forwards_duration_and_omnivoice_config(self):
+        model = FakeModel()
+        engine = Engine()
+        engine._model = model
+        generation_config = {
+            "guidance_scale": 2.5,
+            "t_shift": 0.2,
+            "position_temperature": 4.0,
+            "class_temperature": 0.3,
+            "layer_penalty_factor": 4.5,
+            "denoise": False,
+            "preprocess_prompt": False,
+            "postprocess_output": False,
+            "audio_chunk_duration": 12.0,
+            "audio_chunk_threshold": 24.0,
+            "pad_duration": 0.05,
+            "fade_duration": 0.05,
+            "text": "must not replace the request",
+        }
+
+        engine.generate(
+            "hello",
+            language="en",
+            instruct="female, warm",
+            speed=1.2,
+            num_step=48,
+            duration=8.0,
+            normalize_text=True,
+            generation_config=generation_config,
+        )
+
+        self.assertEqual(model.kwargs["text"], "hello")
+        self.assertEqual(model.kwargs["duration"], 8.0)
+        self.assertTrue(model.kwargs["normalize_text"])
+        self.assertEqual(model.kwargs["instruct"], "female, warm")
+        for key, value in generation_config.items():
+            if key != "text":
+                self.assertEqual(model.kwargs[key], value)
+
     def test_language_boundary_accepts_only_supported_languages(self):
         self.assertEqual(validate_language("en"), "en")
         self.assertEqual(validate_language("vi"), "vi")
@@ -54,10 +93,11 @@ class EngineTests(unittest.TestCase):
             marker = root / "ready.json"
             marker.write_text(json.dumps({"model": "k2-fsa/OmniVoice"}))
 
-            with patch("tts_mcp.engine.MODEL_DIR", model_dir), patch(
-                "tts_mcp.engine.TOKENIZER_DIR", tokenizer_dir
-            ), patch("tts_mcp.engine.ASR_DIR", asr_dir), patch(
-                "tts_mcp.engine.READY_MARKER", marker
+            with (
+                patch("tts_mcp.engine.MODEL_DIR", model_dir),
+                patch("tts_mcp.engine.TOKENIZER_DIR", tokenizer_dir),
+                patch("tts_mcp.engine.ASR_DIR", asr_dir),
+                patch("tts_mcp.engine.READY_MARKER", marker),
             ):
                 status = Engine().model_status()
 

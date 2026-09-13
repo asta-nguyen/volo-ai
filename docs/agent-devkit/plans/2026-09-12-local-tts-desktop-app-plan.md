@@ -9,7 +9,7 @@
 Files: create `apps/desktop/package.json`, `apps/desktop/index.html`,
 `apps/desktop/tsconfig.json`, `apps/desktop/vite.config.ts`,
 `apps/desktop/src/main.tsx`, `apps/desktop/src/App.tsx`,
-`apps/desktop/src/styles.css`, `apps/desktop/src-tauri/Cargo.toml`,
+`apps/desktop/src/components.scss`, `apps/desktop/src-tauri/Cargo.toml`,
 `apps/desktop/src-tauri/src/lib.rs`,
 `apps/desktop/src-tauri/tauri.conf.json`, and
 `apps/desktop/src-tauri/capabilities/default.json`; add the current-host
@@ -149,7 +149,7 @@ Steps:
 
 ## Task 4 — Build the end-user synthesis UI
 
-Files: modify `apps/desktop/src/App.tsx` and `apps/desktop/src/styles.css`;
+Files: modify `apps/desktop/src/App.tsx` and `apps/desktop/src/components.scss`;
 create `apps/desktop/src/lib/sidecar.ts`.
 
 Interfaces: `sidecar.ts` owns one long-lived `Command.sidecar` process,
@@ -182,7 +182,9 @@ reference transcript, speed control, and a save-profile option. It uses
 labels, keyboard focus, disabled states, and status text for accessibility.
 The result view plays the returned local audio and exports WAV/MP3 through the
 native save dialog and filesystem copy. No text or audio is sent to a remote
-endpoint.
+endpoint. The sidebar also provides a session-only Logs view backed by the
+shared sidecar request client; it shows operation, request ID, timing,
+success/error state, and safe error details without retaining request payloads.
 
 Verify: run `npm --prefix apps/desktop run build`; then run
 `npm --prefix apps/desktop run tauri dev` with a mocked sidecar response and
@@ -224,11 +226,15 @@ external-binary configuration for these target triples:
 - `x86_64-unknown-linux-gnu`
 
 Document source development with Node.js 20+, Python 3.10+, a Python virtual
-environment, `pip install -e '.[mp3,tn]'`, `npm install`, and
+environment, `pip install -e '.[mp3]'`, `npm install`, and
 `npm --prefix apps/desktop run tauri dev`. Document native builds with
 `python scripts/build_sidecar.py --ffmpeg /path/to/ffmpeg` followed by
 `npm --prefix apps/desktop run tauri build`; do not require users to install
 Python, Node.js, or FFmpeg.
+
+The optional `tn` extra remains available for environments with native
+OpenFST/Pynini support, but is not required for this desktop MVP because the
+default OmniVoice path does not use it.
 
 Verify: run `python -m unittest discover -s tests -v`,
 `npm --prefix apps/desktop run build`, and
@@ -309,4 +315,40 @@ the approved local TTS and file-clone MVP.
 Impact: Task 4 owns the visual implementation and must preserve the Stitch
 palette, typography, spacing, 3-pane composition, and screen states without
 adding out-of-scope product behavior.
+Confirmed by user: 2026-09-12
+
+### D2 — Minimal desktop settings page
+
+Question: Which settings should be visible in the first desktop settings
+screen?
+Decision: Add a small settings page for app interface language, model/device
+status, and the local app-data directory, with navigation back to the main
+workspace. Do not add model reset yet because it would delete several GB of
+local assets and needs an explicit destructive-action flow.
+Impact: The React desktop UI gains a settings view without changing the
+sidecar protocol or model lifecycle.
+Confirmed by user: 2026-09-12
+
+### D3 — Separate app and synthesis language
+
+Question: What does the language setting in Settings control?
+Decision: Settings language controls the Volo AI interface locale. The main
+workspace keeps a separate synthesis-language switch for the speech target
+sent to OmniVoice; both default to English and persist independently.
+Impact: The React UI needs separate persisted app-language and
+synthesis-language state plus English/Vietnamese interface copy; no sidecar
+protocol change is required.
+Confirmed by user: 2026-09-12
+
+### D4 — Session request logs
+
+Question: How should the desktop app expose API request outcomes for
+diagnostics?
+Decision: Add a session-only Logs tab that records each local sidecar request
+by operation and request ID, with timestamp, duration, success state, or
+structured error code/message. Do not store request payloads, full text, or
+audio contents.
+Impact: `SidecarClient.request()` publishes request lifecycle updates and the
+React UI renders them in a dedicated Logs view; the Python protocol is
+unchanged.
 Confirmed by user: 2026-09-12

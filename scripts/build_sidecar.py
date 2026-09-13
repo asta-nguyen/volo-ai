@@ -48,6 +48,8 @@ def main() -> int:
         "--onefile",
         "--name",
         "tts-sidecar",
+        "--paths",
+        str(ROOT / "src"),
         "--distpath",
         str(dist_dir),
         "--workpath",

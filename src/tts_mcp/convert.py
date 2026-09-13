@@ -25,10 +25,12 @@ def save_audio(
         _save_mp3(audio, str(path), sample_rate, ffmpeg_path)
     elif ext in (".wav", ".flac", ".ogg"):
         import soundfile as sf
+
         sf.write(str(path), audio, sample_rate)
     else:
         # Default to wav
         import soundfile as sf
+
         sf.write(str(path), audio, sample_rate)
 
     return str(path)
@@ -43,9 +45,7 @@ def _save_mp3(
     """Convert to mp3 via pydub and an explicit ffmpeg executable."""
     converter = ffmpeg_path or shutil.which("ffmpeg")
     if not converter:
-        raise RuntimeError(
-            "MP3 export requires FFmpeg. Install it or provide ffmpeg_path."
-        )
+        raise RuntimeError("MP3 export requires FFmpeg. Install it or provide ffmpeg_path.")
     try:
         from pydub import AudioSegment
         import soundfile as sf

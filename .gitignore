@@ -19,7 +19,6 @@ npm-debug.log*
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
 apps/desktop/src-tauri/binaries/tts-sidecar-*
-!apps/desktop/src-tauri/binaries/tts-sidecar-aarch64-apple-darwin
 
 # Local model and generated audio data
 .tts-mcp/
@@ -36,3 +35,9 @@ outputs/
 
 # OS files
 *.DS_Store
+
+# Local documentation and code-intelligence state
+/docs/.obsidian/
+/docs/Untitled*.md
+/docs/Untitled*.canvas
+.openez/

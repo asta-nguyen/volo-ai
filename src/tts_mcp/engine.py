@@ -25,6 +25,22 @@ TOKENIZER_ID = "eustlb/higgs-audio-v2-tokenizer"
 ASR_ID = "openai/whisper-large-v3-turbo"
 SUPPORTED_LANGUAGES = ("en", "vi")
 VOICE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+GENERATION_CONFIG_KEYS = frozenset(
+    {
+        "guidance_scale",
+        "t_shift",
+        "position_temperature",
+        "class_temperature",
+        "layer_penalty_factor",
+        "denoise",
+        "preprocess_prompt",
+        "postprocess_output",
+        "audio_chunk_duration",
+        "audio_chunk_threshold",
+        "pad_duration",
+        "fade_duration",
+    }
+)
 
 
 class DownloadCancelled(RuntimeError):
@@ -91,6 +107,7 @@ def _detect_device() -> str:
     """Auto-detect best available compute device."""
     try:
         import torch
+
         if torch.cuda.is_available():
             return "cuda:0"
         if torch.backends.mps.is_available():
@@ -104,6 +121,7 @@ def _get_dtype():
     """Get optimal dtype for the device."""
     try:
         import torch
+
         device = _detect_device()
         if device.startswith("cuda"):
             return torch.float16
@@ -237,6 +255,8 @@ class Engine:
         speed: float = 1.0,
         num_step: int = 32,
         normalize_text: bool = False,
+        duration: float | None = None,
+        generation_config: dict[str, Any] | None = None,
     ) -> np.ndarray:
         """Generate audio from text.
 
@@ -251,10 +271,20 @@ class Engine:
             "speed": speed,
             "num_step": num_step,
         }
+        if duration is not None:
+            kwargs["duration"] = duration
         if normalize_text:
             kwargs["normalize_text"] = True
         if language is not None:
             kwargs["language"] = language
+        if generation_config:
+            kwargs.update(
+                {
+                    key: value
+                    for key, value in generation_config.items()
+                    if key in GENERATION_CONFIG_KEYS
+                }
+            )
 
         if voice_clone_prompt is not None:
             kwargs["voice_clone_prompt"] = voice_clone_prompt
@@ -283,16 +313,12 @@ class Engine:
 
     def save_voice(self, name: str, ref_audio: str, ref_text: str | None = None) -> str:
         """Create and save a voice clone prompt for reuse across sessions."""
-        from omnivoice import VoiceClonePrompt
-
         name = self.validate_voice_name(name)
         if not Path(ref_audio).is_file():
             raise FileNotFoundError(f"Reference audio not found: {ref_audio}")
         VOICES_DIR.mkdir(parents=True, exist_ok=True)
 
-        prompt = self.model.create_voice_clone_prompt(
-            ref_audio=ref_audio, ref_text=ref_text
-        )
+        prompt = self.model.create_voice_clone_prompt(ref_audio=ref_audio, ref_text=ref_text)
         prompt_path = VOICES_DIR / f"{name}.pt"
         prompt.save(str(prompt_path))
 
@@ -305,14 +331,14 @@ class Engine:
 
     def load_voice(self, name: str):
         """Load a saved voice clone prompt by name."""
-        from omnivoice import VoiceClonePrompt
-
         name = self.validate_voice_name(name)
         prompt_path = VOICES_DIR / f"{name}.pt"
         if not prompt_path.exists():
             raise FileNotFoundError(
                 f"Voice profile '{name}' not found. Saved voices: {self.list_voices()}"
             )
+        from omnivoice import VoiceClonePrompt
+
         return VoiceClonePrompt.load(str(prompt_path))
 
     @staticmethod

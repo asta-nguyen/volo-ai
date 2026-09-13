@@ -78,6 +78,7 @@ def cmd_design(args: argparse.Namespace) -> None:
 def cmd_voices(args: argparse.Namespace) -> None:
     """List saved voice profiles."""
     from .engine import Engine
+
     voices = Engine.list_voices()
     if not voices:
         print("[tts-mcp] No saved voices. Use 'tts save-voice' to create one.")
@@ -101,6 +102,7 @@ def cmd_save_voice(args: argparse.Namespace) -> None:
 def cmd_delete_voice(args: argparse.Namespace) -> None:
     """Delete a saved voice profile."""
     from .engine import Engine
+
     if Engine.delete_voice(args.name):
         print(f"[tts-mcp] Deleted voice '{args.name}'")
     else:
@@ -111,6 +113,7 @@ def cmd_delete_voice(args: argparse.Namespace) -> None:
 def cmd_mcp(args: argparse.Namespace) -> None:
     """Start MCP server (stdio transport)."""
     from .server import run_server
+
     run_server()
 
 
@@ -140,7 +143,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_design = sub.add_parser("design", help="Design a voice from attributes")
     p_design.add_argument("text", help="Text to synthesize")
     p_design.add_argument(
-        "--instruct", "-i", required=True,
+        "--instruct",
+        "-i",
+        required=True,
         help='Voice attributes, e.g. "female, low pitch, british accent"',
     )
     _add_generate_args(p_design)

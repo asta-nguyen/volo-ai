@@ -12,9 +12,7 @@ class ConvertTests(unittest.TestCase):
     def test_mp3_requires_ffmpeg(self):
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "speech.mp3"
-            with patch("shutil.which", return_value=None), self.assertRaises(
-                RuntimeError
-            ):
+            with patch("shutil.which", return_value=None), self.assertRaises(RuntimeError):
                 save_audio(np.zeros(8, dtype=np.float32), str(output))
 
 

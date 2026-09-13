@@ -195,4 +195,5 @@ def delete_voice(name: str) -> str:
 def run_server() -> None:
     """Run MCP server with stdio transport."""
     import asyncio
+
     asyncio.run(server.run_stdio_async())

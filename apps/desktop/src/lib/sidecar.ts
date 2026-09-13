@@ -2,8 +2,23 @@ import { Command, type Child } from "@tauri-apps/plugin-shell";
 import { appDataDir } from "@tauri-apps/api/path";
 
 export type Language = "en" | "vi";
-export type VoiceMode = "auto" | "profile" | "file";
+export type VoiceMode = "auto" | "profile" | "file" | "design";
 export type AudioFormat = "wav" | "mp3";
+
+export type GenerationConfig = {
+  guidance_scale?: number;
+  t_shift?: number;
+  position_temperature?: number;
+  class_temperature?: number;
+  layer_penalty_factor?: number;
+  denoise?: boolean;
+  preprocess_prompt?: boolean;
+  postprocess_output?: boolean;
+  audio_chunk_duration?: number;
+  audio_chunk_threshold?: number;
+  pad_duration?: number;
+  fade_duration?: number;
+};
 
 export type VoiceProfile = {
   name: string;
@@ -46,36 +61,100 @@ export type SynthesisResult = {
 };
 
 export class SidecarError extends Error {
-  constructor(public code: string, message: string) {
+  constructor(
+    public code: string,
+    message: string,
+  ) {
     super(message);
   }
+}
+
+export type RequestLogStatus = "pending" | "success" | "error";
+
+export type RequestLog = {
+  id: string;
+  operation: string;
+  status: RequestLogStatus;
+  startedAt: number;
+  finishedAt?: number;
+  durationMs?: number;
+  errorCode?: string;
+  errorMessage?: string;
+};
+
+function isTauriRuntime(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
 export class SidecarClient {
   private child: Child | null = null;
   private command: Command<string> | null = null;
+  private startPromise: Promise<void> | null = null;
+  private activePreparationId: string | null = null;
   private nextId = 1;
   private pending = new Map<
     string,
     { resolve: (value: unknown) => void; reject: (reason?: unknown) => void }
   >();
   private progressListeners = new Set<(event: ProgressEvent) => void>();
+  private logListeners = new Set<(entry: RequestLog) => void>();
+  private logs: RequestLog[] = [];
   private outputBuffer = "";
 
   async start(): Promise<void> {
     if (this.child) return;
+    if (this.startPromise) return this.startPromise;
+    const pending = this.spawn();
+    this.startPromise = pending;
+    try {
+      await pending;
+    } finally {
+      if (this.startPromise === pending) this.startPromise = null;
+    }
+  }
+
+  private async spawn(): Promise<void> {
+    if (!isTauriRuntime()) {
+      throw new SidecarError(
+        "tauri_required",
+        "The local engine is available in the Volo AI desktop app. Run `npm run tauri dev`.",
+      );
+    }
     const command = Command.sidecar("binaries/tts-sidecar", [], {
       env: { TTS_MCP_DATA_DIR: await appDataDir() },
     });
     this.command = command;
     command.stdout.on("data", (line) => this.consume(String(line)));
     command.stderr.on("data", (line) => console.warn("[tts-sidecar]", line));
-    command.on("error", (message) => this.rejectAll(new Error(String(message))));
-    command.on("close", () => {
+    const handleStopped = (reason: SidecarError) => {
+      if (this.command !== command) return;
       this.child = null;
-      this.rejectAll(new Error("The local TTS engine stopped"));
+      this.command = null;
+      this.rejectAll(reason);
+    };
+    command.on("error", (message) =>
+      handleStopped(
+        new SidecarError("sidecar_stopped", `The local TTS engine stopped: ${message}`),
+      ),
+    );
+    command.on("close", () => {
+      handleStopped(new SidecarError("sidecar_stopped", "The local TTS engine stopped"));
     });
-    this.child = await command.spawn();
+    try {
+      const child = await command.spawn();
+      if (this.command !== command) {
+        await child.kill();
+        throw new SidecarError("sidecar_stopped", "The local TTS engine stopped");
+      }
+      this.child = child;
+    } catch (reason) {
+      if (reason instanceof SidecarError) throw reason;
+      if (this.command === command) this.command = null;
+      throw new SidecarError(
+        "sidecar_unavailable",
+        `Could not start the local engine: ${String(reason)}`,
+      );
+    }
   }
 
   async stop(): Promise<void> {
@@ -91,16 +170,108 @@ export class SidecarClient {
     return () => this.progressListeners.delete(listener);
   }
 
+  onLog(listener: (entry: RequestLog) => void): () => void {
+    this.logListeners.add(listener);
+    return () => this.logListeners.delete(listener);
+  }
+
+  getLogs(): RequestLog[] {
+    return [...this.logs];
+  }
+
+  async cancelPreparation(): Promise<void> {
+    if (!this.activePreparationId) return;
+    await this.request({ type: "cancel", request_id: this.activePreparationId });
+  }
+
   async request<T>(payload: Omit<Request, "id">): Promise<T> {
-    await this.start();
-    if (!this.child) throw new Error("The local TTS engine is unavailable");
     const id = String(this.nextId++);
+    const isPreparation = payload.type === "prepare_model";
+    if (isPreparation) this.activePreparationId = id;
+    this.addLog({
+      id,
+      operation: String(payload.type ?? "unknown"),
+      status: "pending",
+      startedAt: Date.now(),
+    });
+    let retried = false;
+    try {
+      while (true) {
+        try {
+          await this.start();
+          const value = await this.requestOnce<T>(id, payload);
+          this.completeLog(id, "success");
+          return value;
+        } catch (reason) {
+          if (!retried && reason instanceof SidecarError && reason.code === "sidecar_stopped") {
+            retried = true;
+            continue;
+          }
+          throw reason;
+        }
+      }
+    } catch (reason) {
+      this.pending.delete(id);
+      const error =
+        reason instanceof SidecarError
+          ? { code: reason.code, message: reason.message }
+          : {
+              code: "request_failed",
+              message: reason instanceof Error ? reason.message : String(reason),
+            };
+      this.completeLog(id, "error", error);
+      throw reason;
+    } finally {
+      if (isPreparation && this.activePreparationId === id) this.activePreparationId = null;
+    }
+  }
+
+  private async requestOnce<T>(id: string, payload: Omit<Request, "id">): Promise<T> {
+    const child = this.child;
+    const command = this.command;
+    if (!child) throw new Error("The local TTS engine is unavailable");
     const request = JSON.stringify({ ...payload, id }) + "\n";
     const response = new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
     });
-    await this.child.write(request);
+    try {
+      await child.write(request);
+    } catch (reason) {
+      const error = new SidecarError("sidecar_stopped", "The local TTS engine stopped");
+      if (this.command === command) {
+        this.child = null;
+        this.command = null;
+        this.rejectAll(error);
+      }
+      throw error;
+    }
     return response;
+  }
+
+  private addLog(entry: RequestLog): void {
+    this.logs = [...this.logs, entry];
+    this.logListeners.forEach((listener) => listener(entry));
+  }
+
+  private completeLog(
+    id: string,
+    status: Exclude<RequestLogStatus, "pending">,
+    error?: { code: string; message: string },
+  ): void {
+    const finishedAt = Date.now();
+    this.logs = this.logs.map((entry) =>
+      entry.id === id
+        ? {
+            ...entry,
+            status,
+            finishedAt,
+            durationMs: finishedAt - entry.startedAt,
+            ...(error ? { errorCode: error.code, errorMessage: error.message } : {}),
+          }
+        : entry,
+    );
+    const entry = this.logs.find((item) => item.id === id);
+    if (entry) this.logListeners.forEach((listener) => listener(entry));
   }
 
   private consume(chunk: string): void {
