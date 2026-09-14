@@ -1,0 +1,132 @@
+docs/agent-devkit/specs/2026-09-13-sqlite-storage-seed-data-design.md
+  s_2a4768d8b32b25::t_7a3c91bea92200 1-4,6-14,18-25,31-36,43-46,49-53,61-63,69-71,84-88,91,93-98,100-101,104-106,111-115,119-126,128-130
+  s_2a4768d8b32b25::t_95ed5d2c8474ae 54-60,64-68,72-83
+  s_2a4768d8b32b25::t_e42b1581c005d4 131
+  s_2a4768d8b32b25::t_4caf4e22e3ade1 5,15-17,26-30,37-42,47-48
+  s_2a4768d8b32b25::t_c508290b76eaf9 89-90,92,99,102-103,107-110,116-118,127
+src/tts_mcp/engine.py
+  s_2a4768d8b32b25::t_2b8b133cc32307 432-444,446-467,469-515,517-627,767-774,783,785-806,812-832
+  s_2a4768d8b32b25::t_e3910c548581b6 8-10,12-13,22,33,35-37,68-172
+  s_7d0b73ab081d2f::t_c11542b1bd40d9 308
+  s_2a4768d8b32b25::t_dc7b30ee9b7ab6 629-762
+  s_2a4768d8b32b25::t_f6feeb54ed8111 173-174
+  s_2a4768d8b32b25::t_1b65cb2088391a 628
+scripts/build_sidecar.py
+  s_7d0b73ab081d2f::t_943dd79b697e30 28-30
+  s_7d0b73ab081d2f::t_fc035a270df2d5 63-66
+docs/agent-devkit/plans/2026-09-13-sqlite-storage-seed-data-plan.md
+  s_7d0b73ab081d2f::t_501e4cdf467751 35-38
+  s_2a4768d8b32b25::t_3fa80bc3b3c892 1-15,17-31,39-312
+  s_2a4768d8b32b25::t_254ffa2c668462 16,32-34
+tests/test_build_sidecar.py
+  s_7d0b73ab081d2f::t_fc035a270df2d5 1-40
+docs/llm/INDEX.md
+  s_7d0b73ab081d2f::t_65e3a8bbc885dc 21-22
+  s_7d0b73ab081d2f::t_4298b4192ea314 24-25
+  s_2a4768d8b32b25::t_68ae146644c907 19-20
+docs/llm/LOG.md
+  s_7d0b73ab081d2f::t_bfa60a958ba302 103-117
+  s_2a4768d8b32b25::t_83df95e9e87375 73-87
+  s_2a4768d8b32b25::t_e17690155dd5d1 88-102
+tests/test_desktop.py
+  s_2a4768d8b32b25::t_b58fa041b0284b 314-342
+  s_7d0b73ab081d2f::t_e5d0c12e2d625a 60-66
+  s_2a4768d8b32b25::t_b62e43af2f19a1 297,309
+  s_7d0b73ab081d2f::t_c11542b1bd40d9 25-31,37-39
+docs/agent-devkit/specs/2026-09-13-desktop-ui-system-design.md
+  s_2a4768d8b32b25::t_4a2b3325b2fc0c 37-39,69-71
+apps/desktop/src-tauri/tauri.conf.json
+  s_2a4768d8b32b25::t_73162748485208 36
+apps/desktop/src/lib/i18n.ts
+  s_7d0b73ab081d2f::t_1244cf5dd4326c 561-566
+  s_7d0b73ab081d2f::t_94fbe48419d721 162-164,171,174-181,393-395,402-411,629-631,637-646
+  s_7d0b73ab081d2f::t_a41471f5c18eec 172-173
+  s_7d0b73ab081d2f::t_09f7ba0a74b64a 87-96,232,318-327,460
+  s_2a4768d8b32b25::t_09bc2769420cfe 109,340,581,690
+  s_7d0b73ab081d2f::t_4283e7764d6a76 567-569
+src/tts_mcp/desktop.py
+  s_7d0b73ab081d2f::t_943dd79b697e30 101,110
+  s_7d0b73ab081d2f::t_3252f3028c4952 264-271
+  s_7d0b73ab081d2f::t_c11542b1bd40d9 214-216
+  s_2a4768d8b32b25::t_3a442f981852e6 234-235,237-241
+README.md
+  s_2a4768d8b32b25::t_4ad81629b5b805 20-21
+  s_2a4768d8b32b25::t_68ae146644c907 7,16-17,43-45,47-49
+docs/desktop-development.md
+  s_7d0b73ab081d2f::t_65e3a8bbc885dc 13-16
+  s_7d0b73ab081d2f::t_c74e9ba37096b6 39-41
+  s_2a4768d8b32b25::t_68ae146644c907 11-12,29-31,43
+src/tts_mcp/cli.py
+  s_2a4768d8b32b25::t_145e0978cc2555 91,99,164-169
+docs/agent-devkit/INDEX.md
+  s_2a4768d8b32b25::t_7a3c91bea92200 8
+  s_2a4768d8b32b25::t_3fa80bc3b3c892 15
+tests/test_engine.py
+  s_2a4768d8b32b25::t_7f4483f8ecbe03 245
+  s_2a4768d8b32b25::t_6ebb8bee7ade1f 4,21-28,31-46,131-244,246-269
+  s_2a4768d8b32b25::t_28448997a03446 270
+docs/llm/architecture/overview.md
+  s_2a4768d8b32b25::t_68ae146644c907 24-27,58,65-71
+  s_2a4768d8b32b25::t_c1183ddb7af66c 92
+  s_2a4768d8b32b25::t_e17690155dd5d1 93-94
+  s_7d0b73ab081d2f::t_c74e9ba37096b6 59
+  s_7d0b73ab081d2f::t_65e3a8bbc885dc 18-20,28-32
+apps/desktop/src-tauri/resources/seed-voices/omnivoice-demo/manifest.json
+  s_2a4768d8b32b25::t_8b0ab65fa1c7d8 1-9
+apps/desktop/src/lib/sidecar.ts
+  s_2a4768d8b32b25::t_db3d0dec9c2849 25,28
+  s_7d0b73ab081d2f::t_c11542b1bd40d9 58-60
+apps/desktop/src-tauri/resources/seed-voices/voice-catalog.json
+  s_7d0b73ab081d2f::t_7e6bc71d3467a1 1-91
+src/tts_mcp/server.py
+  s_2a4768d8b32b25::t_145e0978cc2555 162-167,176,182
+apps/desktop/src-tauri/resources/seed-voices/README.md
+  s_7d0b73ab081d2f::t_8a0909207d2f95 37
+  s_7d0b73ab081d2f::t_7e6bc71d3467a1 6-11
+  s_7d0b73ab081d2f::t_25de0d6776efe0 1-5,12-36,38
+docs/agent-devkit/plans/2026-09-13-desktop-ui-system-plan.md
+  s_2a4768d8b32b25::t_4a2b3325b2fc0c 34-36,140-142
+apps/desktop/src/App.tsx
+  s_2a4768d8b32b25::t_af6e34d8900a75 75,77,82,86,88-89
+  s_2a4768d8b32b25::t_d9cb93272371ef 161-168,630-634,1262-1263
+  s_7d0b73ab081d2f::t_e8f1b0fb15d8c4 67,753-754,756,768-769,771,774-779,794-811,813,839-841,847,879,883,918,925-928,945
+  s_7d0b73ab081d2f::t_da5c50b9753cac 40,750-752,765-767,908-910,1520,1538,1542,1592,1595,1941-1943
+  s_7d0b73ab081d2f::t_a41471f5c18eec 780,814-838,842-846,848-854,856-878,880-882,884-907,911-917,919-924,929-944
+  s_2a4768d8b32b25::t_0ba303636317fc 4,76,78,80-81,83-85,87
+  s_2a4768d8b32b25::t_5e1cd2d2a1ebd1 638
+  s_7d0b73ab081d2f::t_9dfac961e14593 1524-1525,1588-1591,1593-1594,1596-1603,1944-1945,1947
+  s_2a4768d8b32b25::t_885bf2dcf3089c 1545,1579,1800
+  s_2a4768d8b32b25::t_25b9983736050b 68
+  s_2a4768d8b32b25::t_a68c0895e38eb7 1622-1628,1642-1658,1707,1996
+  s_7d0b73ab081d2f::t_a43b33f9c194b1 1671-1680
+  s_7d0b73ab081d2f::t_187f68c47dbd66 69-74,79,487-488,492,508-509,513,529-548,552-563,1509-1510,1670,1681-1694,1696-1706,1962-1963,1967
+  s_7d0b73ab081d2f::t_4283e7764d6a76 1695
+  s_2a4768d8b32b25::t_f005305689616a 1708
+  s_7d0b73ab081d2f::t_52ad7cad24bc47 212
+docs/omnivoice-capabilities.md
+  s_7d0b73ab081d2f::t_25de0d6776efe0 1-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "853cb804458507fc9f1eea144f7663af5c6f530c",
+  "prompts": {},
+  "sessions": {
+    "s_2a4768d8b32b25": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a094b7-ae07-7323-be37-ecacdb6d83d3",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_7d0b73ab081d2f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09559-0af2-7c11-921b-3263d5ac50d7",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
