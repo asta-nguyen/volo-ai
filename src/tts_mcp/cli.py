@@ -46,18 +46,18 @@ def cmd_clone(args: argparse.Namespace) -> None:
     gen_kwargs: dict = {
         "text": args.text,
         "out": args.out,
-        "ref_audio": args.ref,
         "speed": args.speed,
         "num_step": args.steps,
         "normalize_text": args.normalize,
     }
-    if args.ref_text:
-        gen_kwargs["ref_text"] = args.ref_text
-    elif args.voice:
+    if args.voice:
         # Use saved voice profile instead of raw ref audio
         prompt = engine.load_voice(args.voice)
-        gen_kwargs.pop("ref_audio")
         gen_kwargs["voice_clone_prompt"] = prompt
+    else:
+        gen_kwargs["ref_audio"] = args.ref
+        if args.ref_text:
+            gen_kwargs["ref_text"] = args.ref_text
     _generate_and_save(engine, **gen_kwargs)
 
 
@@ -134,9 +134,10 @@ def build_parser() -> argparse.ArgumentParser:
     # clone — voice cloning
     p_clone = sub.add_parser("clone", help="Clone a voice from reference audio")
     p_clone.add_argument("text", help="Text to synthesize")
-    p_clone.add_argument("--ref", help="Reference audio file path")
+    source = p_clone.add_mutually_exclusive_group(required=True)
+    source.add_argument("--ref", help="Reference audio file path")
+    source.add_argument("--voice", help="Use a saved voice profile name instead of --ref")
     p_clone.add_argument("--ref-text", help="Transcript of reference audio (auto if omitted)")
-    p_clone.add_argument("--voice", help="Use a saved voice profile name instead of --ref")
     _add_generate_args(p_clone)
     p_clone.set_defaults(func=cmd_clone)
 

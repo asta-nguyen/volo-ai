@@ -425,6 +425,7 @@ const resources = {
         selectProfile: "Hãy chọn một hồ sơ giọng trước.",
         chooseFileAndName: "Hãy chọn file và nhập tên giọng.",
         couldNotSaveVoice: "Không thể lưu giọng",
+        couldNotLoadProfiles: "Không thể tải hồ sơ giọng",
         couldNotDeleteVoice: "Không thể xóa hồ sơ giọng",
         exportFailed: "Xuất file thất bại",
         engineUnavailable: "Local engine không khả dụng",

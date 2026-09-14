@@ -98,7 +98,7 @@ def clone(
         if ref_text:
             gen_kwargs["ref_text"] = ref_text
     else:
-        return "Error: provide either 'ref_audio_path' or 'voice' parameter"
+        raise ValueError("Provide either 'ref_audio_path' or 'voice' parameter")
     audio = engine.generate(**gen_kwargs)
     path = save_audio(audio, output_path)
     return f"Cloned audio saved to: {path}"

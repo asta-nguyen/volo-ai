@@ -7,9 +7,11 @@ import os
 import re
 import shutil
 import sqlite3
+import sys
 import tempfile
 import threading
 import uuid
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -35,6 +37,7 @@ VOICE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 SEED_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 DB_SCHEMA_VERSION = 1
 _STORAGE_LOCK = threading.RLock()
+_MIGRATED_STORAGES: set[tuple[Path, Path]] = set()
 GENERATION_CONFIG_KEYS = frozenset(
     {
         "guidance_scale",
@@ -279,7 +282,7 @@ class Engine:
 
         print(
             f"[tts-mcp] Loading OmniVoice on {device} ({dtype})...",
-            file=__import__("sys").stderr,
+            file=sys.stderr,
         )
         kwargs.update(
             {
@@ -291,7 +294,7 @@ class Engine:
         with self._model_lock:
             if self._model is None:
                 self._model = OmniVoice.from_pretrained(str(MODEL_DIR), **kwargs)
-        print("[tts-mcp] Model loaded.", file=__import__("sys").stderr)
+        print("[tts-mcp] Model loaded.", file=sys.stderr)
 
     def model_status(self) -> dict[str, Any]:
         """Return whether all assets needed for offline generation are ready."""
@@ -511,7 +514,14 @@ class Engine:
     @staticmethod
     def _open_storage() -> sqlite3.Connection:
         connection = _open_database()
-        Engine._migrate_legacy_profiles(connection)
+        storage_key = (DB_PATH.resolve(), VOICES_DIR.resolve())
+        if storage_key not in _MIGRATED_STORAGES:
+            try:
+                Engine._migrate_legacy_profiles(connection)
+            except Exception:
+                connection.close()
+                raise
+            _MIGRATED_STORAGES.add(storage_key)
         return connection
 
     def save_voice(
@@ -688,8 +698,7 @@ class Engine:
                 manifest, audio_path = self._read_seed_manifest(seed_folder)
                 seed_id = manifest["id"]
                 version = manifest["version"]
-                with _STORAGE_LOCK:
-                    connection = self._open_storage()
+                with _STORAGE_LOCK, closing(self._open_storage()) as connection:
                     installed = connection.execute(
                         "SELECT version FROM app_seeds WHERE seed_key = ?", (seed_id,)
                     ).fetchone()
@@ -703,15 +712,13 @@ class Engine:
                         """,
                         (manifest["language"],),
                     ).fetchone()
-                    connection.close()
                 if installed and installed["version"] >= version:
                     result["skipped"].append(
                         {"id": seed_id, "name": manifest["name"], "reason": "already_installed"}
                     )
                     continue
                 if existing:
-                    with _STORAGE_LOCK:
-                        connection = self._open_storage()
+                    with _STORAGE_LOCK, closing(self._open_storage()) as connection:
                         with connection:
                             connection.execute(
                                 """
@@ -723,7 +730,6 @@ class Engine:
                                 """,
                                 (seed_id, version, _utc_now()),
                             )
-                        connection.close()
                     result["skipped"].append(
                         {"id": seed_id, "name": manifest["name"], "reason": "profile_exists"}
                     )
@@ -738,8 +744,7 @@ class Engine:
                     seed_version=version,
                     is_default=bool(manifest["default"] and not default_exists),
                 )
-                with _STORAGE_LOCK:
-                    connection = self._open_storage()
+                with _STORAGE_LOCK, closing(self._open_storage()) as connection:
                     with connection:
                         connection.execute(
                             """
@@ -751,7 +756,6 @@ class Engine:
                             """,
                             (seed_id, version, _utc_now()),
                         )
-                    connection.close()
                 result["imported"].append(
                     {"id": seed_id, "name": manifest["name"], "language": manifest["language"]}
                 )
@@ -765,11 +769,10 @@ class Engine:
         """Load a saved voice clone prompt by name."""
         name = self.validate_voice_name(name)
         with _STORAGE_LOCK:
-            connection = self._open_storage()
-            row = connection.execute(
-                "SELECT prompt_path FROM voice_profiles WHERE name = ?", (name,)
-            ).fetchone()
-            connection.close()
+            with closing(self._open_storage()) as connection:
+                row = connection.execute(
+                    "SELECT prompt_path FROM voice_profiles WHERE name = ?", (name,)
+                ).fetchone()
         prompt_path = _resolve_data_path(row["prompt_path"] if row else None)
         if prompt_path is None or not prompt_path.exists():
             raise FileNotFoundError(
@@ -783,15 +786,14 @@ class Engine:
     def list_voices() -> list[dict[str, Any]]:
         """List all saved voice profiles."""
         with _STORAGE_LOCK:
-            connection = Engine._open_storage()
-            rows = connection.execute(
-                """
-                SELECT name, language, ref_audio_path, ref_text, is_default
-                FROM voice_profiles
-                ORDER BY is_default DESC, language ASC, name ASC
-                """
-            ).fetchall()
-            connection.close()
+            with closing(Engine._open_storage()) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT name, language, ref_audio_path, ref_text, is_default
+                    FROM voice_profiles
+                    ORDER BY is_default DESC, language ASC, name ASC
+                    """
+                ).fetchall()
         return [
             {
                 "name": row["name"],
@@ -810,14 +812,13 @@ class Engine:
         """Delete a saved voice profile."""
         name = Engine.validate_voice_name(name)
         with _STORAGE_LOCK:
-            connection = Engine._open_storage()
-            row = connection.execute(
-                "SELECT 1 FROM voice_profiles WHERE name = ?", (name,)
-            ).fetchone()
-            if row:
-                with connection:
-                    connection.execute("DELETE FROM voice_profiles WHERE name = ?", (name,))
-            connection.close()
+            with closing(Engine._open_storage()) as connection:
+                row = connection.execute(
+                    "SELECT 1 FROM voice_profiles WHERE name = ?", (name,)
+                ).fetchone()
+                if row:
+                    with connection:
+                        connection.execute("DELETE FROM voice_profiles WHERE name = ?", (name,))
             profile_dir = VOICES_DIR / name
             legacy_prompt = VOICES_DIR / f"{name}.pt"
             legacy_meta = VOICES_DIR / f"{name}.json"

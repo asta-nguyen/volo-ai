@@ -46,7 +46,10 @@ Volo AI React UI
 The Python engine in `engine.py` owns device detection, model readiness and
 download, generation, native OmniVoice long-form chunking configuration, and
 saved voice profiles. `convert.py` writes WAV, FLAC, OGG, or MP3 output; MP3
-requires FFmpeg and pydub.
+requires FFmpeg and pydub, while unsupported output extensions are rejected.
+The frontend `SidecarClient` gives ordinary requests a five-minute timeout and
+model preparation a longer one-hour timeout; a timed-out child is terminated
+so the UI can recover instead of waiting forever.
 
 ## Domains
 

@@ -276,7 +276,7 @@ def run_protocol(source: TextIO, target: TextIO, engine: Engine) -> None:
     """Run the sidecar protocol, allowing cancel during model preparation."""
     requests: queue.Queue[dict[str, Any] | None] = queue.Queue()
     active: dict[str, threading.Event] = {}
-    workers: list[threading.Thread] = []
+    workers: set[threading.Thread] = set()
     write_lock = threading.Lock()
 
     def write(payload: dict[str, Any]) -> None:
@@ -336,14 +336,15 @@ def run_protocol(source: TextIO, target: TextIO, engine: Engine) -> None:
                     )
                 finally:
                     active.pop(request_id, None)
+                    workers.discard(threading.current_thread())
 
             worker = threading.Thread(target=prepare, daemon=True)
-            workers.append(worker)
+            workers.add(worker)
             worker.start()
             continue
         write(dispatch_request(request, engine))
 
-    for worker in workers:
+    for worker in tuple(workers):
         worker.join()
 
 

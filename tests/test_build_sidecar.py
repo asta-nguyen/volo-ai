@@ -8,7 +8,7 @@ from scripts import build_sidecar
 
 
 class SidecarBuildTests(unittest.TestCase):
-    def test_build_includes_torchcodec_package_and_metadata(self):
+    def test_build_includes_engine_package_and_ffmpeg(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             ffmpeg = root / "ffmpeg"
@@ -29,11 +29,8 @@ class SidecarBuildTests(unittest.TestCase):
             command = run.call_args.args[0]
             self.assertIn("--collect-all", command)
             self.assertEqual(command[command.index("--collect-all") + 1], "omnivoice")
-            self.assertEqual(
-                command[command.index("--collect-all", command.index("--collect-all") + 1) + 1],
-                "torchcodec",
-            )
-            self.assertEqual(command[command.index("--copy-metadata") + 1], "torchcodec")
+            self.assertIn("--add-binary", command)
+            self.assertIn(f"{ffmpeg.resolve()}:.", command)
 
 
 if __name__ == "__main__":

@@ -28,6 +28,17 @@ Source commit at read time: `fca8f167f07b2a40950d1b9e6f3da963f5eb89c0`
   - `src/tts_mcp/desktop.py`
   - `apps/desktop/src/App.tsx`
 
+## 2026-09-14
+
+- Page: `architecture/overview.md`
+  Sources:
+  - `src/tts_mcp/engine.py`
+  - `src/tts_mcp/desktop.py`
+  - `src/tts_mcp/cli.py`
+  - `src/tts_mcp/server.py`
+  - `src/tts_mcp/convert.py`
+  - `apps/desktop/src/lib/sidecar.ts`
+
 ## 2026-09-12
 
 Source commit at read time: `fca8f16` (`init: add core agent skills for feature development workflow`)

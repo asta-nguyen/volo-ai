@@ -24,12 +24,15 @@ apps/desktop/src-tauri/binaries/tts-sidecar-*
 .tts-mcp/
 models/
 outputs/
+voices/
+volo.db
+volo.db-*
 
 # Local configuration and editor files
 .env
 .env.*
 !.env.example
-*.idea
+.idea/
 *.swp
 *.swo
 

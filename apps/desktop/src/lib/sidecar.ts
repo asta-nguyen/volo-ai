@@ -42,6 +42,9 @@ type Failure = {
 };
 type Response<T> = Success<T> | Failure;
 
+const REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+const PREPARATION_TIMEOUT_MS = 60 * 60 * 1000;
+
 export type ProgressEvent = {
   id: string;
   event: "progress";
@@ -236,12 +239,30 @@ export class SidecarClient {
     const command = this.command;
     if (!child) throw new Error("The local TTS engine is unavailable");
     const request = JSON.stringify({ ...payload, id }) + "\n";
+    const timeoutMs =
+      payload.type === "prepare_model" ? PREPARATION_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+    let timeout: ReturnType<typeof setTimeout>;
     const response = new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
+      timeout = setTimeout(() => {
+        this.pending.delete(id);
+        const error = new SidecarError(
+          "request_timeout",
+          `The local engine did not respond within ${Math.round(timeoutMs / 60000)} minutes`,
+        );
+        if (this.command === command) {
+          this.child = null;
+          this.command = null;
+          this.rejectAll(error);
+          void child.kill().catch(() => undefined);
+        }
+        reject(error);
+      }, timeoutMs);
     });
     try {
       await child.write(request);
     } catch (reason) {
+      clearTimeout(timeout!);
       const error = new SidecarError("sidecar_stopped", "The local TTS engine stopped");
       if (this.command === command) {
         this.child = null;
@@ -250,7 +271,7 @@ export class SidecarClient {
       }
       throw error;
     }
-    return response;
+    return response.finally(() => clearTimeout(timeout!));
   }
 
   private addLog(entry: RequestLog): void {

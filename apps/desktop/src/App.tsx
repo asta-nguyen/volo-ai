@@ -1547,7 +1547,9 @@ function App() {
         } else await prepareModel();
       } catch (reason) {
         if (active)
-          setSetupError(reason instanceof Error ? reason.message : copy.engineUnavailable);
+          setSetupError(
+            reason instanceof Error ? reason.message : translator.t("errors.engineUnavailable"),
+          );
       }
     })();
     return () => {
@@ -1579,7 +1581,9 @@ function App() {
       await importBundledSeedVoices();
       await refreshVoices();
     } catch (reason) {
-      setSetupError(reason instanceof Error ? reason.message : copy.modelSetupFailed);
+      setSetupError(
+        reason instanceof Error ? reason.message : translator.t("errors.modelSetupFailed"),
+      );
     } finally {
       setIsPreparing(false);
     }
@@ -1595,7 +1599,9 @@ function App() {
       setEngineStatus(status);
       setModelReady(status.model_ready);
     } catch (reason) {
-      setModelStatusError(reason instanceof Error ? reason.message : copy.engineUnavailable);
+      setModelStatusError(
+        reason instanceof Error ? reason.message : translator.t("errors.engineUnavailable"),
+      );
     } finally {
       setIsRefreshingStatus(false);
     }
@@ -1607,7 +1613,9 @@ function App() {
     try {
       await client.cancelPreparation();
     } catch (reason) {
-      setSetupError(reason instanceof Error ? reason.message : copy.modelSetupFailed);
+      setSetupError(
+        reason instanceof Error ? reason.message : translator.t("errors.modelSetupFailed"),
+      );
     } finally {
       setIsCancelling(false);
     }

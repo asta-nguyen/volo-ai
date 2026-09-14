@@ -28,10 +28,7 @@ def save_audio(
 
         sf.write(str(path), audio, sample_rate)
     else:
-        # Default to wav
-        import soundfile as sf
-
-        sf.write(str(path), audio, sample_rate)
+        raise ValueError("Unsupported audio format. Use .wav, .flac, .ogg, or .mp3")
 
     return str(path)
 
