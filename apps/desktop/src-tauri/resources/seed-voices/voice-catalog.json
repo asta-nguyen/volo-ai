@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "scope": ["en", "vi"],
+  "note": "These are product voice presets, not native named OmniVoice speakers. An importable clone seed still needs a licensed reference recording.",
+  "voices": [
+    {
+      "id": "admin-en",
+      "name": "Admin English",
+      "language": "en",
+      "role": "admin",
+      "mode": "design",
+      "instruct": "female, middle-aged, moderate pitch, american accent",
+      "description": "Clear, neutral, formal voice for settings, system messages, and product guidance.",
+      "reference_script": "Welcome to Volo AI. Your voice workspace is ready. Review the settings, choose a voice, and generate a preview when you are ready.",
+      "seed_status": "preset_only"
+    },
+    {
+      "id": "narrator-en",
+      "name": "Narrator English",
+      "language": "en",
+      "role": "narrator",
+      "mode": "design",
+      "instruct": "female, young adult, moderate pitch, british accent",
+      "description": "Warm, measured voice for explainers, tutorials, and long-form narration.",
+      "reference_script": "Every useful idea starts with a clear first step. Take your time, follow the signal, and let the story unfold.",
+      "seed_status": "preset_only"
+    },
+    {
+      "id": "support-en",
+      "name": "Support English",
+      "language": "en",
+      "role": "support",
+      "mode": "design",
+      "instruct": "female, young adult, high pitch, american accent",
+      "description": "Friendly, approachable voice for onboarding, help, and confirmation messages.",
+      "reference_script": "You are all set. If you need help, open the guide and we will walk through the next step together.",
+      "seed_status": "preset_only"
+    },
+    {
+      "id": "news-en",
+      "name": "News English",
+      "language": "en",
+      "role": "news",
+      "mode": "design",
+      "instruct": "male, middle-aged, low pitch, american accent",
+      "description": "Steady, authoritative voice for announcements, summaries, and status updates.",
+      "reference_script": "Here is the latest update. The system is operating normally, and all generated files remain on this device.",
+      "seed_status": "preset_only"
+    },
+    {
+      "id": "admin-vi",
+      "name": "Admin Vietnamese",
+      "language": "vi",
+      "role": "admin",
+      "mode": "clone",
+      "description": "Rõ, trung tính, trang trọng cho thông báo hệ thống và hướng dẫn trong ứng dụng.",
+      "reference_script": "Chào mừng bạn đến với Volo AI. Không gian làm việc đã sẵn sàng. Hãy chọn giọng đọc và tạo bản nghe thử khi bạn muốn.",
+      "seed_status": "needs_licensed_reference"
+    },
+    {
+      "id": "narrator-vi",
+      "name": "Narrator Vietnamese",
+      "language": "vi",
+      "role": "narrator",
+      "mode": "clone",
+      "description": "Ấm, chậm vừa, tự nhiên cho bài đọc, video và nội dung dài.",
+      "reference_script": "Mỗi câu chuyện hay đều bắt đầu từ một bước nhỏ. Hãy bình tĩnh, lắng nghe tín hiệu và để câu chuyện mở ra theo cách tự nhiên nhất.",
+      "seed_status": "needs_licensed_reference"
+    },
+    {
+      "id": "support-vi",
+      "name": "Support Vietnamese",
+      "language": "vi",
+      "role": "support",
+      "mode": "clone",
+      "description": "Thân thiện, gần gũi cho onboarding, trợ giúp và thông báo xác nhận.",
+      "reference_script": "Bạn đã hoàn tất. Nếu cần trợ giúp, hãy mở hướng dẫn và chúng tôi sẽ cùng bạn đi qua từng bước.",
+      "seed_status": "needs_licensed_reference"
+    },
+    {
+      "id": "news-vi",
+      "name": "News Vietnamese",
+      "language": "vi",
+      "role": "news",
+      "mode": "clone",
+      "description": "Rõ chữ, nhịp đều, chắc giọng cho thông báo và bản tin.",
+      "reference_script": "Đây là cập nhật mới nhất. Hệ thống đang hoạt động bình thường và mọi file được tạo vẫn nằm trên thiết bị này.",
+      "seed_status": "needs_licensed_reference"
+    }
+  ]
+}

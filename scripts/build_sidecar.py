@@ -25,7 +25,9 @@ def host_triple() -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ffmpeg", required=True, type=Path, help="FFmpeg executable to bundle")
-    parser.add_argument("--target", default=None, help="Rust target triple; defaults to the current host")
+    parser.add_argument(
+        "--target", default=None, help="Rust target triple; defaults to the current host"
+    )
     args = parser.parse_args()
 
     ffmpeg = args.ffmpeg.resolve()
@@ -58,6 +60,10 @@ def main() -> int:
         str(work_dir),
         "--collect-all",
         "omnivoice",
+        "--collect-all",
+        "torchcodec",
+        "--copy-metadata",
+        "torchcodec",
         "--add-binary",
         f"{ffmpeg}{separator}.",
         str(ROOT / "src" / "tts_mcp" / "desktop.py"),

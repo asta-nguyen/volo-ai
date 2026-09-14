@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { appDataDir } from "@tauri-apps/api/path";
+import { appDataDir, resolveResource } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { copyFile } from "@tauri-apps/plugin-fs";
 import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "motion/react";
@@ -37,6 +37,7 @@ import {
   type Language,
   type ProgressEvent,
   type RequestLog,
+  type StatusResult,
   type SynthesisResult,
   type VoiceMode,
   type VoiceProfile,
@@ -63,6 +64,29 @@ import {
 
 const client = new SidecarClient();
 type AppView = "workspace" | "profiles" | "settings" | "logs";
+type SettingsTab = "general" | "model" | "storage";
+const BUNDLED_SEED_DIRECTORY = "resources/seed-voices";
+type SeedImportResult = {
+  imported: Array<{ id: string; name: string; language: string }>;
+  skipped: Array<{ id: string; name: string; reason: string }>;
+  errors: Array<{ id: string; message: string }>;
+};
+type SeedImportStatus = { message: string; tone: "success" | "error" };
+
+async function importBundledSeedVoices(): Promise<void> {
+  try {
+    const seedDirectory = await resolveResource(BUNDLED_SEED_DIRECTORY);
+    const result = await client.request<SeedImportResult>({
+      type: "import_seed_voices",
+      seed_dir: seedDirectory,
+    });
+    if (result.errors.length) {
+      console.warn("[volo-ai] Some bundled voice seeds could not be imported", result.errors);
+    }
+  } catch (reason) {
+    console.warn("[volo-ai] Could not import bundled voice seeds", reason);
+  }
+}
 
 type AdvancedDraft = {
   duration: string;
@@ -134,6 +158,14 @@ function fileName(path: string | undefined): string {
   return path?.split(/[\\/]/).pop() || "Reference audio";
 }
 
+function preferredVoiceForLanguage(voices: VoiceProfile[], language: Language): string {
+  return (
+    voices.find((voice) => voice.language === language && voice.is_default)?.name ??
+    voices.find((voice) => voice.language === language)?.name ??
+    "auto"
+  );
+}
+
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">
@@ -177,7 +209,7 @@ function ErrorMessage({ children }: { children: React.ReactNode }) {
   return (
     <div
       role="alert"
-      className="flex items-start gap-3 rounded-xl border border-[var(--destructive-border)] bg-[var(--destructive-surface)] px-3.5 py-3 text-sm leading-5 text-[var(--destructive)]"
+      className="flex items-start gap-3 rounded-xl border border-(--destructive-border) bg-(--destructive-surface) px-3.5 py-3 text-sm leading-5 text-(--destructive)"
     >
       <AlertCircle className="mt-0.5 size-4 shrink-0" />
       <span>{children}</span>
@@ -452,9 +484,12 @@ function VoiceProfilesView({
   refAudio,
   refText,
   isSaving,
+  isImporting,
+  importStatus,
   deletingVoice,
   copy,
   onChooseReference,
+  onImportSeedFolder,
   onProfileNameChange,
   onRefTextChange,
   onSave,
@@ -470,9 +505,12 @@ function VoiceProfilesView({
   refAudio: string | null;
   refText: string;
   isSaving: boolean;
+  isImporting: boolean;
+  importStatus: SeedImportStatus | null;
   deletingVoice: string | null;
   copy: UiCopy;
   onChooseReference: () => void;
+  onImportSeedFolder: () => void;
   onProfileNameChange: (value: string) => void;
   onRefTextChange: (value: string) => void;
   onSave: () => Promise<void>;
@@ -488,14 +526,41 @@ function VoiceProfilesView({
         title={copy.profilesTitle}
         description={copy.profilesDescription}
         action={
-          <div className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
-            <Library className="size-4 text-[var(--accent)]" />
-            <span className="font-mono text-xs font-semibold">
-              {voices.length.toString().padStart(2, "0")} {copy.savedProfiles}
-            </span>
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onImportSeedFolder}
+              disabled={isImporting || isSaving}
+            >
+              {isImporting ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : (
+                <FolderOpen className="size-4 text-[var(--accent)]" />
+              )}
+              {isImporting ? copy.importingSeedFolder : copy.importSeedFolder}
+            </Button>
+            <div className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+              <Library className="size-4 text-[var(--accent)]" />
+              <span className="font-mono text-xs font-semibold">
+                {voices.length.toString().padStart(2, "0")} {copy.savedProfiles}
+              </span>
+            </div>
           </div>
         }
       />
+      <div className="mb-5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-5 text-[var(--muted-foreground)]">
+        <FolderOpen className="size-3.5 text-[var(--accent)]" />
+        <span>{copy.seedImportDescription}</span>
+      </div>
+      {importStatus && (
+        <div
+          className={`mb-5 rounded-xl border px-4 py-3 text-sm ${importStatus.tone === "error" ? "border-[var(--destructive-border)] bg-[var(--destructive-surface)] text-[var(--destructive)]" : "border-[var(--success-border)] bg-[var(--success-surface)] text-[var(--success)]"}`}
+          role={importStatus.tone === "error" ? "alert" : "status"}
+        >
+          {importStatus.message}
+        </div>
+      )}
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <Card>
           <CardHeader>
@@ -562,10 +627,15 @@ function VoiceProfilesView({
                             <div className="flex flex-wrap items-center gap-2">
                               <h3 className="truncate font-semibold">{voice.name}</h3>
                               <Badge>{copy.profileReady}</Badge>
+                              {voice.is_default && (
+                                <Badge className="border-[var(--accent-border)] bg-[var(--accent-soft)] text-[var(--accent)]">
+                                  {copy.defaultVoice}
+                                </Badge>
+                              )}
                             </div>
                             <p className="mt-1 flex items-center gap-1.5 truncate font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--muted-foreground)]">
                               <FileAudio className="size-3" />
-                              {fileName(voice.ref_audio)}
+                              {voice.language} ·{fileName(voice.ref_audio)}
                             </p>
                           </div>
                         </div>
@@ -677,7 +747,13 @@ function SettingsView({
   engineOnline,
   device,
   dataDir,
+  modelId,
+  tokenizerId,
+  asrModelId,
+  modelStatusError,
+  isRefreshingStatus,
   onChangeLanguage,
+  onRefreshStatus,
   onBack,
 }: {
   copy: UiCopy;
@@ -686,9 +762,22 @@ function SettingsView({
   engineOnline: boolean;
   device: string;
   dataDir: string | null;
+  modelId: string;
+  tokenizerId: string;
+  asrModelId: string;
+  modelStatusError: string | null;
+  isRefreshingStatus: boolean;
   onChangeLanguage: (language: AppLanguage) => void;
+  onRefreshStatus: () => void;
   onBack: () => void;
 }) {
+  const [activeTab, setActiveTab] = useState<SettingsTab>("model");
+  const tabs: Array<[SettingsTab, string]> = [
+    ["model", copy.modelTab],
+    ["general", copy.generalTab],
+    ["storage", copy.storageTab],
+  ];
+  const assets = [copy.setupAssetOmniVoice, copy.setupAssetTokenizer, copy.setupAssetWhisper];
   return (
     <div>
       <PageHeader
@@ -702,75 +791,158 @@ function SettingsView({
           </Button>
         }
       />
+      <div
+        className="mb-5 flex w-full gap-1 overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-1"
+        role="tablist"
+        aria-label={copy.studioSettings}
+      >
+        {tabs.map(([value, label]) => (
+          <button
+            type="button"
+            key={value}
+            role="tab"
+            aria-selected={activeTab === value}
+            onClick={() => setActiveTab(value)}
+            className={`min-w-28 flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${activeTab === value ? "bg-[var(--surface)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <div className="grid gap-5 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <div>
-              <SectionLabel>{copy.appLanguage}</SectionLabel>
-              <CardTitle className="mt-2">{copy.interfaceLanguage}</CardTitle>
-            </div>
-            <Languages className="size-5 text-[var(--accent)]" />
-          </CardHeader>
-          <CardContent>
-            <CardDescription>{copy.appLanguageDescription}</CardDescription>
-            <div className="mt-5 grid grid-cols-2 gap-2 rounded-xl bg-[var(--surface-muted)] p-1.5">
-              {(["en", "vi"] as AppLanguage[]).map((item) => (
-                <button
-                  type="button"
-                  key={item}
-                  onClick={() => onChangeLanguage(item)}
-                  aria-pressed={appLanguage === item}
-                  className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${appLanguage === item ? "bg-[var(--surface)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
+        {activeTab === "general" && (
+          <Card>
+            <CardHeader>
+              <div>
+                <SectionLabel>{copy.appLanguage}</SectionLabel>
+                <CardTitle className="mt-2">{copy.interfaceLanguage}</CardTitle>
+              </div>
+              <Languages className="size-5 text-[var(--accent)]" />
+            </CardHeader>
+            <CardContent>
+              <CardDescription>{copy.appLanguageDescription}</CardDescription>
+              <div className="mt-5 grid grid-cols-2 gap-2 rounded-xl bg-[var(--surface-muted)] p-1.5">
+                {(["en", "vi"] as AppLanguage[]).map((item) => (
+                  <button
+                    type="button"
+                    key={item}
+                    onClick={() => onChangeLanguage(item)}
+                    aria-pressed={appLanguage === item}
+                    className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${appLanguage === item ? "bg-[var(--surface)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
+                  >
+                    {item === "en" ? copy.english : copy.vietnamese}
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        {activeTab === "model" && (
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <div>
+                <SectionLabel>{copy.localEngine}</SectionLabel>
+                <CardTitle className="mt-2">{copy.modelDetails}</CardTitle>
+                <CardDescription className="mt-2">{copy.modelDescription}</CardDescription>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Badge
+                  className={
+                    !modelReady
+                      ? "border-[var(--destructive-border)] bg-[var(--destructive-surface)] text-[var(--destructive)]"
+                      : undefined
+                  }
                 >
-                  {item === "en" ? copy.english : copy.vietnamese}
-                </button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <div>
-              <SectionLabel>{copy.localEngine}</SectionLabel>
-              <CardTitle className="mt-2">{copy.omnivoiceStatus}</CardTitle>
-            </div>
-            <Badge
-              className={
-                !modelReady
-                  ? "border-[var(--destructive-border)] bg-[var(--destructive-surface)] text-[var(--destructive)]"
-                  : undefined
-              }
-            >
-              {modelReady ? copy.ready : copy.unavailable}
-            </Badge>
-          </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-x-4 gap-y-5">
-            <Metric
-              label={copy.connection}
-              value={engineOnline ? copy.offlineEngine : copy.unavailable}
-            />
-            <Metric label={copy.device} value={device.toUpperCase()} />
-            <Metric label={copy.languages} value="EN · VI" />
-            <Metric label={copy.sampleRate} value="24 KHZ" />
-          </CardContent>
-        </Card>
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <div>
-              <SectionLabel>{copy.localStorage}</SectionLabel>
-              <CardTitle className="mt-2">{copy.appDataDirectory}</CardTitle>
-            </div>
-            <HardDrive className="size-5 text-[var(--accent)]" />
-          </CardHeader>
-          <CardContent>
-            <code className="block overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3.5 font-mono text-xs text-[var(--foreground)]">
-              {dataDir ?? copy.loadingDataPath}
-            </code>
-            <p className="mt-3 text-sm leading-6 text-[var(--muted-foreground)]">
-              {copy.storageDescription}
-            </p>
-          </CardContent>
-        </Card>
+                  {modelReady ? copy.ready : copy.unavailable}
+                </Badge>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={onRefreshStatus}
+                  disabled={isRefreshingStatus}
+                >
+                  {isRefreshingStatus ? (
+                    <LoaderCircle className="size-3.5 animate-spin" />
+                  ) : (
+                    <RotateCcw className="size-3.5" />
+                  )}
+                  {isRefreshingStatus ? copy.refreshingStatus : copy.refreshStatus}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-5">
+                <div className="flex items-end justify-between gap-4">
+                  <Metric
+                    label={copy.modelPackage}
+                    value={modelReady ? copy.verifiedAssets : copy.unverifiedAssets}
+                  />
+                  <span className="font-mono text-lg font-semibold text-[var(--accent)]">
+                    {modelReady ? "100%" : "0%"}
+                  </span>
+                </div>
+                <Progress value={modelReady ? 100 : 0} className="mt-5" />
+                <p className="mt-3 text-xs text-[var(--muted-foreground)]">
+                  {engineOnline ? copy.offlineEngine : copy.unavailable}
+                </p>
+              </div>
+              <div className="mt-5 grid gap-3 md:grid-cols-3">
+                {assets.map((asset) => (
+                  <div
+                    key={asset}
+                    className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3"
+                  >
+                    <CheckCircle2
+                      className={`size-4 ${modelReady ? "text-[var(--success)]" : "text-[var(--muted-foreground)]"}`}
+                    />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{asset}</p>
+                      <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--muted-foreground)]">
+                        {modelReady ? copy.assetReady : copy.unavailable}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-6 grid gap-x-4 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
+                <Metric label={copy.modelId} value={modelId} />
+                <Metric label={copy.tokenizerId} value={tokenizerId} />
+                <Metric label={copy.asrModelId} value={asrModelId} />
+                <Metric
+                  label={copy.connection}
+                  value={engineOnline ? copy.offlineEngine : copy.unavailable}
+                />
+                <Metric label={copy.device} value={device.toUpperCase()} />
+                <Metric label={copy.languages} value="EN · VI" />
+                <Metric label={copy.sampleRate} value="24 KHZ" />
+              </div>
+              {modelStatusError && (
+                <div className="mt-5">
+                  <ErrorMessage>{modelStatusError}</ErrorMessage>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+        {activeTab === "storage" && (
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <div>
+                <SectionLabel>{copy.localStorage}</SectionLabel>
+                <CardTitle className="mt-2">{copy.appDataDirectory}</CardTitle>
+              </div>
+              <HardDrive className="size-5 text-[var(--accent)]" />
+            </CardHeader>
+            <CardContent>
+              <code className="block overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3.5 font-mono text-xs text-[var(--foreground)]">
+                {dataDir ?? copy.loadingDataPath}
+              </code>
+              <p className="mt-3 text-sm leading-6 text-[var(--muted-foreground)]">
+                {copy.storageDescription}
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );
@@ -1087,7 +1259,8 @@ function WorkspaceView({
                   <SelectItem value="auto">{copy.selectSavedVoice}</SelectItem>
                   {voices.map((voice) => (
                     <SelectItem key={voice.name} value={voice.name}>
-                      {voice.name}
+                      {voice.name} · {voice.language.toUpperCase()}
+                      {voice.is_default ? ` · ${copy.defaultVoice}` : ""}
                     </SelectItem>
                   ))}
                 </Select>
@@ -1333,6 +1506,8 @@ function App() {
   const [voiceListError, setVoiceListError] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isImportingSeeds, setIsImportingSeeds] = useState(false);
+  const [seedImportStatus, setSeedImportStatus] = useState<SeedImportStatus | null>(null);
   const [deletingVoice, setDeletingVoice] = useState<string | null>(null);
   const [selectedVoice, setSelectedVoice] = useState("auto");
   const [profileName, setProfileName] = useState("");
@@ -1342,9 +1517,12 @@ function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [engineOnline, setEngineOnline] = useState(false);
+  const [engineStatus, setEngineStatus] = useState<StatusResult | null>(null);
   const [logs, setLogs] = useState<RequestLog[]>(() => client.getLogs());
   const [device, setDevice] = useState("unknown");
   const [dataDir, setDataDir] = useState<string | null>(null);
+  const [modelStatusError, setModelStatusError] = useState<string | null>(null);
+  const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
   const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null);
 
   const appLanguage: AppLanguage = translator.language === "vi" ? "vi" : "en";
@@ -1357,16 +1535,14 @@ function App() {
     let active = true;
     void (async () => {
       try {
-        const status = await client.request<{
-          model_ready: boolean;
-          device: string;
-          languages: Language[];
-        }>({ type: "status" });
+        const status = await client.request<StatusResult>({ type: "status" });
         if (!active) return;
         setEngineOnline(true);
         setDevice(status.device);
+        setEngineStatus(status);
         if (status.model_ready) {
           setModelReady(true);
+          await importBundledSeedVoices();
           await refreshVoices();
         } else await prepareModel();
       } catch (reason) {
@@ -1400,11 +1576,28 @@ function App() {
     try {
       await client.request<{ model_ready: boolean }>({ type: "prepare_model" });
       setModelReady(true);
+      await importBundledSeedVoices();
       await refreshVoices();
     } catch (reason) {
       setSetupError(reason instanceof Error ? reason.message : copy.modelSetupFailed);
     } finally {
       setIsPreparing(false);
+    }
+  }
+
+  async function refreshModelStatus() {
+    setIsRefreshingStatus(true);
+    setModelStatusError(null);
+    try {
+      const status = await client.request<StatusResult>({ type: "status" });
+      setEngineOnline(true);
+      setDevice(status.device);
+      setEngineStatus(status);
+      setModelReady(status.model_ready);
+    } catch (reason) {
+      setModelStatusError(reason instanceof Error ? reason.message : copy.engineUnavailable);
+    } finally {
+      setIsRefreshingStatus(false);
     }
   }
 
@@ -1426,6 +1619,13 @@ function App() {
     try {
       const response = await client.request<{ voices: VoiceProfile[] }>({ type: "list_voices" });
       setVoices(response.voices);
+      setSelectedVoice((current) => {
+        if (mode !== "profile") return current;
+        const selected = response.voices.find((voice) => voice.name === current);
+        return selected?.language === language
+          ? current
+          : preferredVoiceForLanguage(response.voices, language);
+      });
     } catch (reason) {
       setVoiceListError(reason instanceof Error ? reason.message : copy.couldNotLoadProfiles);
     } finally {
@@ -1439,6 +1639,23 @@ function App() {
   function changeSynthesisLanguage(next: Language) {
     setLanguage(next);
     localStorage.setItem("volo-ai.synthesis-language", next);
+    if (mode === "profile") {
+      setSelectedVoice((current) => {
+        const selected = voices.find((voice) => voice.name === current);
+        return selected?.language === next ? current : preferredVoiceForLanguage(voices, next);
+      });
+    }
+  }
+
+  function changeVoiceMode(next: VoiceMode) {
+    setMode(next);
+    if (next === "profile") {
+      setSelectedVoice((current) =>
+        voices.some((voice) => voice.name === current && voice.language === language)
+          ? current
+          : preferredVoiceForLanguage(voices, language),
+      );
+    }
   }
 
   async function chooseReference() {
@@ -1448,6 +1665,45 @@ function App() {
       filters: [{ name: "Audio", extensions: ["wav", "mp3", "flac", "ogg"] }],
     });
     if (typeof selected === "string") setRefAudio(selected);
+  }
+
+  async function importSeedFolder() {
+    let selected: string | string[] | null;
+    try {
+      selected = await open({ multiple: false, directory: true });
+    } catch (reason) {
+      setSeedImportStatus({
+        message: reason instanceof Error ? reason.message : copy.seedImportFailed,
+        tone: "error",
+      });
+      return;
+    }
+    if (typeof selected !== "string") return;
+    setIsImportingSeeds(true);
+    setSeedImportStatus(null);
+    setProfileError(null);
+    try {
+      const result = await client.request<SeedImportResult>({
+        type: "import_seed_voices",
+        seed_dir: selected,
+      });
+      await refreshVoices();
+      if (!result.imported.length && !result.skipped.length && !result.errors.length) {
+        setSeedImportStatus({ message: copy.noSeedVoicesFound, tone: "error" });
+      } else {
+        setSeedImportStatus({
+          message: `${copy.seedImportCompleted}: ${result.imported.length} ${copy.seedImported}, ${result.skipped.length} ${copy.seedSkipped}, ${result.errors.length} ${copy.seedErrors}`,
+          tone: result.errors.length ? "error" : "success",
+        });
+      }
+    } catch (reason) {
+      setSeedImportStatus({
+        message: reason instanceof Error ? reason.message : copy.seedImportFailed,
+        tone: "error",
+      });
+    } finally {
+      setIsImportingSeeds(false);
+    }
   }
 
   async function synthesize() {
@@ -1541,6 +1797,7 @@ function App() {
         name: profileName.trim(),
         ref_audio: refAudio,
         ref_text: refText || undefined,
+        language,
       });
       setProfileName("");
       await refreshVoices();
@@ -1681,7 +1938,13 @@ function App() {
                     engineOnline={engineOnline}
                     device={device}
                     dataDir={dataDir}
+                    modelId={engineStatus?.model ?? "OmniVoice"}
+                    tokenizerId={engineStatus?.tokenizer ?? "Audio tokenizer"}
+                    asrModelId={engineStatus?.asr_model ?? "Whisper ASR"}
+                    modelStatusError={modelStatusError}
+                    isRefreshingStatus={isRefreshingStatus}
                     onChangeLanguage={changeAppLanguage}
+                    onRefreshStatus={() => void refreshModelStatus()}
                     onBack={() => setView("workspace")}
                   />
                 ) : view === "logs" ? (
@@ -1696,9 +1959,12 @@ function App() {
                     refAudio={refAudio}
                     refText={refText}
                     isSaving={isSavingProfile}
+                    isImporting={isImportingSeeds}
+                    importStatus={seedImportStatus}
                     deletingVoice={deletingVoice}
                     copy={copy}
                     onChooseReference={() => void chooseReference()}
+                    onImportSeedFolder={() => void importSeedFolder()}
                     onProfileNameChange={setProfileName}
                     onRefTextChange={setRefText}
                     onSave={saveProfile}
@@ -1727,7 +1993,7 @@ function App() {
                     error={error}
                     isGenerating={isGenerating}
                     onLanguageChange={changeSynthesisLanguage}
-                    onModeChange={setMode}
+                    onModeChange={changeVoiceMode}
                     onTextChange={setText}
                     onSpeedChange={setSpeed}
                     onFormatChange={setFormat}

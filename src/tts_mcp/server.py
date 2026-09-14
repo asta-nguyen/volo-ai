@@ -159,7 +159,12 @@ def list_voices() -> str:
 
 
 @server.tool()
-def save_voice(name: str, ref_audio_path: str, ref_text: str | None = None) -> str:
+def save_voice(
+    name: str,
+    ref_audio_path: str,
+    ref_text: str | None = None,
+    language: str = "en",
+) -> str:
     """Save a voice profile from reference audio for reuse in future sessions.
 
     This avoids re-loading reference audio each time you clone.
@@ -168,12 +173,13 @@ def save_voice(name: str, ref_audio_path: str, ref_text: str | None = None) -> s
         name: Profile name.
         ref_audio_path: Path to reference audio file.
         ref_text: Transcript (auto-transcribed if omitted).
+        language: Reference voice language, either "en" or "vi".
 
     Returns:
         Path where the voice profile was saved.
     """
     engine = get_engine()
-    path = engine.save_voice(name, ref_audio_path, ref_text)
+    path = engine.save_voice(name, ref_audio_path, ref_text, language)
     return f"Voice profile '{name}' saved to: {path}"
 
 

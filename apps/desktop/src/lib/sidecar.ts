@@ -22,8 +22,10 @@ export type GenerationConfig = {
 
 export type VoiceProfile = {
   name: string;
+  language: Language;
   ref_audio?: string;
   ref_text?: string | null;
+  is_default: boolean;
 };
 
 type Request = {
@@ -53,6 +55,9 @@ export type StatusResult = {
   model_ready: boolean;
   device: string;
   languages: Language[];
+  model: string;
+  tokenizer: string;
+  asr_model: string;
 };
 
 export type SynthesisResult = {

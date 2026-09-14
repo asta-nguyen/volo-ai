@@ -1,0 +1,9 @@
+{
+  "id": "omnivoice-demo",
+  "version": 1,
+  "name": "OmniVoice-Demo",
+  "language": "vi",
+  "default": true,
+  "ref_text": "Vũ khí mạnh nhất của OmniVoice là khả năng Voice Cloning. Bạn chỉ cần đưa cho nó đúng 1 file âm thanh mẫu dài 10 giây, nó sẽ lập tức nhái lại y hệt chất giọng đó mà không cần phải train lại model.",
+  "audio": "reference.wav"
+}

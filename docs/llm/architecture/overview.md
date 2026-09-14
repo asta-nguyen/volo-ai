@@ -15,12 +15,21 @@ the Python worker as a Tauri sidecar and stores model/audio data locally.
 - `tts_mcp.desktop:main` consumes JSONL requests for the Tauri desktop app,
   including auto, file-clone, saved-profile, and voice-design synthesis.
 - `apps/desktop/src/main.tsx` mounts the React UI; `App.tsx` owns the desktop
-  user flow and the dedicated voice-profile library, `src/lib/i18n.ts` owns
-  the English/Vietnamese UI resources, and `src/lib/sidecar.ts` owns the
-  sidecar process connection.
+  user flow and the dedicated voice-profile library, including the user-facing
+  seed-folder import picker, `src/lib/i18n.ts` owns the English/Vietnamese UI
+  resources, and `src/lib/sidecar.ts` owns the sidecar process connection.
 - `apps/desktop/src/components/ui.tsx` contains source-owned shadcn-style
   primitives backed by Base UI, `src/lib/utils.ts` owns class composition,
   and `src/styles.css` loads Tailwind CSS v4 and the Volo AI theme tokens.
+- When the model is ready, `App.tsx` resolves the bundled `resources/seed-voices`
+  directory and asks the sidecar to import its versioned manifests. The
+  importer copies each reference audio file into app-local storage and creates
+  the clone prompt there; SQLite records metadata, defaults, and installed
+  seed versions. The Voice Profiles view can also pass a user-selected seed
+  root folder through the same sidecar operation; valid seed subfolders import
+  independently while skipped and invalid folders are reported. Setup is
+  therefore independent of the source repository or the original sample-audio
+  path.
 - `scripts/build_sidecar.py` packages the desktop worker and FFmpeg into a
   target-named executable for Tauri.
 
@@ -46,15 +55,20 @@ requires FFmpeg and pydub.
 | Speech generation | `Engine.generate`, CLI/MCP tools, and desktop `synthesize` request; desktop adds voice design and advanced OmniVoice generation config |
 | Model lifecycle | `Engine.model_status`, `Engine.ensure_model`, and desktop progress events |
 | Voice profiles | `Engine.save_voice`, `load_voice`, `list_voices`, and `delete_voice` |
-| Desktop settings | `App.tsx` and `i18n.ts` persist the app interface locale separately from the synthesis language |
+| Seed profiles | `Engine.import_seed_voices`, the `import_seed_voices` sidecar request, and bundled seed manifests |
+| Desktop settings | `App.tsx` and `i18n.ts` expose General, Model, and Storage tabs; the Model tab reports readiness for the three offline assets and the configured device/model IDs |
 | Desktop shell | React UI, Tauri plugins, and the JSONL sidecar protocol |
 
 ## Data and dependencies
 
 The engine reads `TTS_MCP_DATA_DIR`, defaulting to `~/.tts-mcp`. Model assets
-are stored below its `models` directory and generated audio below `outputs`.
-The desktop shell passes its Tauri app-data directory to the sidecar. The
-runtime requires Python 3.10+, while the frontend requires Node.js 20+.
+are stored below its `models` directory, generated audio below `outputs`, and
+the SQLite database at `volo.db`. Voice metadata lives in `voice_profiles` and
+installed bundled seeds in `app_seeds`; each profile's copied reference audio
+and clone prompt live under `voices/<profile-name>/`. The desktop shell passes
+its Tauri app-data directory to the sidecar. Release bundles include the
+native sidecar and FFmpeg, so installed users do not need Python, Node.js, or
+FFmpeg; those runtimes are only development/build requirements.
 The app interface supports English and Vietnamese through `i18next` and
 `react-i18next`; the app locale is stored as `volo-ai.app-language`, while the
 synthesis target remains `volo-ai.synthesis-language`.
@@ -75,6 +89,9 @@ synthesis target remains `volo-ai.synthesis-language`.
 - `apps/desktop/components.json`
 - `apps/desktop/src/main.tsx`
 - `apps/desktop/src/App.tsx`
+- `apps/desktop/src-tauri/capabilities/default.json`
+- `apps/desktop/src-tauri/tauri.conf.json`
+- `apps/desktop/src-tauri/resources/seed-voices/omnivoice-demo/manifest.json`
 - `apps/desktop/src/lib/i18n.ts`
 - `apps/desktop/src/lib/sidecar.ts`
 - `scripts/build_sidecar.py`

@@ -16,9 +16,13 @@ these user-facing areas for a future documentation pass:
   forwards native generation controls and duration-based long-form chunking.
 - [~] File-based voice cloning and saved profiles — the desktop provides a
   dedicated profile library for creating, listing, reusing, and deleting local
-  profiles through `save_voice`, `list_voices`, and `delete_voice`.
+  profiles through `save_voice`, `list_voices`, and `delete_voice`. SQLite
+  stores profile metadata, while copied audio and clone prompts stay under the
+  app-data directory; bundled versioned seed folders are imported on setup,
+  and users can import additional seed folders from the Voice Profiles view.
 - [~] Desktop settings and interface localization — Settings stores the app
-  locale separately from the synthesis language.
+  locale separately from the synthesis language and exposes General, Model,
+  and Storage tabs for local engine status and data location.
 - [~] CLI and MCP generation — `tts_mcp/cli.py` and `tts_mcp/server.py`.
 
 ## Sources

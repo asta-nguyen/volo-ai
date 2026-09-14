@@ -27,7 +27,6 @@ Source commit at read time: `fca8f167f07b2a40950d1b9e6f3da963f5eb89c0`
   - `src/tts_mcp/engine.py`
   - `src/tts_mcp/desktop.py`
   - `apps/desktop/src/App.tsx`
-  - `apps/desktop/src/lib/sidecar.ts`
 
 ## 2026-09-12
 
@@ -69,5 +68,50 @@ Source commit at read time: `fca8f167f07b2a40950d1b9e6f3da963f5eb89c0`
   - `apps/desktop/src/App.tsx`
   - `apps/desktop/src/components/ui.tsx`
   - `apps/desktop/src/lib/utils.ts`
+  - `apps/desktop/src/lib/i18n.ts`
+  - `apps/desktop/src/lib/sidecar.ts`
+
+## 2026-09-13
+
+- Page: `architecture/overview.md`
+  Sources:
+  - `apps/desktop/src/App.tsx`
+  - `apps/desktop/src-tauri/capabilities/default.json`
+  - `apps/desktop/src/lib/sidecar.ts`
+  - `src/tts_mcp/desktop.py`
+  - `src/tts_mcp/engine.py`
+- Page: `INDEX.md`
+  Sources:
+  - `apps/desktop/src/App.tsx`
+  - `src/tts_mcp/desktop.py`
+  - `src/tts_mcp/engine.py`
+
+## 2026-09-13
+
+- Page: `architecture/overview.md`
+  Sources:
+  - `src/tts_mcp/engine.py`
+  - `src/tts_mcp/desktop.py`
+  - `apps/desktop/src/App.tsx`
+  - `apps/desktop/src-tauri/tauri.conf.json`
+  - `apps/desktop/src-tauri/resources/seed-voices/omnivoice-demo/manifest.json`
+- Page: `INDEX.md`
+  Sources:
+  - `src/tts_mcp/engine.py`
+  - `src/tts_mcp/desktop.py`
+  - `apps/desktop/src/App.tsx`
+
+## 2026-09-13
+
+Source state at read time: working tree (uncommitted)
+
+- Page: `architecture/overview.md`
+  Sources:
+  - `apps/desktop/src/App.tsx`
+  - `src/tts_mcp/desktop.py`
+  - `src/tts_mcp/engine.py`
+- Page: `INDEX.md`
+  Sources:
+  - `apps/desktop/src/App.tsx`
   - `apps/desktop/src/lib/i18n.ts`
   - `apps/desktop/src/lib/sidecar.ts`

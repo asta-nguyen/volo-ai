@@ -98,10 +98,7 @@ def _validate_generation_config(value: Any) -> dict[str, Any]:
         raise ValueError("generation_config must be an object")
     unknown = [key for key in value if key not in GENERATION_CONFIG_KEYS]
     if unknown:
-        raise ValueError(
-            "Unsupported generation config: "
-            + ", ".join(str(key) for key in unknown)
-        )
+        raise ValueError("Unsupported generation config: " + ", ".join(str(key) for key in unknown))
 
     validated: dict[str, Any] = {}
     for key, item in value.items():
@@ -110,9 +107,7 @@ def _validate_generation_config(value: Any) -> dict[str, Any]:
                 raise ValueError(f"{key} must be a boolean")
             validated[key] = item
         else:
-            validated[key] = _validate_number(
-                item, key, positive=key in GENERATION_POSITIVE_KEYS
-            )
+            validated[key] = _validate_number(item, key, positive=key in GENERATION_POSITIVE_KEYS)
     return validated
 
 
@@ -216,6 +211,9 @@ def dispatch_request(
                     "model_ready": bool(status["ready"]),
                     "device": status["device"],
                     "languages": list(SUPPORTED_LANGUAGES),
+                    "model": status["model"],
+                    "tokenizer": status["tokenizer"],
+                    "asr_model": status["asr_model"],
                 },
             )
         if operation == "prepare_model":
@@ -233,8 +231,14 @@ def dispatch_request(
         if operation == "save_voice":
             name = request["name"]
             ref_audio = _validate_reference_audio(request["ref_audio"])
-            path = engine.save_voice(name, ref_audio, request.get("ref_text"))
+            language = validate_language(request.get("language", "en"))
+            path = engine.save_voice(name, ref_audio, request.get("ref_text"), language)
             return _ok(request_id, {"path": path})
+        if operation == "import_seed_voices":
+            seed_dir = request["seed_dir"]
+            if not isinstance(seed_dir, str) or not seed_dir.strip():
+                raise ValueError("Seed directory must be a non-empty string")
+            return _ok(request_id, engine.import_seed_voices(seed_dir))
         if operation == "list_voices":
             return _ok(request_id, {"voices": Engine.list_voices()})
         if operation == "delete_voice":
@@ -257,8 +261,14 @@ def dispatch_request(
         return _error(request_id, "invalid_input", str(exc))
     except RuntimeError as exc:
         return _error(request_id, "operation_failed", str(exc))
-    except Exception:
-        print("[tts-mcp] desktop operation failed", file=sys.stderr)
+    except Exception as exc:
+        print(
+            f"[tts-mcp] desktop operation failed: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        import traceback
+
+        traceback.print_exc(file=sys.stderr)
         return _error(request_id, "internal_error", "The local TTS operation failed")
 
 

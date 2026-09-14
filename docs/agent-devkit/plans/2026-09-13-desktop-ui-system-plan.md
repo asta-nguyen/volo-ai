@@ -31,6 +31,9 @@ all user-visible TTS capabilities.
   small desktop surface; centralize only reusable UI primitives in
   `src/components/ui.tsx` to avoid prop-plumbing files without independent
   behavior.
+- 2026-09-13 — Seed `OmniVoice-Demo` after model readiness when the supplied
+  local sample exists; skip silently when it does not, and never recreate it
+  after the user deletes it.
 
 ## Tasks
 
@@ -134,6 +137,9 @@ Change:
   audio preview/export behavior.
 - Add only missing EN/VI labels/descriptions needed by the new UI; do not
   change the existing translation model.
+- After setup or a ready-state launch, check for the supplied sample path and
+  create `OmniVoice-Demo` through `save_voice` once; refresh the profile list
+  after the seed succeeds. Missing sample files do not fail setup.
 
 Verify:
 

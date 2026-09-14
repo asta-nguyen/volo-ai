@@ -88,6 +88,7 @@ def cmd_voices(args: argparse.Namespace) -> None:
     for v in voices:
         ref_text = v.get("ref_text") or "(auto-transcribed)"
         print(f"  • {v['name']}")
+        print(f"      language: {v.get('language', 'en')}")
         print(f"      ref: {v.get('ref_audio', '?')}")
         print(f"      text: {ref_text}")
 
@@ -95,7 +96,7 @@ def cmd_voices(args: argparse.Namespace) -> None:
 def cmd_save_voice(args: argparse.Namespace) -> None:
     """Save a voice profile for reuse."""
     engine = get_engine()
-    path = engine.save_voice(args.name, args.ref, args.ref_text)
+    path = engine.save_voice(args.name, args.ref, args.ref_text, args.language)
     print(f"[tts-mcp] Saved voice '{args.name}' → {path}")
 
 
@@ -160,6 +161,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_save.add_argument("name", help="Profile name")
     p_save.add_argument("--ref", required=True, help="Reference audio file")
     p_save.add_argument("--ref-text", help="Transcript (auto if omitted)")
+    p_save.add_argument(
+        "--language",
+        choices=("en", "vi"),
+        default="en",
+        help="Reference voice language (default: en)",
+    )
     p_save.set_defaults(func=cmd_save_voice)
 
     # delete-voice

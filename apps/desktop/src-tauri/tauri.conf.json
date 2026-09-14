@@ -33,6 +33,7 @@
     "active": true,
     "targets": "all",
     "icon": ["icons/icon.png"],
+    "resources": ["resources/seed-voices"],
     "externalBin": ["binaries/tts-sidecar"]
   }
 }

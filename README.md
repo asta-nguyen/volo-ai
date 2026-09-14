@@ -4,7 +4,7 @@ Local text-to-speech desktop app powered by OmniVoice. The app runs on
 macOS, Windows, and Linux through Tauri, with a bundled Python sidecar for
 release builds.
 
-## Current MVP
+## Current release scope
 
 - Download OmniVoice assets on first launch with progress feedback.
 - Generate speech with an automatic voice.
@@ -13,11 +13,12 @@ release builds.
 - English and Vietnamese synthesis, with English selected by default.
 - English and Vietnamese app interface, configurable in Settings.
 - Preview and export WAV or MP3.
-- Tailwind CSS v4 utilities with SCSS component styling.
+- SQLite-backed local voice profiles with portable seed manifests.
+- Tailwind CSS v4 utilities with shadcn-style/Base UI primitives.
 
 All text, audio, model files, and generated output stay local. Microphone
-recording, cloud inference, voice design, batch generation, and history are
-not part of the MVP.
+recording, cloud inference, batch generation, and history are outside the
+current release scope.
 
 ## Requirements
 
@@ -39,10 +40,13 @@ npm --prefix apps/desktop run tauri dev
 ```
 
 On first launch, wait for the local model download to finish. Later launches
-reuse the model from the platform app-data directory and work offline.
+reuse the model from the platform app-data directory and work offline. The
+bundled `OmniVoice-Demo` voice is copied into the same app-data directory and
+does not depend on any repository path.
 
-The checked-in development sidecar currently targets macOS Apple Silicon.
-Build a native sidecar before packaging for another platform.
+Release builds include a native Python sidecar and FFmpeg helper, so users do
+not install Python, Node.js, or FFmpeg. Build the sidecar on the matching
+native host before packaging for another platform.
 
 ## Test
 

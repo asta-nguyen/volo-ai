@@ -8,7 +8,12 @@
 - A native FFmpeg executable for MP3 export during development
 
 The packaged app bundles its Python sidecar and FFmpeg helper. End users do
-not install these runtimes.
+not install these runtimes. It also bundles the versioned voice seeds under
+`apps/desktop/src-tauri/resources/seed-voices`; the first ready launch copies
+seed audio and generated prompts into the platform app-data directory. From
+Voice Profiles, users can also import a seed root folder containing one
+subfolder per voice seed; each seed must include `manifest.json` and its
+declared audio file.
 
 ## Run locally
 
@@ -21,9 +26,9 @@ npm --prefix apps/desktop install
 npm --prefix apps/desktop run tauri dev
 ```
 
-The desktop sidecar is launched by Tauri. The development launcher currently
-supports the checked-in macOS Apple Silicon host target and runs
-`python -m tts_mcp.desktop` from the repository source tree.
+The desktop sidecar is launched by Tauri. The development launcher can use the
+repository sidecar wrapper, but release packaging must use the target-named
+PyInstaller executable produced below.
 
 The React UI uses `i18next` and `react-i18next` for its English/Vietnamese
 interface locale. Tailwind CSS v4 is loaded from `src/styles.css` through the
@@ -31,9 +36,11 @@ Vite plugin, while source-owned shadcn-style primitives backed by Base UI live
 in `src/components/ui.tsx`. The app uses `lucide-react` for icons and Motion
 for reduced-motion-aware route and state transitions. The
 Settings language is separate from the synthesis language selected in the
-workspace.
+workspace. Settings is split into General, Model, and Storage tabs. The Model
+tab can be reopened after first-run setup to inspect the verified 100% state,
+the OmniVoice/tokenizer/Whisper assets, device, model IDs, and target languages.
 
-The optional `tn` extra is not required by the desktop MVP; it adds native
+The optional `tn` extra is not required by the desktop release; it adds native
 OpenFST/Pynini dependencies for text normalization.
 
 ## Format code

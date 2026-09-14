@@ -34,6 +34,9 @@ the existing local-first behavior intact.
   independent EN/VI interface and synthesis-language controls.
 - Prefer native CSS transitions for simple hover/focus/progress effects; use
   Motion only where it improves state continuity or hierarchy.
+- After the local model becomes ready, seed the `OmniVoice-Demo` profile once
+  from the developer-provided sample audio when that path exists. The seed is
+  best-effort and never blocks setup on machines without that sample.
 
 ## Scope
 
@@ -63,7 +66,9 @@ available.
 
 Redesign the saved-profile library and create form with loading, empty, list
 error, form error, save, use, delete, and confirmation states. Profile data
-and existing sidecar operations remain unchanged.
+and existing sidecar operations remain unchanged. A first-ready desktop
+session can also show the seeded `OmniVoice-Demo` profile with the supplied
+Vietnamese reference transcript.
 
 ### Settings and logs
 

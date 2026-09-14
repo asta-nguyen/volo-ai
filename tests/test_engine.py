@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+import wave
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,8 +18,32 @@ class FakeModel:
         self.kwargs = kwargs
         return [np.zeros(8, dtype=np.float32)]
 
+    @staticmethod
+    def create_voice_clone_prompt(ref_audio, ref_text=None):
+        class FakePrompt:
+            def save(self, path):
+                Path(path).write_bytes(b"prompt")
+
+        return FakePrompt()
+
 
 class EngineTests(unittest.TestCase):
+    @staticmethod
+    def write_wav(path: Path) -> None:
+        with wave.open(str(path), "wb") as audio:
+            audio.setnchannels(1)
+            audio.setsampwidth(2)
+            audio.setframerate(24000)
+            audio.writeframes(b"\x00\x00")
+
+    def storage_patches(self, root: Path):
+        return patch.multiple(
+            "tts_mcp.engine",
+            DATA_DIR=root,
+            DB_PATH=root / "volo.db",
+            VOICES_DIR=root / "voices",
+        )
+
     def test_generate_forwards_language(self):
         model = FakeModel()
         engine = Engine()
@@ -102,6 +127,146 @@ class EngineTests(unittest.TestCase):
                 status = Engine().model_status()
 
         self.assertTrue(status["ready"])
+
+    def test_storage_creates_production_schema(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self.storage_patches(root):
+                connection = Engine._open_storage()
+                tables = {
+                    row[0]
+                    for row in connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table'"
+                    )
+                }
+                self.assertIn("voice_profiles", tables)
+                self.assertIn("app_seeds", tables)
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 1)
+                self.assertEqual(connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+                self.assertEqual(connection.execute("PRAGMA busy_timeout").fetchone()[0], 5000)
+                connection.close()
+
+    def test_save_voice_copies_reference_and_persists_metadata(self):
+        engine = Engine()
+        engine._model = FakeModel()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.wav"
+            self.write_wav(source)
+            with self.storage_patches(root):
+                saved_path = Path(engine.save_voice("demo", str(source), "xin chao", "vi"))
+                voices = Engine.list_voices()
+                self.assertEqual(len(voices), 1)
+                self.assertEqual(voices[0]["language"], "vi")
+                self.assertFalse(voices[0]["is_default"])
+                self.assertEqual(Path(voices[0]["ref_audio"]).parent.name, "demo")
+                self.assertTrue(saved_path.is_file())
+                self.assertTrue((root / "voices" / "demo" / "reference.wav").is_file())
+                self.assertNotEqual(Path(voices[0]["ref_audio"]), source)
+                self.assertTrue(Engine.delete_voice("demo"))
+                self.assertFalse((root / "voices" / "demo").exists())
+                self.assertTrue(source.exists())
+
+    def test_default_voice_is_unique_per_language(self):
+        engine = Engine()
+        engine._model = FakeModel()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.wav"
+            self.write_wav(source)
+            with self.storage_patches(root):
+                engine.save_voice("vi_one", str(source), language="vi", is_default=True)
+                engine.save_voice("vi_two", str(source), language="vi", is_default=True)
+                engine.save_voice("en_one", str(source), language="en", is_default=True)
+                defaults = {
+                    voice["language"]: voice["name"]
+                    for voice in Engine.list_voices()
+                    if voice["is_default"]
+                }
+                self.assertEqual(defaults, {"vi": "vi_one", "en": "en_one"})
+
+    def test_legacy_profiles_migrate_to_local_paths(self):
+        engine = Engine()
+        engine._model = FakeModel()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "legacy.wav"
+            self.write_wav(source)
+            voices_dir = root / "voices"
+            voices_dir.mkdir()
+            (voices_dir / "legacy.pt").write_bytes(b"legacy prompt")
+            (voices_dir / "legacy.json").write_text(
+                json.dumps(
+                    {
+                        "name": "legacy",
+                        "ref_audio": str(source),
+                        "ref_text": "legacy text",
+                    }
+                )
+            )
+            with self.storage_patches(root):
+                voices = Engine.list_voices()
+                self.assertEqual(voices[0]["name"], "legacy")
+                self.assertTrue((voices_dir / "legacy" / "prompt.pt").exists())
+                self.assertTrue((voices_dir / "legacy" / "reference.wav").exists())
+                self.assertNotEqual(Path(voices[0]["ref_audio"]), source)
+                self.assertTrue((voices_dir / "legacy.json").exists())
+
+    def test_seed_import_is_idempotent_and_marks_default(self):
+        engine = Engine()
+        engine._model = FakeModel()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            seed_folder = root / "seed-voices" / "omnivoice-demo"
+            seed_folder.mkdir(parents=True)
+            source = seed_folder / "reference.wav"
+            self.write_wav(source)
+            (seed_folder / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "id": "omnivoice-demo",
+                        "version": 1,
+                        "name": "OmniVoice-Demo",
+                        "language": "vi",
+                        "default": True,
+                        "ref_text": "Xin chao",
+                        "audio": "reference.wav",
+                    }
+                )
+            )
+            with self.storage_patches(root):
+                first = engine.import_seed_voices(str(seed_folder.parent))
+                second = engine.import_seed_voices(str(seed_folder.parent))
+                self.assertEqual([item["name"] for item in first["imported"]], ["OmniVoice-Demo"])
+                self.assertEqual(second["skipped"][0]["reason"], "already_installed")
+                profile = Engine.list_voices()[0]
+                self.assertEqual(profile["language"], "vi")
+                self.assertTrue(profile["is_default"])
+                self.assertIn(root.resolve(), Path(profile["ref_audio"]).resolve().parents)
+
+    def test_seed_manifest_rejects_path_traversal(self):
+        engine = Engine()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            seed_folder = root / "seed-voices" / "bad-seed"
+            seed_folder.mkdir(parents=True)
+            (root / "outside.wav").write_bytes(b"not audio")
+            (seed_folder / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "id": "bad-seed",
+                        "version": 1,
+                        "name": "BadSeed",
+                        "language": "en",
+                        "default": False,
+                        "audio": "../outside.wav",
+                    }
+                )
+            )
+            with self.storage_patches(root):
+                result = engine.import_seed_voices(str(seed_folder.parent))
+                self.assertEqual(len(result["errors"]), 1)
+                self.assertIn("inside its seed folder", result["errors"][0]["message"])
 
 
 if __name__ == "__main__":

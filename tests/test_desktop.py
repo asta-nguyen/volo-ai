@@ -22,12 +22,21 @@ class DesktopWorkerTests(unittest.TestCase):
 
     def test_status_returns_supported_languages(self):
         engine = Mock()
-        engine.model_status.return_value = {"ready": False, "device": "cpu"}
+        engine.model_status.return_value = {
+            "ready": False,
+            "device": "cpu",
+            "model": "model-id",
+            "tokenizer": "tokenizer-id",
+            "asr_model": "asr-id",
+        }
 
         response = dispatch_request({"id": "1", "type": "status"}, engine)
 
         self.assertTrue(response["ok"])
         self.assertEqual(response["result"]["languages"], ["en", "vi"])
+        self.assertEqual(response["result"]["model"], "model-id")
+        self.assertEqual(response["result"]["tokenizer"], "tokenizer-id")
+        self.assertEqual(response["result"]["asr_model"], "asr-id")
 
     def test_invalid_language_returns_structured_error(self):
         response = dispatch_request(
@@ -48,7 +57,13 @@ class DesktopWorkerTests(unittest.TestCase):
 
     def test_protocol_emits_json_lines(self):
         engine = Mock()
-        engine.model_status.return_value = {"ready": True, "device": "cpu"}
+        engine.model_status.return_value = {
+            "ready": True,
+            "device": "cpu",
+            "model": "model-id",
+            "tokenizer": "tokenizer-id",
+            "asr_model": "asr-id",
+        }
         source = io.StringIO(json.dumps({"id": "1", "type": "status"}) + "\n")
         target = io.StringIO()
 
@@ -279,6 +294,7 @@ class DesktopWorkerTests(unittest.TestCase):
                     "type": "save_voice",
                     "name": "demo",
                     "ref_audio": str(reference),
+                    "language": "vi",
                 },
                 engine,
             )
@@ -290,9 +306,39 @@ class DesktopWorkerTests(unittest.TestCase):
 
         self.assertTrue(save_response["ok"])
         engine.save_voice.assert_called_once()
+        self.assertEqual(engine.save_voice.call_args.args[3], "vi")
         self.assertTrue(delete_response["ok"])
         self.assertTrue(delete_response["result"]["deleted"])
         delete_voice.assert_called_once_with("demo")
+
+    def test_import_seed_voices_request(self):
+        engine = Mock()
+        engine.import_seed_voices.return_value = {
+            "imported": [{"id": "demo", "name": "Demo", "language": "vi"}],
+            "skipped": [],
+            "errors": [],
+        }
+
+        response = dispatch_request(
+            {"id": "seed", "type": "import_seed_voices", "seed_dir": "/resources/seeds"},
+            engine,
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["result"]["imported"][0]["id"], "demo")
+        engine.import_seed_voices.assert_called_once_with("/resources/seeds")
+
+    def test_import_seed_voices_requires_directory(self):
+        engine = Mock()
+
+        response = dispatch_request(
+            {"id": "seed-invalid", "type": "import_seed_voices", "seed_dir": " "},
+            engine,
+        )
+
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "invalid_input")
+        engine.import_seed_voices.assert_not_called()
 
     def test_protocol_cancels_model_preparation(self):
         class BlockingEngine:
