@@ -27,7 +27,6 @@ import {
   SlidersHorizontal,
   Sparkles,
   Trash2,
-  WandSparkles,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -39,6 +38,7 @@ import {
   type RequestLog,
   type StatusResult,
   type SynthesisResult,
+  type VoiceKind,
   type VoiceMode,
   type VoiceProfile,
 } from "./lib/sidecar";
@@ -71,7 +71,7 @@ type SeedImportResult = {
   skipped: Array<{ id: string; name: string; reason: string }>;
   errors: Array<{ id: string; message: string }>;
 };
-type SeedImportStatus = { message: string; tone: "success" | "error" };
+type ImportStatus = { message: string; tone: "success" | "error" };
 
 async function importBundledSeedVoices(): Promise<void> {
   try {
@@ -158,6 +158,16 @@ function fileName(path: string | undefined): string {
   return path?.split(/[\\/]/).pop() || "Reference audio";
 }
 
+function voiceNameFromFile(path: string): string {
+  const stem = fileName(path).replace(/\.[^.]+$/, "");
+  return (
+    stem
+      .replace(/[^A-Za-z0-9_-]+/g, "-")
+      .replace(/^[^A-Za-z0-9]+/, "")
+      .slice(0, 64) || "imported-voice"
+  );
+}
+
 function preferredVoiceForLanguage(voices: VoiceProfile[], language: Language): string {
   return (
     voices.find((voice) => voice.language === language && voice.is_default)?.name ??
@@ -168,7 +178,7 @@ function preferredVoiceForLanguage(voices: VoiceProfile[], language: Language): 
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">
+    <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-(--muted-foreground)">
       {children}
     </p>
   );
@@ -188,14 +198,14 @@ function PageHeader({
   return (
     <header className="mb-7 flex items-end justify-between gap-5">
       <div>
-        <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--accent)]">
+        <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-(--accent)">
           {eyebrow}
         </p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-[-0.045em] text-[var(--foreground)] sm:text-4xl">
+        <h1 className="mt-2 text-3xl font-semibold tracking-[-0.045em] text-(--foreground) sm:text-4xl">
           {title}
         </h1>
         {description && (
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--muted-foreground)]">
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-(--muted-foreground)">
             {description}
           </p>
         )}
@@ -237,14 +247,14 @@ function SetupScreen({
   const progress = Math.round((progressEvent?.progress ?? 0) * 100);
   const assets = [copy.setupAssetOmniVoice, copy.setupAssetTokenizer, copy.setupAssetWhisper];
   return (
-    <main className="flex min-h-screen items-center justify-center overflow-auto bg-[var(--background)] px-6 py-10 text-[var(--foreground)]">
+    <main className="flex min-h-screen items-center justify-center overflow-auto bg-(--background) px-6 py-10 text-(--foreground)">
       <div className="w-full max-w-4xl">
         <div className="mb-9 flex items-center gap-3">
-          <div className="grid size-11 place-items-center rounded-2xl bg-[var(--accent)] text-white shadow-[0_12px_30px_rgb(191_95_69/22%)]">
+          <div className="grid size-11 place-items-center rounded-2xl bg-(--accent) text-white shadow-[0_12px_30px_rgb(191_95_69/22%)]">
             <AudioLines className="size-5" />
           </div>
           <div>
-            <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">
+            <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-(--muted-foreground)">
               VOLO AI
             </p>
             <p className="text-sm font-semibold">{copy.localVoiceStudio}</p>
@@ -260,12 +270,12 @@ function SetupScreen({
                 </CardTitle>
                 <CardDescription className="mt-3 max-w-xl">{copy.setupCopy}</CardDescription>
               </div>
-              <div className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
+              <div className="grid size-12 shrink-0 place-items-center rounded-2xl bg-(--accent-soft) text-(--accent)">
                 <Download className="size-5" />
               </div>
             </CardHeader>
             <CardContent className="p-7">
-              <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-5">
+              <div className="rounded-2xl border border-(--border) bg-(--surface-muted) p-5">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <SectionLabel>{copy.modelPackage}</SectionLabel>
@@ -273,14 +283,14 @@ function SetupScreen({
                       {progressEvent?.message ?? copy.verifyAssets}
                     </p>
                   </div>
-                  <span className="font-mono text-lg font-semibold text-[var(--accent)]">
+                  <span className="font-mono text-lg font-semibold text-(--accent)">
                     {progress}%
                   </span>
                 </div>
                 <Progress value={progress} className="mt-5" />
-                <div className="mt-4 flex items-center justify-between gap-4 text-xs text-[var(--muted-foreground)]">
+                <div className="mt-4 flex items-center justify-between gap-4 text-xs text-(--muted-foreground)">
                   <span className="flex items-center gap-2">
-                    <span className="size-2 rounded-full bg-[var(--success)]" />
+                    <span className="size-2 rounded-full bg-(--success)" />
                     {copy.offlineReady}
                   </span>
                   <span className="font-mono uppercase">
@@ -313,7 +323,7 @@ function SetupScreen({
                   </Button>
                 )}
               </div>
-              <p className="mt-4 text-xs leading-5 text-[var(--muted-foreground)]">
+              <p className="mt-4 text-xs leading-5 text-(--muted-foreground)">
                 {copy.resumeDownload}
               </p>
             </CardContent>
@@ -325,19 +335,19 @@ function SetupScreen({
                   <SectionLabel>{copy.setupDownloads}</SectionLabel>
                   <CardTitle className="mt-2">{copy.setupAssets}</CardTitle>
                 </div>
-                <ShieldCheck className="size-5 text-[var(--success)]" />
+                <ShieldCheck className="size-5 text-(--success)" />
               </CardHeader>
               <CardContent className="space-y-2.5">
                 {assets.map((asset) => (
                   <div
                     key={asset}
-                    className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-3.5 py-3 text-sm"
+                    className="flex items-center gap-3 rounded-xl border border-(--border) bg-(--surface-muted) px-3.5 py-3 text-sm"
                   >
-                    <CheckCircle2 className="size-4 text-[var(--success)]" />
+                    <CheckCircle2 className="size-4 text-(--success)" />
                     {asset}
                   </div>
                 ))}
-                <p className="pt-2 text-xs leading-5 text-[var(--muted-foreground)]">
+                <p className="pt-2 text-xs leading-5 text-(--muted-foreground)">
                   {copy.setupAssetsDescription}
                 </p>
               </CardContent>
@@ -348,17 +358,17 @@ function SetupScreen({
                   <SectionLabel>{copy.setupAfter}</SectionLabel>
                   <CardTitle className="mt-2">{copy.setupAfter}</CardTitle>
                 </div>
-                <Sparkles className="size-5 text-[var(--accent)]" />
+                <Sparkles className="size-5 text-(--accent)" />
               </CardHeader>
               <CardContent className="pt-0">
-                <p className="text-sm leading-6 text-[var(--muted-foreground)]">
+                <p className="text-sm leading-6 text-(--muted-foreground)">
                   {copy.setupAfterDescription}
                 </p>
                 <div className="mt-5 flex items-center gap-2 text-xs font-semibold">
-                  <HardDrive className="size-4 text-[var(--accent)]" />
+                  <HardDrive className="size-4 text-(--accent)" />
                   {copy.setupStorageValue}
                 </div>
-                <p className="mt-2 text-xs leading-5 text-[var(--muted-foreground)]">
+                <p className="mt-2 text-xs leading-5 text-(--muted-foreground)">
                   {copy.setupStorageDescription}
                 </p>
               </CardContent>
@@ -380,22 +390,22 @@ function LogsView({ logs, copy }: { logs: RequestLog[]; copy: UiCopy }) {
         title={copy.localActivity}
         description={copy.logsDescription}
         action={
-          <Badge className="border-[var(--border)] bg-[var(--surface-muted)] text-[var(--muted-foreground)]">
-            <span className="mr-2 size-1.5 rounded-full bg-[var(--success)]" />
+          <Badge className="border-(--border) bg-(--surface-muted) text-(--muted-foreground)">
+            <span className="mr-2 size-1.5 rounded-full bg-(--success)" />
             {copy.sessionOnly}
           </Badge>
         }
       />
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
         {[
-          [logs.length, copy.requests, "text-[var(--foreground)]"],
-          [successCount, copy.success, "text-[var(--success)]"],
-          [errorCount, copy.errors, "text-[var(--destructive)]"],
+          [logs.length, copy.requests, "text-(--foreground)"],
+          [successCount, copy.success, "text-(--success)"],
+          [errorCount, copy.errors, "text-(--destructive)"],
         ].map(([value, label, color]) => (
           <Card key={String(label)} className="rounded-xl">
             <CardContent className="p-4">
               <p className={`text-2xl font-semibold tracking-[-0.04em] ${color}`}>{value}</p>
-              <p className="mt-1 text-xs text-[var(--muted-foreground)]">{label}</p>
+              <p className="mt-1 text-xs text-(--muted-foreground)">{label}</p>
             </CardContent>
           </Card>
         ))}
@@ -403,16 +413,16 @@ function LogsView({ logs, copy }: { logs: RequestLog[]; copy: UiCopy }) {
       <Card>
         {logs.length === 0 ? (
           <CardContent className="flex min-h-72 flex-col items-center justify-center p-8 text-center">
-            <div className="grid size-12 place-items-center rounded-2xl bg-[var(--surface-muted)] text-[var(--muted-foreground)]">
+            <div className="grid size-12 place-items-center rounded-2xl bg-(--surface-muted) text-(--muted-foreground)">
               <Logs className="size-5" />
             </div>
             <h2 className="mt-4 text-base font-semibold">{copy.noRequests}</h2>
-            <p className="mt-2 max-w-sm text-sm leading-6 text-[var(--muted-foreground)]">
+            <p className="mt-2 max-w-sm text-sm leading-6 text-(--muted-foreground)">
               {copy.logsEmpty}
             </p>
           </CardContent>
         ) : (
-          <div className="divide-y divide-[var(--border)]">
+          <div className="divide-y divide-(--border)">
             {logs.map((entry) => (
               <motion.article
                 key={entry.id}
@@ -421,7 +431,7 @@ function LogsView({ logs, copy }: { logs: RequestLog[]; copy: UiCopy }) {
                 className="flex gap-4 p-5"
               >
                 <span
-                  className={`mt-1.5 size-2 shrink-0 rounded-full ${entry.status === "success" ? "bg-[var(--success)]" : entry.status === "error" ? "bg-[var(--destructive)]" : "animate-pulse bg-[var(--accent)]"}`}
+                  className={`mt-1.5 size-2 shrink-0 rounded-full ${entry.status === "success" ? "bg-(--success)" : entry.status === "error" ? "bg-(--destructive)" : "animate-pulse bg-(--accent)"}`}
                   aria-label={entry.status}
                 />
                 <div className="min-w-0 flex-1">
@@ -433,9 +443,9 @@ function LogsView({ logs, copy }: { logs: RequestLog[]; copy: UiCopy }) {
                     <Badge
                       className={
                         entry.status === "error"
-                          ? "border-[var(--destructive-border)] bg-[var(--destructive-surface)] text-[var(--destructive)]"
+                          ? "border-(--destructive-border) bg-(--destructive-surface) text-(--destructive)"
                           : entry.status === "pending"
-                            ? "border-[var(--accent-border)] bg-[var(--accent-soft)] text-[var(--accent)]"
+                            ? "border-(--accent-border) bg-(--accent-soft) text-(--accent)"
                             : undefined
                       }
                     >
@@ -443,11 +453,11 @@ function LogsView({ logs, copy }: { logs: RequestLog[]; copy: UiCopy }) {
                     </Badge>
                   </div>
                   {entry.status === "error" && (
-                    <p className="mt-2 text-sm text-[var(--destructive)]">
+                    <p className="mt-2 text-sm text-(--destructive)">
                       {entry.errorMessage ?? copy.failed}
                     </p>
                   )}
-                  <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--muted-foreground)]">
+                  <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] uppercase tracking-[0.08em] text-(--muted-foreground)">
                     <span>{entry.operation}</span>
                     <span>
                       {copy.request} / {entry.id}
@@ -470,7 +480,7 @@ function LogsView({ logs, copy }: { logs: RequestLog[]; copy: UiCopy }) {
           </div>
         )}
       </Card>
-      <p className="mt-4 text-xs leading-5 text-[var(--muted-foreground)]">{copy.logsPrivacy}</p>
+      <p className="mt-4 text-xs leading-5 text-(--muted-foreground)">{copy.logsPrivacy}</p>
     </div>
   );
 }
@@ -481,17 +491,24 @@ function VoiceProfilesView({
   listError,
   formError,
   profileName,
+  profileKind,
   refAudio,
   refText,
+  designInstruction,
   isSaving,
   isImporting,
+  isImportingSeed,
   importStatus,
+  seedImportStatus,
   deletingVoice,
   copy,
   onChooseReference,
+  onImportVoiceFile,
   onImportSeedFolder,
   onProfileNameChange,
   onRefTextChange,
+  onProfileKindChange,
+  onDesignInstructionChange,
   onSave,
   onRetry,
   onUse,
@@ -502,23 +519,31 @@ function VoiceProfilesView({
   listError: string | null;
   formError: string | null;
   profileName: string;
+  profileKind: VoiceKind;
   refAudio: string | null;
   refText: string;
+  designInstruction: string;
   isSaving: boolean;
   isImporting: boolean;
-  importStatus: SeedImportStatus | null;
+  isImportingSeed: boolean;
+  importStatus: ImportStatus | null;
+  seedImportStatus: ImportStatus | null;
   deletingVoice: string | null;
   copy: UiCopy;
   onChooseReference: () => void;
+  onImportVoiceFile: () => void;
   onImportSeedFolder: () => void;
   onProfileNameChange: (value: string) => void;
   onRefTextChange: (value: string) => void;
+  onProfileKindChange: (value: VoiceKind) => void;
+  onDesignInstructionChange: (value: string) => void;
   onSave: () => Promise<void>;
   onRetry: () => void;
   onUse: (name: string) => void;
   onDelete: (name: string) => void;
 }) {
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const activeImportStatus = importStatus ?? seedImportStatus;
   return (
     <div>
       <PageHeader
@@ -527,21 +552,36 @@ function VoiceProfilesView({
         description={copy.profilesDescription}
         action={
           <div className="flex flex-wrap items-center justify-end gap-3">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={onImportSeedFolder}
-              disabled={isImporting || isSaving}
-            >
-              {isImporting ? (
-                <LoaderCircle className="size-4 animate-spin" />
-              ) : (
-                <FolderOpen className="size-4 text-[var(--accent)]" />
-              )}
-              {isImporting ? copy.importingSeedFolder : copy.importSeedFolder}
-            </Button>
-            <div className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
-              <Library className="size-4 text-[var(--accent)]" />
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onImportVoiceFile}
+                disabled={isImporting || isImportingSeed || isSaving}
+              >
+                {isImporting ? (
+                  <LoaderCircle className="size-4 animate-spin" />
+                ) : (
+                  <FileAudio className="size-4 text-(--accent)" />
+                )}
+                {isImporting ? copy.importingVoiceFile : copy.importVoiceFile}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onImportSeedFolder}
+                disabled={isImporting || isImportingSeed || isSaving}
+              >
+                {isImportingSeed ? (
+                  <LoaderCircle className="size-4 animate-spin" />
+                ) : (
+                  <FolderOpen className="size-4 text-(--accent)" />
+                )}
+                {isImportingSeed ? copy.importingSeedFolder : copy.importSeedFolder}
+              </Button>
+            </div>
+            <div className="flex items-center gap-3 rounded-xl border border-(--border) bg-(--surface) px-4 py-3">
+              <Library className="size-4 text-(--accent)" />
               <span className="font-mono text-xs font-semibold">
                 {voices.length.toString().padStart(2, "0")} {copy.savedProfiles}
               </span>
@@ -549,16 +589,18 @@ function VoiceProfilesView({
           </div>
         }
       />
-      <div className="mb-5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-5 text-[var(--muted-foreground)]">
-        <FolderOpen className="size-3.5 text-[var(--accent)]" />
+      <div className="mb-5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-5 text-(--muted-foreground)">
+        <FolderOpen className="size-3.5 text-(--accent)" />
+        <span>{copy.voiceImportDescription}</span>
+        <span>·</span>
         <span>{copy.seedImportDescription}</span>
       </div>
-      {importStatus && (
+      {activeImportStatus && (
         <div
-          className={`mb-5 rounded-xl border px-4 py-3 text-sm ${importStatus.tone === "error" ? "border-[var(--destructive-border)] bg-[var(--destructive-surface)] text-[var(--destructive)]" : "border-[var(--success-border)] bg-[var(--success-surface)] text-[var(--success)]"}`}
-          role={importStatus.tone === "error" ? "alert" : "status"}
+          className={`mb-5 rounded-xl border px-4 py-3 text-sm ${activeImportStatus.tone === "error" ? "border-(--destructive-border) bg-(--destructive-surface) text-(--destructive)" : "border-(--success-border) bg-(--success-surface) text-(--success)"}`}
+          role={activeImportStatus.tone === "error" ? "alert" : "status"}
         >
-          {importStatus.message}
+          {activeImportStatus.message}
         </div>
       )}
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -568,7 +610,7 @@ function VoiceProfilesView({
               <SectionLabel>{copy.voiceLibrary}</SectionLabel>
               <CardTitle className="mt-2">{copy.savedProfiles}</CardTitle>
             </div>
-            {isLoading && <LoaderCircle className="size-4 animate-spin text-[var(--accent)]" />}
+            {isLoading && <LoaderCircle className="size-4 animate-spin text-(--accent)" />}
           </CardHeader>
           <CardContent>
             {listError && (
@@ -587,12 +629,12 @@ function VoiceProfilesView({
               </div>
             )}
             {!isLoading && !listError && voices.length === 0 && (
-              <div className="flex min-h-72 flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--border-strong)] bg-[var(--surface-muted)] p-8 text-center">
-                <div className="grid size-12 place-items-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent)]">
+              <div className="flex min-h-72 flex-col items-center justify-center rounded-2xl border border-dashed border-(--border-strong) bg-(--surface-muted) p-8 text-center">
+                <div className="grid size-12 place-items-center rounded-2xl bg-(--accent-soft) text-(--accent)">
                   <AudioLines className="size-5" />
                 </div>
                 <h3 className="mt-4 font-semibold">{copy.emptyProfilesTitle}</h3>
-                <p className="mt-2 max-w-sm text-sm leading-6 text-[var(--muted-foreground)]">
+                <p className="mt-2 max-w-sm text-sm leading-6 text-(--muted-foreground)">
                   {copy.emptyProfilesDescription}
                 </p>
                 <Button
@@ -616,33 +658,43 @@ function VoiceProfilesView({
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.98 }}
                       key={voice.name}
-                      className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-4 transition-colors hover:border-[var(--border-strong)]"
+                      className="rounded-2xl border border-(--border) bg-(--surface-muted) p-4 transition-colors hover:border-(--border-strong)"
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex min-w-0 items-center gap-3">
-                          <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-[var(--accent)] text-white">
+                          <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-(--accent) text-white">
                             <AudioLines className="size-5" />
                           </div>
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                               <h3 className="truncate font-semibold">{voice.name}</h3>
                               <Badge>{copy.profileReady}</Badge>
+                              <Badge className="border-(--border) bg-(--surface) text-(--muted-foreground)">
+                                {voice.kind === "design" ? copy.designVoice : copy.cloneVoice}
+                              </Badge>
                               {voice.is_default && (
-                                <Badge className="border-[var(--accent-border)] bg-[var(--accent-soft)] text-[var(--accent)]">
+                                <Badge className="border-(--accent-border) bg-(--accent-soft) text-(--accent)">
                                   {copy.defaultVoice}
                                 </Badge>
                               )}
                             </div>
-                            <p className="mt-1 flex items-center gap-1.5 truncate font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--muted-foreground)]">
-                              <FileAudio className="size-3" />
-                              {voice.language} ·{fileName(voice.ref_audio)}
+                            <p className="mt-1 flex items-center gap-1.5 truncate font-mono text-[10px] uppercase tracking-[0.08em] text-(--muted-foreground)">
+                              {voice.kind === "design" ? (
+                                <Sparkles className="size-3" />
+                              ) : (
+                                <FileAudio className="size-3" />
+                              )}
+                              {voice.language} ·
+                              {voice.kind === "design"
+                                ? copy.designProfileSummary
+                                : fileName(voice.ref_audio)}
                             </p>
                           </div>
                         </div>
                         <Button
                           variant="icon"
                           size="icon"
-                          className="text-[var(--destructive)] hover:border-[var(--destructive)] hover:text-[var(--destructive)]"
+                          className="text-(--destructive) hover:border-(--destructive) hover:text-(--destructive)"
                           aria-label={`${copy.deleteProfile}: ${voice.name}`}
                           onClick={() => onDelete(voice.name)}
                           disabled={deletingVoice === voice.name}
@@ -650,13 +702,23 @@ function VoiceProfilesView({
                           <Trash2 className="size-4" />
                         </Button>
                       </div>
-                      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] pt-3">
-                        <div className="flex gap-3 text-xs text-[var(--muted-foreground)]">
-                          <span>{copy.sourceAudio}</span>
-                          <span>·</span>
-                          <span>
-                            {voice.ref_text?.trim() ? copy.transcriptIncluded : copy.noTranscript}
-                          </span>
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-(--border) pt-3">
+                        <div className="min-w-0 text-xs text-(--muted-foreground)">
+                          {voice.kind === "design" ? (
+                            <span className="line-clamp-2">
+                              {voice.design_instruction ?? copy.designProfileSummary}
+                            </span>
+                          ) : (
+                            <span className="flex gap-3">
+                              <span>{copy.sourceAudio}</span>
+                              <span>·</span>
+                              <span>
+                                {voice.ref_text?.trim()
+                                  ? copy.transcriptIncluded
+                                  : copy.noTranscript}
+                              </span>
+                            </span>
+                          )}
                         </div>
                         <Button size="sm" onClick={() => onUse(voice.name)}>
                           <Play className="size-3.5" />
@@ -676,10 +738,14 @@ function VoiceProfilesView({
               <SectionLabel>{copy.createProfile}</SectionLabel>
               <CardTitle className="mt-2">{copy.createProfile}</CardTitle>
             </div>
-            <Plus className="size-5 text-[var(--accent)]" />
+            <Plus className="size-5 text-(--accent)" />
           </CardHeader>
           <CardContent>
-            <CardDescription>{copy.createProfileDescription}</CardDescription>
+            <CardDescription>
+              {profileKind === "design"
+                ? copy.createDesignProfileDescription
+                : copy.createProfileDescription}
+            </CardDescription>
             {formError && (
               <div className="mt-4">
                 <ErrorMessage>{formError}</ErrorMessage>
@@ -692,6 +758,23 @@ function VoiceProfilesView({
                 void onSave();
               }}
             >
+              <div
+                className="grid grid-cols-2 gap-1 rounded-xl border border-(--border) bg-(--surface-muted) p-1"
+                role="group"
+                aria-label={copy.createProfile}
+              >
+                {(["clone", "design"] as VoiceKind[]).map((kind) => (
+                  <button
+                    type="button"
+                    key={kind}
+                    aria-pressed={profileKind === kind}
+                    onClick={() => onProfileKindChange(kind)}
+                    className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${profileKind === kind ? "bg-(--surface) text-(--foreground) shadow-sm" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
+                  >
+                    {kind === "design" ? copy.designVoice : copy.cloneVoice}
+                  </button>
+                ))}
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="profile-name">{copy.profileName}</Label>
                 <Input
@@ -703,31 +786,51 @@ function VoiceProfilesView({
                   onChange={(event) => onProfileNameChange(event.target.value)}
                 />
               </div>
-              <div className="space-y-2">
-                <Label>{copy.referenceAudio}</Label>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="w-full justify-start"
-                  onClick={onChooseReference}
-                  disabled={isSaving}
-                >
-                  <FolderOpen className="size-4 text-[var(--accent)]" />
-                  <span className="truncate">
-                    {refAudio ? fileName(refAudio) : copy.noAudioSelected}
-                  </span>
-                </Button>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="profile-transcript">{copy.referenceTranscript}</Label>
-                <Textarea
-                  id="profile-transcript"
-                  value={refText}
-                  placeholder={copy.optionalTranscript}
-                  disabled={isSaving}
-                  onChange={(event) => onRefTextChange(event.target.value)}
-                />
-              </div>
+              {profileKind === "clone" ? (
+                <>
+                  <div className="space-y-2">
+                    <Label>{copy.referenceAudio}</Label>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="w-full justify-start"
+                      onClick={onChooseReference}
+                      disabled={isSaving}
+                    >
+                      <FolderOpen className="size-4 text-(--accent)" />
+                      <span className="truncate">
+                        {refAudio ? fileName(refAudio) : copy.noAudioSelected}
+                      </span>
+                    </Button>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="profile-transcript">{copy.referenceTranscript}</Label>
+                    <Textarea
+                      id="profile-transcript"
+                      value={refText}
+                      placeholder={copy.optionalTranscript}
+                      disabled={isSaving}
+                      onChange={(event) => onRefTextChange(event.target.value)}
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="profile-design-instruction">
+                    {copy.voiceDesignInstruction}
+                  </Label>
+                  <Textarea
+                    id="profile-design-instruction"
+                    value={designInstruction}
+                    placeholder={copy.voiceDesignPlaceholder}
+                    disabled={isSaving}
+                    onChange={(event) => onDesignInstructionChange(event.target.value)}
+                  />
+                  <p className="text-xs leading-5 text-(--muted-foreground)">
+                    {copy.voiceDesignExample}
+                  </p>
+                </div>
+              )}
               <Button type="submit" className="w-full" disabled={isSaving}>
                 <Plus className="size-4" />
                 {isSaving ? copy.savingProfile : copy.createProfileButton}
@@ -792,7 +895,7 @@ function SettingsView({
         }
       />
       <div
-        className="mb-5 flex w-full gap-1 overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-1"
+        className="mb-5 flex w-full gap-1 overflow-x-auto rounded-xl border border-(--border) bg-(--surface-muted) p-1"
         role="tablist"
         aria-label={copy.studioSettings}
       >
@@ -803,7 +906,7 @@ function SettingsView({
             role="tab"
             aria-selected={activeTab === value}
             onClick={() => setActiveTab(value)}
-            className={`min-w-28 flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${activeTab === value ? "bg-[var(--surface)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
+            className={`min-w-28 flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${activeTab === value ? "bg-(--surface) text-(--foreground) shadow-sm" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
           >
             {label}
           </button>
@@ -817,18 +920,18 @@ function SettingsView({
                 <SectionLabel>{copy.appLanguage}</SectionLabel>
                 <CardTitle className="mt-2">{copy.interfaceLanguage}</CardTitle>
               </div>
-              <Languages className="size-5 text-[var(--accent)]" />
+              <Languages className="size-5 text-(--accent)" />
             </CardHeader>
             <CardContent>
               <CardDescription>{copy.appLanguageDescription}</CardDescription>
-              <div className="mt-5 grid grid-cols-2 gap-2 rounded-xl bg-[var(--surface-muted)] p-1.5">
+              <div className="mt-5 grid grid-cols-2 gap-2 rounded-xl bg-(--surface-muted) p-1.5">
                 {(["en", "vi"] as AppLanguage[]).map((item) => (
                   <button
                     type="button"
                     key={item}
                     onClick={() => onChangeLanguage(item)}
                     aria-pressed={appLanguage === item}
-                    className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${appLanguage === item ? "bg-[var(--surface)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
+                    className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${appLanguage === item ? "bg-(--surface) text-(--foreground) shadow-sm" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
                   >
                     {item === "en" ? copy.english : copy.vietnamese}
                   </button>
@@ -849,7 +952,7 @@ function SettingsView({
                 <Badge
                   className={
                     !modelReady
-                      ? "border-[var(--destructive-border)] bg-[var(--destructive-surface)] text-[var(--destructive)]"
+                      ? "border-(--destructive-border) bg-(--destructive-surface) text-(--destructive)"
                       : undefined
                   }
                 >
@@ -871,18 +974,18 @@ function SettingsView({
               </div>
             </CardHeader>
             <CardContent>
-              <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-5">
+              <div className="rounded-2xl border border-(--border) bg-(--surface-muted) p-5">
                 <div className="flex items-end justify-between gap-4">
                   <Metric
                     label={copy.modelPackage}
                     value={modelReady ? copy.verifiedAssets : copy.unverifiedAssets}
                   />
-                  <span className="font-mono text-lg font-semibold text-[var(--accent)]">
+                  <span className="font-mono text-lg font-semibold text-(--accent)">
                     {modelReady ? "100%" : "0%"}
                   </span>
                 </div>
                 <Progress value={modelReady ? 100 : 0} className="mt-5" />
-                <p className="mt-3 text-xs text-[var(--muted-foreground)]">
+                <p className="mt-3 text-xs text-(--muted-foreground)">
                   {engineOnline ? copy.offlineEngine : copy.unavailable}
                 </p>
               </div>
@@ -890,14 +993,14 @@ function SettingsView({
                 {assets.map((asset) => (
                   <div
                     key={asset}
-                    className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3"
+                    className="flex items-center gap-3 rounded-xl border border-(--border) bg-(--surface-muted) px-4 py-3"
                   >
                     <CheckCircle2
-                      className={`size-4 ${modelReady ? "text-[var(--success)]" : "text-[var(--muted-foreground)]"}`}
+                      className={`size-4 ${modelReady ? "text-(--success)" : "text-(--muted-foreground)"}`}
                     />
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">{asset}</p>
-                      <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--muted-foreground)]">
+                      <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-(--muted-foreground)">
                         {modelReady ? copy.assetReady : copy.unavailable}
                       </p>
                     </div>
@@ -931,13 +1034,13 @@ function SettingsView({
                 <SectionLabel>{copy.localStorage}</SectionLabel>
                 <CardTitle className="mt-2">{copy.appDataDirectory}</CardTitle>
               </div>
-              <HardDrive className="size-5 text-[var(--accent)]" />
+              <HardDrive className="size-5 text-(--accent)" />
             </CardHeader>
             <CardContent>
-              <code className="block overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3.5 font-mono text-xs text-[var(--foreground)]">
+              <code className="block overflow-x-auto rounded-xl border border-(--border) bg-(--surface-muted) p-3.5 font-mono text-xs text-(--foreground)">
                 {dataDir ?? copy.loadingDataPath}
               </code>
-              <p className="mt-3 text-sm leading-6 text-[var(--muted-foreground)]">
+              <p className="mt-3 text-sm leading-6 text-(--muted-foreground)">
                 {copy.storageDescription}
               </p>
             </CardContent>
@@ -951,7 +1054,7 @@ function SettingsView({
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">
+      <p className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-(--muted-foreground)">
         {label}
       </p>
       <p className="mt-1.5 text-sm font-semibold">{value}</p>
@@ -992,103 +1095,48 @@ function AdvancedNumberField({
 function WorkspaceView({
   copy,
   language,
-  mode,
   text,
   speed,
   format,
-  instruct,
   advanced,
   advancedError,
-  refAudio,
-  refText,
   voices,
   selectedVoice,
-  profileName,
   result,
   audioUrl,
   error,
   isGenerating,
   onLanguageChange,
-  onModeChange,
   onTextChange,
   onSpeedChange,
   onFormatChange,
-  onInstructChange,
   onAdvancedChange,
-  onChooseReference,
-  onRefTextChange,
-  onSelectedVoiceChange,
-  onProfileNameChange,
-  onSaveProfile,
-  onRequestDelete,
+  onVoiceSelectionChange,
   onSynthesize,
   onExport,
 }: {
   copy: UiCopy;
   language: Language;
-  mode: VoiceMode;
   text: string;
   speed: number;
   format: AudioFormat;
-  instruct: string;
   advanced: AdvancedDraft;
   advancedError: string | null;
-  refAudio: string | null;
-  refText: string;
   voices: VoiceProfile[];
   selectedVoice: string;
-  profileName: string;
   result: SynthesisResult | null;
   audioUrl: string | null;
   error: string | null;
   isGenerating: boolean;
   onLanguageChange: (language: Language) => void;
-  onModeChange: (mode: VoiceMode) => void;
   onTextChange: (text: string) => void;
   onSpeedChange: (speed: number) => void;
   onFormatChange: (format: AudioFormat) => void;
-  onInstructChange: (instruct: string) => void;
   onAdvancedChange: (patch: Partial<AdvancedDraft>) => void;
-  onChooseReference: () => void;
-  onRefTextChange: (text: string) => void;
-  onSelectedVoiceChange: (name: string) => void;
-  onProfileNameChange: (name: string) => void;
-  onSaveProfile: () => void;
-  onRequestDelete: () => void;
+  onVoiceSelectionChange: (name: string) => void;
   onSynthesize: () => void;
   onExport: () => void;
 }) {
-  const voiceModes: {
-    value: VoiceMode;
-    label: string;
-    description: string;
-    icon: React.ReactNode;
-  }[] = [
-    {
-      value: "auto",
-      label: copy.autoVoice,
-      description: copy.autoVoiceDescription,
-      icon: <WandSparkles className="size-4" />,
-    },
-    {
-      value: "file",
-      label: copy.cloneFromFile,
-      description: copy.cloneFromFileDescription,
-      icon: <FileAudio className="size-4" />,
-    },
-    {
-      value: "profile",
-      label: copy.savedProfile,
-      description: copy.savedProfileDescription,
-      icon: <Library className="size-4" />,
-    },
-    {
-      value: "design",
-      label: copy.voiceDesign,
-      description: copy.voiceDesignDescription,
-      icon: <Sparkles className="size-4" />,
-    },
-  ];
   return (
     <div>
       <PageHeader
@@ -1097,19 +1145,19 @@ function WorkspaceView({
         description={copy.workspaceDescription}
         action={
           <Badge>
-            <span className="mr-2 size-1.5 rounded-full bg-[var(--success)]" />
+            <span className="mr-2 size-1.5 rounded-full bg-(--success)" />
             {copy.modelReady}
           </Badge>
         }
       />
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_370px]">
         <Card className="overflow-hidden">
-          <CardHeader className="border-b border-[var(--border)] pb-5">
+          <CardHeader className="border-b border-(--border) pb-5">
             <div>
               <SectionLabel>{copy.scriptCanvas}</SectionLabel>
               <CardTitle className="mt-2">{copy.untitledSpeech}</CardTitle>
             </div>
-            <span className="font-mono text-xs font-semibold text-[var(--muted-foreground)]">
+            <span className="font-mono text-xs font-semibold text-(--muted-foreground)">
               {text.length.toString().padStart(3, "0")} {copy.characters}
             </span>
           </CardHeader>
@@ -1121,7 +1169,7 @@ function WorkspaceView({
               className="min-h-[310px] resize-none rounded-none border-0 bg-transparent px-6 py-6 text-base leading-8 shadow-none focus-visible:ring-0"
               spellCheck={false}
             />
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] px-6 py-3 text-xs text-[var(--muted-foreground)]">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-(--border) px-6 py-3 text-xs text-(--muted-foreground)">
               <span>{copy.lineOne}</span>
               <span className="font-mono text-[10px] uppercase tracking-[0.08em]">
                 {language === "vi" ? copy.vietnameseDiacritics : copy.englishPronunciation}
@@ -1133,7 +1181,7 @@ function WorkspaceView({
               <ErrorMessage>{error}</ErrorMessage>
             </div>
           )}
-          <div className="border-t border-[var(--border)] bg-[var(--surface-muted)] p-5">
+          <div className="border-t border-(--border) bg-(--surface-muted) p-5">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <SectionLabel>{copy.outputPreview}</SectionLabel>
@@ -1146,8 +1194,8 @@ function WorkspaceView({
             {audioUrl ? (
               <audio className="mt-5 h-10 w-full" controls src={audioUrl} />
             ) : (
-              <div className="mt-5 flex items-center gap-3 rounded-xl border border-dashed border-[var(--border-strong)] px-4 py-5 text-sm text-[var(--muted-foreground)]">
-                <Play className="size-4 text-[var(--accent)]" />
+              <div className="mt-5 flex items-center gap-3 rounded-xl border border-dashed border-(--border-strong) px-4 py-5 text-sm text-(--muted-foreground)">
+                <Play className="size-4 text-(--accent)" />
                 {copy.generateTake}
               </div>
             )}
@@ -1159,19 +1207,19 @@ function WorkspaceView({
               <SectionLabel>{copy.voiceSource}</SectionLabel>
               <CardTitle className="mt-2">{copy.shapeTake}</CardTitle>
             </div>
-            <SlidersHorizontal className="size-5 text-[var(--accent)]" />
+            <SlidersHorizontal className="size-5 text-(--accent)" />
           </CardHeader>
           <CardContent className="space-y-6">
             <div>
               <Label>{copy.synthesisLanguage}</Label>
-              <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl bg-[var(--surface-muted)] p-1.5">
+              <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl bg-(--surface-muted) p-1.5">
                 {(["en", "vi"] as Language[]).map((item) => (
                   <button
                     type="button"
                     key={item}
                     aria-pressed={language === item}
                     onClick={() => onLanguageChange(item)}
-                    className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${language === item ? "bg-[var(--surface)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
+                    className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${language === item ? "bg-(--surface) text-(--foreground) shadow-sm" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
                   >
                     {item === "en" ? copy.english : copy.vietnamese}
                   </button>
@@ -1180,83 +1228,15 @@ function WorkspaceView({
             </div>
             <div>
               <Label>{copy.voiceSource}</Label>
-              <div className="mt-2 space-y-2">
-                {voiceModes.map((item) => (
-                  <button
-                    type="button"
-                    key={item.value}
-                    aria-pressed={mode === item.value}
-                    onClick={() => onModeChange(item.value)}
-                    className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${mode === item.value ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-strong)]"}`}
-                  >
-                    <span
-                      className={`grid size-8 place-items-center rounded-lg ${mode === item.value ? "bg-[var(--accent)] text-white" : "bg-[var(--surface-muted)] text-[var(--muted-foreground)]"}`}
-                    >
-                      {item.icon}
-                    </span>
-                    <span>
-                      <span className="block text-sm font-semibold">{item.label}</span>
-                      <span className="mt-0.5 block text-xs text-[var(--muted-foreground)]">
-                        {item.description}
-                      </span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-            {mode === "file" && (
-              <div className="space-y-3">
-                <Label>{copy.referenceFile}</Label>
-                <Button
-                  variant="secondary"
-                  className="w-full justify-start"
-                  onClick={onChooseReference}
-                >
-                  <FolderOpen className="size-4 text-[var(--accent)]" />
-                  <span className="truncate">
-                    {refAudio ? fileName(refAudio) : copy.chooseAudio}
-                  </span>
-                </Button>
-                {refAudio && (
-                  <p className="text-xs leading-5 text-[var(--warning)]">
-                    {copy.referenceLanguageWarning}
-                  </p>
-                )}
-                <Textarea
-                  aria-label={copy.optionalTranscript}
-                  placeholder={copy.optionalTranscript}
-                  value={refText}
-                  onChange={(event) => onRefTextChange(event.target.value)}
-                  className="min-h-20"
-                />
-                <div className="flex gap-2">
-                  <Input
-                    aria-label={copy.saveAsProfile}
-                    placeholder={copy.saveAsProfile}
-                    value={profileName}
-                    onChange={(event) => onProfileNameChange(event.target.value)}
-                  />
-                  <Button
-                    variant="icon"
-                    size="icon"
-                    aria-label={copy.saveVoiceProfile}
-                    onClick={onSaveProfile}
-                  >
-                    <Plus className="size-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
-            {mode === "profile" && (
-              <div className="space-y-3">
-                <Label>{copy.voiceLibrary}</Label>
+              <div className="mt-2 space-y-3">
                 <Select
                   value={selectedVoice}
-                  onValueChange={onSelectedVoiceChange}
-                  placeholder={copy.selectSavedVoice}
-                  aria-label={copy.voiceLibrary}
+                  onValueChange={onVoiceSelectionChange}
+                  aria-label={copy.voiceSource}
                 >
-                  <SelectItem value="auto">{copy.selectSavedVoice}</SelectItem>
+                  <SelectItem value="auto">
+                    {copy.autoVoice} · {copy.autoVoiceDescription}
+                  </SelectItem>
                   {voices.map((voice) => (
                     <SelectItem key={voice.name} value={voice.name}>
                       {voice.name} · {voice.language.toUpperCase()}
@@ -1264,46 +1244,18 @@ function WorkspaceView({
                     </SelectItem>
                   ))}
                 </Select>
-                {selectedVoice !== "auto" && (
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    className="w-full"
-                    onClick={onRequestDelete}
-                  >
-                    <Trash2 className="size-3.5" />
-                    {copy.deleteVoiceProfile}
-                  </Button>
-                )}
                 {voices.length === 0 && (
-                  <p className="text-xs leading-5 text-[var(--muted-foreground)]">
+                  <p className="text-xs leading-5 text-(--muted-foreground)">
                     {copy.noProfiles}
                   </p>
                 )}
               </div>
-            )}
-            {mode === "design" && (
-              <div className="space-y-3">
-                <Label htmlFor="voice-instruction">{copy.voiceDesignInstruction}</Label>
-                <Textarea
-                  id="voice-instruction"
-                  aria-invalid={Boolean(error)}
-                  placeholder={copy.voiceDesignPlaceholder}
-                  value={instruct}
-                  disabled={isGenerating}
-                  onChange={(event) => onInstructChange(event.target.value)}
-                  className="min-h-20"
-                />
-                <p className="text-xs leading-5 text-[var(--muted-foreground)]">
-                  {copy.voiceDesignExample}
-                </p>
-              </div>
-            )}
+            </div>
             <Separator />
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <Label htmlFor="speed">{copy.speed}</Label>
-                <span className="rounded-md bg-[var(--surface-muted)] px-2 py-1 font-mono text-xs font-semibold">
+                <span className="rounded-md bg-(--surface-muted) px-2 py-1 font-mono text-xs font-semibold">
                   {speed.toFixed(2)}×
                 </span>
               </div>
@@ -1316,32 +1268,32 @@ function WorkspaceView({
                 step="0.05"
                 value={speed}
                 onChange={(event) => onSpeedChange(Number(event.target.value))}
-                className="w-full accent-[var(--accent)]"
+                className="w-full accent-(--accent)"
               />
             </div>
             <div>
               <Label>{copy.outputFormat}</Label>
-              <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl bg-[var(--surface-muted)] p-1.5">
+              <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl bg-(--surface-muted) p-1.5">
                 {(["wav", "mp3"] as AudioFormat[]).map((item) => (
                   <button
                     type="button"
                     key={item}
                     aria-pressed={format === item}
                     onClick={() => onFormatChange(item)}
-                    className={`rounded-lg px-3 py-2.5 font-mono text-xs font-bold uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${format === item ? "bg-[var(--surface)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
+                    className={`rounded-lg px-3 py-2.5 font-mono text-xs font-bold uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${format === item ? "bg-(--surface) text-(--foreground) shadow-sm" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
                   >
                     {item}
                   </button>
                 ))}
               </div>
             </div>
-            <details className="group rounded-xl border border-[var(--border)] bg-[var(--surface-muted)]">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3.5 py-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]">
+            <details className="group rounded-xl border border-(--border) bg-(--surface-muted)">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3.5 py-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring)">
                 {copy.advancedSettings}
                 <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
               </summary>
-              <div className="border-t border-[var(--border)] px-3.5 pb-3.5 pt-3">
-                <p className="text-xs leading-5 text-[var(--muted-foreground)]">
+              <div className="border-t border-(--border) px-3.5 pb-3.5 pt-3">
+                <p className="text-xs leading-5 text-(--muted-foreground)">
                   {copy.advancedSettingsDescription}
                 </p>
                 <div className="mt-4 grid grid-cols-2 gap-3">
@@ -1445,14 +1397,14 @@ function WorkspaceView({
                   ).map(([key, label]) => (
                     <label
                       key={key}
-                      className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]"
+                      className="flex items-center gap-2 text-xs text-(--muted-foreground)"
                     >
                       <input
                         type="checkbox"
                         checked={advanced[key]}
                         disabled={isGenerating}
                         onChange={(event) => onAdvancedChange({ [key]: event.target.checked })}
-                        className="size-4 accent-[var(--accent)]"
+                        className="size-4 accent-(--accent)"
                       />
                       <span>{label}</span>
                     </label>
@@ -1496,7 +1448,6 @@ function App() {
   const [text, setText] = useState("The quietest tools often do the most important work.");
   const [speed, setSpeed] = useState(1);
   const [format, setFormat] = useState<AudioFormat>("wav");
-  const [instruct, setInstruct] = useState("");
   const [advanced, setAdvanced] = useState<AdvancedDraft>(DEFAULT_ADVANCED);
   const [advancedError, setAdvancedError] = useState<string | null>(null);
   const [refAudio, setRefAudio] = useState<string | null>(null);
@@ -1506,11 +1457,15 @@ function App() {
   const [voiceListError, setVoiceListError] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
-  const [isImportingSeeds, setIsImportingSeeds] = useState(false);
-  const [seedImportStatus, setSeedImportStatus] = useState<SeedImportStatus | null>(null);
+  const [isImportingVoice, setIsImportingVoice] = useState(false);
+  const [isImportingSeed, setIsImportingSeed] = useState(false);
+  const [voiceImportStatus, setVoiceImportStatus] = useState<ImportStatus | null>(null);
+  const [seedImportStatus, setSeedImportStatus] = useState<ImportStatus | null>(null);
   const [deletingVoice, setDeletingVoice] = useState<string | null>(null);
   const [selectedVoice, setSelectedVoice] = useState("auto");
   const [profileName, setProfileName] = useState("");
+  const [profileKind, setProfileKind] = useState<VoiceKind>("clone");
+  const [designInstruction, setDesignInstruction] = useState("");
   const [result, setResult] = useState<SynthesisResult | null>(null);
   const [isPreparing, setIsPreparing] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -1655,15 +1610,14 @@ function App() {
     }
   }
 
-  function changeVoiceMode(next: VoiceMode) {
-    setMode(next);
-    if (next === "profile") {
-      setSelectedVoice((current) =>
-        voices.some((voice) => voice.name === current && voice.language === language)
-          ? current
-          : preferredVoiceForLanguage(voices, language),
-      );
+  function changeVoiceSelection(name: string) {
+    if (name === "auto") {
+      setMode("auto");
+      setSelectedVoice("auto");
+      return;
     }
+    setMode("profile");
+    setSelectedVoice(name);
   }
 
   async function chooseReference() {
@@ -1673,6 +1627,57 @@ function App() {
       filters: [{ name: "Audio", extensions: ["wav", "mp3", "flac", "ogg"] }],
     });
     if (typeof selected === "string") setRefAudio(selected);
+  }
+
+  async function importVoiceFile() {
+    let selected: string | string[] | null;
+    try {
+      selected = await open({
+        multiple: false,
+        directory: false,
+        filters: [{ name: "Audio", extensions: ["wav", "mp3", "flac", "ogg"] }],
+      });
+    } catch (reason) {
+      setVoiceImportStatus({
+        message: reason instanceof Error ? reason.message : copy.voiceImportFailed,
+        tone: "error",
+      });
+      return;
+    }
+    if (typeof selected !== "string") return;
+    const name = voiceNameFromFile(selected);
+    if (voices.some((voice) => voice.name === name)) {
+      setVoiceImportStatus({
+        message: `${copy.voiceImportSkipped}: ${name}`,
+        tone: "success",
+      });
+      return;
+    }
+    setIsImportingVoice(true);
+    setVoiceImportStatus(null);
+    setSeedImportStatus(null);
+    setProfileError(null);
+    try {
+      await client.request({
+        type: "save_voice",
+        name,
+        ref_audio: selected,
+        language,
+      });
+      await refreshVoices();
+      setRefAudio(selected);
+      setVoiceImportStatus({
+        message: `${copy.voiceImportCompleted}: ${name}`,
+        tone: "success",
+      });
+    } catch (reason) {
+      setVoiceImportStatus({
+        message: reason instanceof Error ? reason.message : copy.voiceImportFailed,
+        tone: "error",
+      });
+    } finally {
+      setIsImportingVoice(false);
+    }
   }
 
   async function importSeedFolder() {
@@ -1687,9 +1692,9 @@ function App() {
       return;
     }
     if (typeof selected !== "string") return;
-    setIsImportingSeeds(true);
+    setIsImportingSeed(true);
     setSeedImportStatus(null);
-    setProfileError(null);
+    setVoiceImportStatus(null);
     try {
       const result = await client.request<SeedImportResult>({
         type: "import_seed_voices",
@@ -1710,16 +1715,14 @@ function App() {
         tone: "error",
       });
     } finally {
-      setIsImportingSeeds(false);
+      setIsImportingSeed(false);
     }
   }
 
   async function synthesize() {
     setError(null);
     if (!text.trim()) return setError(copy.enterText);
-    if (mode === "file" && !refAudio) return setError(copy.chooseReference);
     if (mode === "profile" && selectedVoice === "auto") return setError(copy.selectProfile);
-    if (mode === "design" && !instruct.trim()) return setError(copy.voiceDesignInstructionRequired);
     let steps: number | undefined;
     let duration: number | undefined;
     let generationConfig: GenerationConfig;
@@ -1772,9 +1775,6 @@ function App() {
         language,
         voice: mode,
         voice_name: mode === "profile" ? selectedVoice : undefined,
-        ref_audio: mode === "file" ? refAudio : undefined,
-        ref_text: mode === "file" ? refText || undefined : undefined,
-        instruct: mode === "design" ? instruct.trim() : undefined,
         speed,
         format,
         steps,
@@ -1791,8 +1791,20 @@ function App() {
   }
 
   async function saveProfile() {
-    if (!refAudio || !profileName.trim()) {
-      const message = copy.chooseFileAndName;
+    if (!profileName.trim()) {
+      const message = copy.profileNameRequired;
+      setError(message);
+      setProfileError(message);
+      return;
+    }
+    if (profileKind === "clone" && !refAudio) {
+      const message = copy.chooseReference;
+      setError(message);
+      setProfileError(message);
+      return;
+    }
+    if (profileKind === "design" && !designInstruction.trim()) {
+      const message = copy.designProfileInstructionRequired;
       setError(message);
       setProfileError(message);
       return;
@@ -1800,14 +1812,19 @@ function App() {
     setIsSavingProfile(true);
     setProfileError(null);
     try {
-      await client.request({
-        type: "save_voice",
-        name: profileName.trim(),
-        ref_audio: refAudio,
-        ref_text: refText || undefined,
-        language,
-      });
+      if (profileKind === "design") {
+        await client.saveDesignVoice(profileName.trim(), designInstruction.trim(), language);
+      } else {
+        await client.request({
+          type: "save_voice",
+          name: profileName.trim(),
+          ref_audio: refAudio,
+          ref_text: refText || undefined,
+          language,
+        });
+      }
       setProfileName("");
+      setDesignInstruction("");
       await refreshVoices();
       setError(null);
       setProfileError(null);
@@ -1885,21 +1902,21 @@ function App() {
   ];
   return (
     <MotionConfig reducedMotion="user">
-      <main className="flex min-h-screen bg-[var(--background)] text-[var(--foreground)]">
-        <aside className="hidden w-64 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--surface)] px-4 py-5 md:flex">
+      <main className="flex min-h-screen bg-(--background) text-(--foreground)">
+        <aside className="hidden w-64 shrink-0 flex-col border-r border-(--border) bg-(--surface) px-4 py-5 md:flex">
           <div className="flex items-center gap-3 px-2 pb-10">
-            <div className="grid size-10 place-items-center rounded-xl bg-[var(--accent)] text-white shadow-[0_8px_20px_rgb(191_95_69/20%)]">
+            <div className="grid size-10 place-items-center rounded-xl bg-(--accent) text-white shadow-[0_8px_20px_rgb(191_95_69/20%)]">
               <AudioLines className="size-5" />
             </div>
             <div>
-              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-(--muted-foreground)">
                 VOLO AI
               </p>
               <p className="mt-0.5 text-sm font-semibold">{copy.localVoiceStudio}</p>
             </div>
           </div>
           <nav aria-label={copy.workspace} className="space-y-1">
-            <p className="mb-3 px-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">
+            <p className="mb-3 px-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-(--muted-foreground)">
               {copy.workspace}
             </p>
             {navItems.map(([item, label, Icon]) => (
@@ -1908,22 +1925,22 @@ function App() {
                 key={item as string}
                 onClick={() => setView(item as AppView)}
                 aria-current={view === item ? "page" : undefined}
-                className={`group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${view === item ? "bg-[var(--accent-soft)] text-[var(--accent)]" : "text-[var(--muted-foreground)] hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)]"}`}
+                className={`group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${view === item ? "bg-(--accent-soft) text-(--accent)" : "text-(--muted-foreground) hover:bg-(--surface-muted) hover:text-(--foreground)"}`}
               >
                 <Icon className="size-4" />
                 {label}
               </button>
             ))}
           </nav>
-          <div className="mt-auto border-t border-[var(--border)] px-2 pt-5">
-            <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">
+          <div className="mt-auto border-t border-(--border) px-2 pt-5">
+            <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-(--muted-foreground)">
               {copy.engine}
             </p>
             <div className="mt-3 flex items-center gap-2 text-sm font-semibold">
-              <span className="size-2 rounded-full bg-[var(--success)]" />
+              <span className="size-2 rounded-full bg-(--success)" />
               {copy.offlineEngine}
             </div>
-            <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--muted-foreground)]">
+            <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.1em] text-(--muted-foreground)">
               {language.toUpperCase()} · LOCAL
             </p>
           </div>
@@ -1964,17 +1981,28 @@ function App() {
                     listError={voiceListError}
                     formError={profileError}
                     profileName={profileName}
+                    profileKind={profileKind}
                     refAudio={refAudio}
                     refText={refText}
+                    designInstruction={designInstruction}
                     isSaving={isSavingProfile}
-                    isImporting={isImportingSeeds}
-                    importStatus={seedImportStatus}
+                    isImporting={isImportingVoice}
+                    isImportingSeed={isImportingSeed}
+                    importStatus={voiceImportStatus}
+                    seedImportStatus={seedImportStatus}
                     deletingVoice={deletingVoice}
                     copy={copy}
                     onChooseReference={() => void chooseReference()}
+                    onImportVoiceFile={() => void importVoiceFile()}
                     onImportSeedFolder={() => void importSeedFolder()}
                     onProfileNameChange={setProfileName}
                     onRefTextChange={setRefText}
+                    onProfileKindChange={(kind) => {
+                      setProfileKind(kind);
+                      setError(null);
+                      setProfileError(null);
+                    }}
+                    onDesignInstructionChange={setDesignInstruction}
                     onSave={saveProfile}
                     onRetry={() => void refreshVoices()}
                     onUse={useProfile}
@@ -1984,37 +2012,25 @@ function App() {
                   <WorkspaceView
                     copy={copy}
                     language={language}
-                    mode={mode}
                     text={text}
                     speed={speed}
                     format={format}
-                    instruct={instruct}
                     advanced={advanced}
                     advancedError={advancedError}
-                    refAudio={refAudio}
-                    refText={refText}
                     voices={voices}
                     selectedVoice={selectedVoice}
-                    profileName={profileName}
                     result={result}
                     audioUrl={audioUrl}
                     error={error}
                     isGenerating={isGenerating}
                     onLanguageChange={changeSynthesisLanguage}
-                    onModeChange={changeVoiceMode}
                     onTextChange={setText}
                     onSpeedChange={setSpeed}
                     onFormatChange={setFormat}
-                    onInstructChange={setInstruct}
                     onAdvancedChange={(patch) =>
                       setAdvanced((current) => ({ ...current, ...patch }))
                     }
-                    onChooseReference={() => void chooseReference()}
-                    onRefTextChange={setRefText}
-                    onSelectedVoiceChange={setSelectedVoice}
-                    onProfileNameChange={setProfileName}
-                    onSaveProfile={() => void saveProfile()}
-                    onRequestDelete={() => setConfirmDeleteName(selectedVoice)}
+                    onVoiceSelectionChange={changeVoiceSelection}
                     onSynthesize={() => void synthesize()}
                     onExport={() => void exportAudio()}
                   />
@@ -2022,17 +2038,17 @@ function App() {
               </motion.div>
             </AnimatePresence>
           </div>
-          <footer className="border-t border-[var(--border)] bg-[var(--surface)] px-5 py-3 sm:px-8 lg:px-10">
-            <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--muted-foreground)]">
-              <span className="flex items-center gap-2 text-[var(--success)]">
-                <span className="size-1.5 rounded-full bg-[var(--success)]" />
+          <footer className="border-t border-(--border) bg-(--surface) px-5 py-3 sm:px-8 lg:px-10">
+            <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-(--muted-foreground)">
+              <span className="flex items-center gap-2 text-(--success)">
+                <span className="size-1.5 rounded-full bg-(--success)" />
                 {copy.engineReady}
               </span>
               <span>
                 {copy.device} / {engineOnline ? "AUTO" : "OFFLINE"}
               </span>
               <span>{copy.sampleRate} / 24000 HZ</span>
-              <span className="ml-auto text-[var(--foreground)]">{copy.allAudioLocal}</span>
+              <span className="ml-auto text-(--foreground)">{copy.allAudioLocal}</span>
             </div>
           </footer>
         </section>

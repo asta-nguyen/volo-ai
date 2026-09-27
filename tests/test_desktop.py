@@ -311,6 +311,61 @@ class DesktopWorkerTests(unittest.TestCase):
         self.assertTrue(delete_response["result"]["deleted"])
         delete_voice.assert_called_once_with("demo")
 
+    def test_save_design_voice_request(self):
+        engine = Mock()
+        response = dispatch_request(
+            {
+                "id": "design-save",
+                "type": "save_design_voice",
+                "name": "designer",
+                "design_instruction": "warm, low, confident",
+                "language": "vi",
+            },
+            engine,
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["result"], {"name": "designer", "kind": "design"})
+        engine.save_design_voice.assert_called_once_with(
+            "designer", "warm, low, confident", "vi"
+        )
+
+    def test_profile_synthesis_resolves_clone_and_design_profiles(self):
+        engine = Mock()
+        engine.generate.return_value = object()
+        engine.load_voice_profile.side_effect = [
+            {"kind": "clone", "prompt": "clone-prompt"},
+            {"kind": "design", "instruct": "warm, low, confident"},
+        ]
+        output_dir = Path(tempfile.mkdtemp())
+        try:
+            with patch("tts_mcp.desktop.OUTPUT_DIR", output_dir), patch(
+                "tts_mcp.desktop.save_audio", return_value=str(output_dir / "result.wav")
+            ):
+                for name in ("clone", "designer"):
+                    response = dispatch_request(
+                        {
+                            "id": name,
+                            "type": "synthesize",
+                            "text": "hello",
+                            "language": "en",
+                            "voice": "profile",
+                            "voice_name": name,
+                            "format": "wav",
+                        },
+                        engine,
+                    )
+                    self.assertTrue(response["ok"])
+                    kwargs = engine.generate.call_args.kwargs
+                    if name == "clone":
+                        self.assertEqual(kwargs["voice_clone_prompt"], "clone-prompt")
+                        self.assertNotIn("instruct", kwargs)
+                    else:
+                        self.assertEqual(kwargs["instruct"], "warm, low, confident")
+                        self.assertNotIn("voice_clone_prompt", kwargs)
+        finally:
+            output_dir.rmdir()
+
     def test_import_seed_voices_request(self):
         engine = Mock()
         engine.import_seed_voices.return_value = {

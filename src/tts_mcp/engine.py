@@ -35,7 +35,7 @@ SUPPORTED_LANGUAGES = ("en", "vi")
 REFERENCE_AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg"}
 VOICE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 SEED_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
-DB_SCHEMA_VERSION = 1
+DB_SCHEMA_VERSION = 2
 _STORAGE_LOCK = threading.RLock()
 _MIGRATED_STORAGES: set[tuple[Path, Path]] = set()
 GENERATION_CONFIG_KEYS = frozenset(
@@ -152,14 +152,20 @@ def _open_database() -> sqlite3.Connection:
             CREATE TABLE IF NOT EXISTS voice_profiles (
                 name TEXT PRIMARY KEY,
                 language TEXT NOT NULL CHECK (language IN ('en', 'vi')),
+                kind TEXT NOT NULL DEFAULT 'clone' CHECK (kind IN ('clone', 'design')),
                 ref_audio_path TEXT,
-                prompt_path TEXT NOT NULL,
+                prompt_path TEXT,
+                design_instruction TEXT,
                 ref_text TEXT,
                 is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
                 seed_key TEXT,
                 seed_version INTEGER,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                CHECK (
+                    (kind = 'clone' AND prompt_path IS NOT NULL AND design_instruction IS NULL)
+                    OR (kind = 'design' AND prompt_path IS NULL AND design_instruction IS NOT NULL)
+                )
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_voice_profiles_default_language
                 ON voice_profiles(language) WHERE is_default = 1;
@@ -168,7 +174,42 @@ def _open_database() -> sqlite3.Connection:
                 version INTEGER NOT NULL,
                 installed_at TEXT NOT NULL
             );
-            PRAGMA user_version = 1;
+            PRAGMA user_version = 2;
+            """
+        )
+        connection.commit()
+    elif version < 2:
+        connection.executescript(
+            """
+            CREATE TABLE voice_profiles_v2 (
+                name TEXT PRIMARY KEY,
+                language TEXT NOT NULL CHECK (language IN ('en', 'vi')),
+                kind TEXT NOT NULL DEFAULT 'clone' CHECK (kind IN ('clone', 'design')),
+                ref_audio_path TEXT,
+                prompt_path TEXT,
+                design_instruction TEXT,
+                ref_text TEXT,
+                is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+                seed_key TEXT,
+                seed_version INTEGER,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                CHECK (
+                    (kind = 'clone' AND prompt_path IS NOT NULL AND design_instruction IS NULL)
+                    OR (kind = 'design' AND prompt_path IS NULL AND design_instruction IS NOT NULL)
+                )
+            );
+            INSERT INTO voice_profiles_v2
+                (name, language, kind, ref_audio_path, prompt_path, design_instruction,
+                 ref_text, is_default, seed_key, seed_version, created_at, updated_at)
+            SELECT name, language, 'clone', ref_audio_path, prompt_path, NULL,
+                   ref_text, is_default, seed_key, seed_version, created_at, updated_at
+            FROM voice_profiles;
+            DROP TABLE voice_profiles;
+            ALTER TABLE voice_profiles_v2 RENAME TO voice_profiles;
+            CREATE UNIQUE INDEX idx_voice_profiles_default_language
+                ON voice_profiles(language) WHERE is_default = 1;
+            PRAGMA user_version = 2;
             """
         )
         connection.commit()
@@ -492,9 +533,9 @@ class Engine:
             connection.execute(
                 """
                 INSERT INTO voice_profiles
-                    (name, language, ref_audio_path, prompt_path, ref_text,
-                     is_default, seed_key, seed_version, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (name, language, kind, ref_audio_path, prompt_path, design_instruction,
+                     ref_text, is_default, seed_key, seed_version, created_at, updated_at)
+                VALUES (?, ?, 'clone', ?, ?, NULL, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     name,
@@ -596,13 +637,15 @@ class Engine:
                     connection.execute(
                         """
                         INSERT INTO voice_profiles
-                            (name, language, ref_audio_path, prompt_path, ref_text,
-                             is_default, seed_key, seed_version, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            (name, language, kind, ref_audio_path, prompt_path, design_instruction,
+                             ref_text, is_default, seed_key, seed_version, created_at, updated_at)
+                        VALUES (?, ?, 'clone', ?, ?, NULL, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(name) DO UPDATE SET
                             language = excluded.language,
+                            kind = 'clone',
                             ref_audio_path = excluded.ref_audio_path,
                             prompt_path = excluded.prompt_path,
+                            design_instruction = NULL,
                             ref_text = excluded.ref_text,
                             is_default = excluded.is_default,
                             seed_key = COALESCE(excluded.seed_key, voice_profiles.seed_key),
@@ -635,6 +678,89 @@ class Engine:
             if backup_dir.exists():
                 shutil.rmtree(backup_dir, ignore_errors=True)
             return str(final_prompt)
+
+    def save_design_voice(
+        self,
+        name: str,
+        design_instruction: str,
+        language: str = "en",
+        *,
+        is_default: bool = False,
+    ) -> str:
+        """Create or replace a profile backed by a voice design instruction."""
+        name = self.validate_voice_name(name)
+        language = validate_language(language)
+        if not isinstance(design_instruction, str) or not design_instruction.strip():
+            raise ValueError("Voice design instruction must be a non-empty string")
+        if not isinstance(is_default, bool):
+            raise ValueError("is_default must be a boolean")
+
+        with _STORAGE_LOCK:
+            connection = self._open_storage()
+            profile_dir = VOICES_DIR / name
+            backup_dir = VOICES_DIR / f".{name}.backup-{uuid.uuid4().hex}"
+            current = connection.execute(
+                "SELECT * FROM voice_profiles WHERE name = ?", (name,)
+            ).fetchone()
+            try:
+                if profile_dir.exists():
+                    profile_dir.rename(backup_dir)
+                has_other_default = connection.execute(
+                    """
+                    SELECT 1 FROM voice_profiles
+                    WHERE language = ? AND is_default = 1 AND name <> ?
+                    """,
+                    (language, name),
+                ).fetchone()
+                if is_default and not has_other_default:
+                    final_default = True
+                elif current and current["language"] == language:
+                    final_default = bool(current["is_default"])
+                else:
+                    final_default = False
+                now = _utc_now()
+                created_at = current["created_at"] if current else now
+                with connection:
+                    if final_default:
+                        connection.execute(
+                            "UPDATE voice_profiles SET is_default = 0 WHERE language = ? AND name <> ?",
+                            (language, name),
+                        )
+                    connection.execute(
+                        """
+                        INSERT INTO voice_profiles
+                            (name, language, kind, ref_audio_path, prompt_path,
+                             design_instruction, ref_text, is_default, seed_key,
+                             seed_version, created_at, updated_at)
+                        VALUES (?, ?, 'design', NULL, NULL, ?, NULL, ?, NULL, NULL, ?, ?)
+                        ON CONFLICT(name) DO UPDATE SET
+                            language = excluded.language,
+                            kind = 'design',
+                            ref_audio_path = NULL,
+                            prompt_path = NULL,
+                            design_instruction = excluded.design_instruction,
+                            ref_text = NULL,
+                            is_default = excluded.is_default,
+                            updated_at = excluded.updated_at
+                        """,
+                        (
+                            name,
+                            language,
+                            design_instruction.strip(),
+                            int(final_default),
+                            created_at,
+                            now,
+                        ),
+                    )
+            except Exception:
+                if backup_dir.exists() and not profile_dir.exists():
+                    backup_dir.rename(profile_dir)
+                raise
+            finally:
+                connection.close()
+            if backup_dir.exists():
+                shutil.rmtree(backup_dir, ignore_errors=True)
+            return name
 
     @staticmethod
     def _read_seed_manifest(seed_folder: Path) -> tuple[dict[str, Any], Path]:
@@ -765,14 +891,25 @@ class Engine:
                 )
         return result
 
-    def load_voice(self, name: str):
-        """Load a saved voice clone prompt by name."""
+    def load_voice_profile(self, name: str) -> dict[str, Any]:
+        """Resolve a saved profile for a synthesis request."""
         name = self.validate_voice_name(name)
         with _STORAGE_LOCK:
             with closing(self._open_storage()) as connection:
                 row = connection.execute(
-                    "SELECT prompt_path FROM voice_profiles WHERE name = ?", (name,)
+                    """
+                    SELECT kind, prompt_path, design_instruction
+                    FROM voice_profiles WHERE name = ?
+                    """,
+                    (name,),
                 ).fetchone()
+        if row and row["kind"] not in {"clone", "design"}:
+            raise ValueError(f"Unsupported voice profile kind: {row['kind']}")
+        if row and row["kind"] == "design":
+            instruction = row["design_instruction"]
+            if not isinstance(instruction, str) or not instruction.strip():
+                raise RuntimeError(f"Voice profile '{name}' has no design instruction")
+            return {"kind": "design", "instruct": instruction}
         prompt_path = _resolve_data_path(row["prompt_path"] if row else None)
         if prompt_path is None or not prompt_path.exists():
             raise FileNotFoundError(
@@ -780,7 +917,14 @@ class Engine:
             )
         from omnivoice import VoiceClonePrompt
 
-        return VoiceClonePrompt.load(str(prompt_path))
+        return {"kind": "clone", "prompt": VoiceClonePrompt.load(str(prompt_path))}
+
+    def load_voice(self, name: str):
+        """Load a saved voice clone prompt by name for CLI and MCP callers."""
+        profile = self.load_voice_profile(name)
+        if profile["kind"] != "clone":
+            raise ValueError(f"Voice profile '{name}' is a design profile")
+        return profile["prompt"]
 
     @staticmethod
     def list_voices() -> list[dict[str, Any]]:
@@ -789,7 +933,8 @@ class Engine:
             with closing(Engine._open_storage()) as connection:
                 rows = connection.execute(
                     """
-                    SELECT name, language, ref_audio_path, ref_text, is_default
+                    SELECT name, language, kind, ref_audio_path, design_instruction,
+                           ref_text, is_default
                     FROM voice_profiles
                     ORDER BY is_default DESC, language ASC, name ASC
                     """
@@ -798,9 +943,11 @@ class Engine:
             {
                 "name": row["name"],
                 "language": row["language"],
+                "kind": row["kind"],
                 "ref_audio": str(_resolve_data_path(row["ref_audio_path"]))
                 if row["ref_audio_path"]
                 else None,
+                "design_instruction": row["design_instruction"],
                 "ref_text": row["ref_text"],
                 "is_default": bool(row["is_default"]),
             }

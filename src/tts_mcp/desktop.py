@@ -162,7 +162,11 @@ def _synthesize(request: dict[str, Any], engine: Engine) -> dict[str, Any]:
         voice_name = request.get("voice_name")
         if not isinstance(voice_name, str) or not voice_name.strip():
             raise ValueError("Voice profile name must be a non-empty string")
-        kwargs["voice_clone_prompt"] = engine.load_voice(voice_name)
+        profile = engine.load_voice_profile(voice_name)
+        if profile["kind"] == "design":
+            kwargs["instruct"] = profile["instruct"]
+        else:
+            kwargs["voice_clone_prompt"] = profile["prompt"]
     elif voice == "file":
         _reject_voice_payload(request, ("voice_name", "instruct"))
         ref_audio = _validate_reference_audio(request.get("ref_audio"))
@@ -234,6 +238,11 @@ def dispatch_request(
             language = validate_language(request.get("language", "en"))
             path = engine.save_voice(name, ref_audio, request.get("ref_text"), language)
             return _ok(request_id, {"path": path})
+        if operation == "save_design_voice":
+            name = request["name"]
+            language = validate_language(request.get("language", "en"))
+            engine.save_design_voice(name, request["design_instruction"], language)
+            return _ok(request_id, {"name": name, "kind": "design"})
         if operation == "import_seed_voices":
             seed_dir = request["seed_dir"]
             if not isinstance(seed_dir, str) or not seed_dir.strip():

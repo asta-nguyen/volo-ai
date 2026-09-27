@@ -12,14 +12,17 @@ these user-facing areas for a future documentation pass:
 
 - [~] Local model setup and offline synthesis — desktop sidecar requests
   `status`, `prepare_model`, and `synthesize`.
-- [~] Advanced OmniVoice synthesis and Voice Design — desktop `synthesize`
-  forwards native generation controls and duration-based long-form chunking.
-- [~] File-based voice cloning and saved profiles — the desktop provides a
-  dedicated profile library for creating, listing, reusing, and deleting local
-  profiles through `save_voice`, `list_voices`, and `delete_voice`. SQLite
-  stores profile metadata, while copied audio and clone prompts stay under the
-  app-data directory; bundled versioned seed folders are imported on setup,
-  and users can import additional seed folders from the Voice Profiles view.
+- [~] Advanced OmniVoice synthesis — desktop `synthesize` forwards native
+  generation controls and duration-based long-form chunking; Voice Design
+  remains available through the engine and CLI/MCP entry points.
+- [~] Voice profiles — the desktop provides a dedicated profile library for
+  creating Clone profiles from audio or Design profiles from a natural-language
+  voice description, then listing, reusing, and deleting them through
+  `save_voice`, `save_design_voice`, `list_voices`, and `delete_voice`. SQLite
+  stores profile metadata; clone audio/prompts stay under app data while Design
+  instructions stay in SQLite. Bundled versioned seed folders are imported on
+  setup, and users can import individual audio files or seed folders directly
+  from the Voice Profiles view.
 - [~] Desktop settings and interface localization — Settings stores the app
   locale separately from the synthesis language and exposes General, Model,
   and Storage tabs for local engine status and data location.

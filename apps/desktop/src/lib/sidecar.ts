@@ -2,7 +2,8 @@ import { Command, type Child } from "@tauri-apps/plugin-shell";
 import { appDataDir } from "@tauri-apps/api/path";
 
 export type Language = "en" | "vi";
-export type VoiceMode = "auto" | "profile" | "file" | "design";
+export type VoiceMode = "auto" | "profile";
+export type VoiceKind = "clone" | "design";
 export type AudioFormat = "wav" | "mp3";
 
 export type GenerationConfig = {
@@ -23,7 +24,9 @@ export type GenerationConfig = {
 export type VoiceProfile = {
   name: string;
   language: Language;
+  kind: VoiceKind;
   ref_audio?: string;
+  design_instruction?: string | null;
   ref_text?: string | null;
   is_default: boolean;
 };
@@ -190,6 +193,19 @@ export class SidecarClient {
   async cancelPreparation(): Promise<void> {
     if (!this.activePreparationId) return;
     await this.request({ type: "cancel", request_id: this.activePreparationId });
+  }
+
+  async saveDesignVoice(
+    name: string,
+    designInstruction: string,
+    language: Language,
+  ): Promise<void> {
+    await this.request({
+      type: "save_design_voice",
+      name,
+      design_instruction: designInstruction,
+      language,
+    });
   }
 
   async request<T>(payload: Omit<Request, "id">): Promise<T> {

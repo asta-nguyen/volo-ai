@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import tempfile
 import unittest
 import wave
@@ -141,9 +142,58 @@ class EngineTests(unittest.TestCase):
                 }
                 self.assertIn("voice_profiles", tables)
                 self.assertIn("app_seeds", tables)
-                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 1)
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 2)
                 self.assertEqual(connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)
                 self.assertEqual(connection.execute("PRAGMA busy_timeout").fetchone()[0], 5000)
+                connection.close()
+
+    def test_schema_v1_migrates_existing_profiles_to_clone_kind(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            database = root / "volo.db"
+            connection = sqlite3.connect(database)
+            connection.executescript(
+                """
+                CREATE TABLE voice_profiles (
+                    name TEXT PRIMARY KEY,
+                    language TEXT NOT NULL CHECK (language IN ('en', 'vi')),
+                    ref_audio_path TEXT,
+                    prompt_path TEXT NOT NULL,
+                    ref_text TEXT,
+                    is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+                    seed_key TEXT,
+                    seed_version INTEGER,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE UNIQUE INDEX idx_voice_profiles_default_language
+                    ON voice_profiles(language) WHERE is_default = 1;
+                CREATE TABLE app_seeds (
+                    seed_key TEXT PRIMARY KEY,
+                    version INTEGER NOT NULL,
+                    installed_at TEXT NOT NULL
+                );
+                PRAGMA user_version = 1;
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO voice_profiles
+                    (name, language, prompt_path, created_at, updated_at)
+                VALUES ('legacy', 'en', 'voices/legacy/prompt.pt', 'created', 'updated')
+                """
+            )
+            connection.commit()
+            connection.close()
+
+            with self.storage_patches(root):
+                connection = Engine._open_storage()
+                row = connection.execute(
+                    "SELECT kind, design_instruction FROM voice_profiles WHERE name = 'legacy'"
+                ).fetchone()
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 2)
+                self.assertEqual(row["kind"], "clone")
+                self.assertIsNone(row["design_instruction"])
                 connection.close()
 
     def test_save_voice_copies_reference_and_persists_metadata(self):
@@ -166,6 +216,29 @@ class EngineTests(unittest.TestCase):
                 self.assertTrue(Engine.delete_voice("demo"))
                 self.assertFalse((root / "voices" / "demo").exists())
                 self.assertTrue(source.exists())
+
+    def test_save_design_voice_persists_without_clone_files(self):
+        engine = Engine()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self.storage_patches(root):
+                self.assertEqual(
+                    engine.save_design_voice("designer", "warm, low, confident", "vi"),
+                    "designer",
+                )
+                profile = Engine.list_voices()[0]
+                self.assertEqual(profile["kind"], "design")
+                self.assertEqual(profile["design_instruction"], "warm, low, confident")
+                self.assertIsNone(profile["ref_audio"])
+                self.assertIsNone(profile["ref_text"])
+                self.assertEqual(
+                    engine.load_voice_profile("designer"),
+                    {"kind": "design", "instruct": "warm, low, confident"},
+                )
+                with self.assertRaises(ValueError):
+                    engine.save_design_voice("invalid", " ")
+                self.assertTrue(Engine.delete_voice("designer"))
+                self.assertEqual(Engine.list_voices(), [])
 
     def test_default_voice_is_unique_per_language(self):
         engine = Engine()

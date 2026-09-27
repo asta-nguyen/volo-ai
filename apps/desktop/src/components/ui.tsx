@@ -7,19 +7,19 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-semibold transition-[background-color,border-color,color,box-shadow,transform] duration-200 outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)] disabled:pointer-events-none disabled:opacity-50 active:translate-y-px",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-semibold transition-[background-color,border-color,color,box-shadow,transform] duration-200 outline-none focus-visible:ring-2 focus-visible:ring-(--ring) focus-visible:ring-offset-2 focus-visible:ring-offset-(--background) disabled:pointer-events-none disabled:opacity-50 active:translate-y-px",
   {
     variants: {
       variant: {
         default:
-          "bg-[var(--accent)] text-white shadow-[0_10px_24px_rgb(191_95_69/18%)] hover:bg-[var(--accent-strong)]",
+          "bg-(--accent) text-white shadow-[0_10px_24px_rgb(191_95_69/18%)] hover:bg-(--accent-strong)",
         secondary:
-          "border border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)] hover:border-[var(--accent)] hover:bg-[var(--surface-muted)]",
+          "border border-(--border) bg-(--surface) text-(--foreground) hover:border-(--accent) hover:bg-(--surface-muted)",
         ghost:
-          "text-[var(--muted-foreground)] hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)]",
+          "text-(--muted-foreground) hover:bg-(--surface-muted) hover:text-(--foreground)",
         destructive:
-          "border border-[var(--destructive-border)] bg-[var(--destructive-surface)] text-[var(--destructive)] hover:bg-[var(--destructive)] hover:text-white",
-        icon: "size-9 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-0 text-[var(--muted-foreground)] hover:border-[var(--accent)] hover:text-[var(--accent)]",
+          "border border-(--destructive-border) bg-(--destructive-surface) text-(--destructive) hover:bg-(--destructive) hover:text-white",
+        icon: "size-9 rounded-lg border border-(--border) bg-(--surface) p-0 text-(--muted-foreground) hover:border-(--accent) hover:text-(--accent)",
       },
       size: {
         default: "min-h-10 px-4 py-2.5",
@@ -43,7 +43,7 @@ export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
   return (
     <section
       className={cn(
-        "rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-[0_12px_34px_rgb(31_37_34/4%)]",
+        "rounded-2xl border border-(--border) bg-(--surface) shadow-[0_12px_34px_rgb(31_37_34/4%)]",
         className,
       )}
       {...props}
@@ -66,7 +66,7 @@ export function CardDescription({
   ...props
 }: React.HTMLAttributes<HTMLParagraphElement>) {
   return (
-    <p className={cn("text-sm leading-6 text-[var(--muted-foreground)]", className)} {...props} />
+    <p className={cn("text-sm leading-6 text-(--muted-foreground)", className)} {...props} />
   );
 }
 
@@ -82,7 +82,7 @@ export const Input = React.forwardRef<
     <input
       ref={ref}
       className={cn(
-        "flex h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 text-sm text-[var(--foreground)] shadow-sm transition-colors placeholder:text-[var(--muted-foreground)] hover:border-[var(--border-strong)] focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-50",
+        "flex h-10 w-full rounded-xl border border-(--border) bg-(--surface) px-3.5 text-sm text-(--foreground) shadow-sm transition-colors placeholder:text-(--muted-foreground) hover:border-(--border-strong) focus-visible:border-(--accent) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) disabled:cursor-not-allowed disabled:opacity-50",
         className,
       )}
       {...props}
@@ -98,7 +98,7 @@ export const Textarea = React.forwardRef<
     <textarea
       ref={ref}
       className={cn(
-        "flex min-h-24 w-full resize-y rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-3 text-sm leading-6 text-[var(--foreground)] shadow-sm transition-colors placeholder:text-[var(--muted-foreground)] hover:border-[var(--border-strong)] focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-50",
+        "flex min-h-24 w-full resize-y rounded-xl border border-(--border) bg-(--surface) px-3.5 py-3 text-sm leading-6 text-(--foreground) shadow-sm transition-colors placeholder:text-(--muted-foreground) hover:border-(--border-strong) focus-visible:border-(--accent) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) disabled:cursor-not-allowed disabled:opacity-50",
         className,
       )}
       {...props}
@@ -114,7 +114,7 @@ export const Label = React.forwardRef<
     <label
       ref={ref}
       className={cn(
-        "text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]",
+        "text-xs font-semibold uppercase tracking-[0.12em] text-(--muted-foreground)",
         className,
       )}
       {...props}
@@ -126,7 +126,7 @@ export function Badge({ className, ...props }: React.HTMLAttributes<HTMLSpanElem
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border border-[var(--success-border)] bg-[var(--success-surface)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--success)]",
+        "inline-flex items-center rounded-full border border-(--success-border) bg-(--success-surface) px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-(--success)",
         className,
       )}
       {...props}
@@ -136,14 +136,14 @@ export function Badge({ className, ...props }: React.HTMLAttributes<HTMLSpanElem
 
 export function Separator({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div role="separator" className={cn("h-px w-full bg-[var(--border)]", className)} {...props} />
+    <div role="separator" className={cn("h-px w-full bg-(--border)", className)} {...props} />
   );
 }
 
 export function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("animate-pulse rounded-lg bg-[var(--surface-muted)]", className)}
+      className={cn("animate-pulse rounded-lg bg-(--surface-muted)", className)}
       {...props}
     />
   );
@@ -152,8 +152,8 @@ export function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivEl
 export function Progress({ value, className }: { value: number | null; className?: string }) {
   return (
     <ProgressPrimitive.Root value={value} className={cn("w-full", className)} aria-label="Progress">
-      <ProgressPrimitive.Track className="h-2 overflow-hidden rounded-full bg-[var(--surface-muted)]">
-        <ProgressPrimitive.Indicator className="h-full rounded-full bg-[var(--accent)] transition-[width] duration-500" />
+      <ProgressPrimitive.Track className="h-2 overflow-hidden rounded-full bg-(--surface-muted)">
+        <ProgressPrimitive.Indicator className="h-full rounded-full bg-(--accent) transition-[width] duration-500" />
       </ProgressPrimitive.Track>
     </ProgressPrimitive.Root>
   );
@@ -187,18 +187,18 @@ export function Select({
       <SelectPrimitive.Trigger
         aria-label={ariaLabel}
         className={cn(
-          "flex h-10 w-full items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 text-left text-sm text-[var(--foreground)] shadow-sm outline-none transition-colors hover:border-[var(--border-strong)] focus-visible:border-[var(--accent)] focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-50",
+          "flex h-10 w-full items-center justify-between gap-3 rounded-xl border border-(--border) bg-(--surface) px-3.5 text-left text-sm text-(--foreground) shadow-sm outline-none transition-colors hover:border-(--border-strong) focus-visible:border-(--accent) focus-visible:ring-2 focus-visible:ring-(--ring) disabled:cursor-not-allowed disabled:opacity-50",
           className,
         )}
       >
         <SelectPrimitive.Value placeholder={placeholder} />
         <SelectPrimitive.Icon>
-          <ChevronDown className="size-4 text-[var(--muted-foreground)]" aria-hidden="true" />
+          <ChevronDown className="size-4 text-(--muted-foreground)" aria-hidden="true" />
         </SelectPrimitive.Icon>
       </SelectPrimitive.Trigger>
       <SelectPrimitive.Portal>
         <SelectPrimitive.Positioner className="z-50 outline-none" sideOffset={6}>
-          <SelectPrimitive.Popup className="min-w-[var(--anchor-width)] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1.5 text-sm shadow-[0_18px_40px_rgb(31_37_34/15%)] outline-none data-[open]:animate-in data-[closed]:animate-out">
+          <SelectPrimitive.Popup className="min-w-(--anchor-width) overflow-hidden rounded-xl border border-(--border) bg-(--surface) p-1.5 text-sm shadow-[0_18px_40px_rgb(31_37_34/15%)] outline-none data-[open]:animate-in data-[closed]:animate-out">
             <SelectPrimitive.List className="max-h-64 overflow-auto outline-none">
               {children}
             </SelectPrimitive.List>
@@ -213,10 +213,10 @@ export function SelectItem({ value, children }: { value: string; children: React
   return (
     <SelectPrimitive.Item
       value={value}
-      className="flex cursor-default items-center justify-between rounded-lg px-3 py-2.5 text-[var(--foreground)] outline-none data-[highlighted]:bg-[var(--surface-muted)] data-[selected]:font-semibold"
+      className="flex cursor-default items-center justify-between rounded-lg px-3 py-2.5 text-(--foreground) outline-none data-[highlighted]:bg-(--surface-muted) data-[selected]:font-semibold"
     >
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
-      <SelectPrimitive.ItemIndicator className="text-[var(--accent)]">
+      <SelectPrimitive.ItemIndicator className="text-(--accent)">
         ✓
       </SelectPrimitive.ItemIndicator>
     </SelectPrimitive.Item>
@@ -247,30 +247,30 @@ export function ConfirmDialog({
       <DialogPrimitive.Portal>
         <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-[rgb(18_24_21/48%)] backdrop-blur-[2px] data-[open]:animate-in data-[closed]:animate-out" />
         <DialogPrimitive.Viewport className="fixed inset-0 z-50 flex items-center justify-center p-6">
-          <DialogPrimitive.Popup className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[0_24px_64px_rgb(18_24_21/24%)] outline-none data-[open]:animate-in data-[closed]:animate-out">
+          <DialogPrimitive.Popup className="w-full max-w-md rounded-2xl border border-(--border) bg-(--surface) p-6 shadow-[0_24px_64px_rgb(18_24_21/24%)] outline-none data-[open]:animate-in data-[closed]:animate-out">
             <div className="flex items-start justify-between gap-5">
               <div>
-                <DialogPrimitive.Title className="text-lg font-semibold tracking-[-0.03em] text-[var(--foreground)]">
+                <DialogPrimitive.Title className="text-lg font-semibold tracking-[-0.03em] text-(--foreground)">
                   {title}
                 </DialogPrimitive.Title>
-                <DialogPrimitive.Description className="mt-2 text-sm leading-6 text-[var(--muted-foreground)]">
+                <DialogPrimitive.Description className="mt-2 text-sm leading-6 text-(--muted-foreground)">
                   {description}
                 </DialogPrimitive.Description>
               </div>
               <DialogPrimitive.Close
                 aria-label="Close"
-                className="rounded-lg p-1.5 text-[var(--muted-foreground)] outline-none hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                className="rounded-lg p-1.5 text-(--muted-foreground) outline-none hover:bg-(--surface-muted) hover:text-(--foreground) focus-visible:ring-2 focus-visible:ring-(--ring)"
               >
                 <X className="size-4" />
               </DialogPrimitive.Close>
             </div>
             <div className="mt-6 flex justify-end gap-2">
-              <DialogPrimitive.Close className="inline-flex min-h-10 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 text-sm font-semibold text-[var(--foreground)] outline-none hover:bg-[var(--surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--ring)]">
+              <DialogPrimitive.Close className="inline-flex min-h-10 items-center justify-center rounded-xl border border-(--border) bg-(--surface) px-4 text-sm font-semibold text-(--foreground) outline-none hover:bg-(--surface-muted) focus-visible:ring-2 focus-visible:ring-(--ring)">
                 {cancelLabel}
               </DialogPrimitive.Close>
               <button
                 type="button"
-                className="inline-flex min-h-10 items-center justify-center rounded-xl bg-[var(--destructive)] px-4 text-sm font-semibold text-white outline-none hover:bg-[var(--destructive-strong)] focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:pointer-events-none disabled:opacity-50"
+                className="inline-flex min-h-10 items-center justify-center rounded-xl bg-(--destructive) px-4 text-sm font-semibold text-white outline-none hover:bg-(--destructive-strong) focus-visible:ring-2 focus-visible:ring-(--ring) disabled:pointer-events-none disabled:opacity-50"
                 disabled={busy}
                 onClick={onConfirm}
               >
