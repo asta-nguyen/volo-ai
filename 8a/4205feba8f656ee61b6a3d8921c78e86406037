@@ -1,0 +1,166 @@
+docs/llm/LOG.md
+  s_c82da8f2978bfc::t_2d800e0018d15b 1-33
+src/tts_mcp/desktop.py
+  s_4ded11d943d9ad::t_6f2f895e596142 6,26,202-203,205-208,214,222-224,234-244,248-254,264-270,320-325,385,396,403
+  s_4ded11d943d9ad::t_c5d4fbeecb9df3 204
+.gitignore
+  s_4ded11d943d9ad::t_1c8319309cc94f 22
+docs/llm/architecture/overview.md
+  s_4ded11d943d9ad::t_ba422ead75bf9a 70-72,78-79,83,88-91,98-100,116-121
+  s_c82da8f2978bfc::t_714ce6080c524a 13-14,66-69,73,81,95-97,112-114
+  s_4ded11d943d9ad::t_faa6e4165e3403 15-19,21-23,29-32,41-42,50-51,54-61
+  s_4ded11d943d9ad::t_43640679d41ac4 84
+docs/llm/workflows/mcp-voice-library.md
+  s_c82da8f2978bfc::t_97697fb6be189b 52-54
+  s_c82da8f2978bfc::t_2d800e0018d15b 1-51,55-77,79-89
+  s_4ded11d943d9ad::t_ba422ead75bf9a 78
+pyproject.toml
+  s_c82da8f2978bfc::t_e8ca77168d3ec9 7
+  s_4ded11d943d9ad::t_6002f01ce1823f 20
+docs/agent-devkit/INDEX.md
+  s_c82da8f2978bfc::t_51fd468f80738e 16
+  s_c82da8f2978bfc::t_38a9d00c2859cc 10
+  s_4ded11d943d9ad::t_64f2bf6dd05d69 11
+  s_4ded11d943d9ad::t_f48df6023bac82 15
+scripts/build_sidecar.py
+  s_4ded11d943d9ad::t_59746255d492ea 29-30,39-41,69-74,89-92,94
+  s_4ded11d943d9ad::t_68d109ef3b1b05 28
+docs/desktop-development.md
+  s_4ded11d943d9ad::t_88e2d722c74890 71
+  s_4ded11d943d9ad::t_d07fb7d3dc0e4d 23,33-38,46
+  s_4ded11d943d9ad::t_fdd5e3d72e9617 89-91,100,104
+  s_4ded11d943d9ad::t_531535ddf0a0c2 79-88,92-96,106-108
+  s_4ded11d943d9ad::t_f3b1b3c3e3e56b 73-77,97-99,103,105,109-112,126-128
+  s_4ded11d943d9ad::t_1030d5c9a59dc9 78
+tests/test_build_sidecar.py
+  s_4ded11d943d9ad::t_bbc1deef821d1b 11,16-17,27-37,42-50,53,57-59
+  s_4ded11d943d9ad::t_1644455e3e9e01 54-56
+src/tts_mcp/server.py
+  s_c82da8f2978bfc::t_f47034a2ec1566 94,100,110
+  s_c82da8f2978bfc::t_7fac2ca2af65cc 163,165,167-168
+  s_c82da8f2978bfc::t_0d6c8d574a6d65 69,72,79,96-99,101,164,166
+apps/desktop/src/lib/i18n.ts
+  s_4ded11d943d9ad::t_76ae8b219f9e27 718
+  s_4ded11d943d9ad::t_10aa7375695906 726
+  s_4ded11d943d9ad::t_b7a7c66fda1f04 14,17-18,31-35,77-80,183-187,220,267-270,283-287,329-332,435-439,471,537-540,553-557,595-598,692-696,725
+  s_4ded11d943d9ad::t_755fdf0dcd36fc 15-16,221-222,472-473
+docs/llm/INDEX.md
+  s_4ded11d943d9ad::t_f403cf76b4e447 15-17,22,25,33,36
+  s_4ded11d943d9ad::t_ce5ae3a1667a46 5,7,10-11,19-21
+  s_c82da8f2978bfc::t_714ce6080c524a 8-9,37-39,47-48
+docs/agent-devkit/specs/2026-10-08-desktop-audiocpp-vieneu-design.md
+  s_dacc4258b3b1ef::t_b46507b37b62c5 31-32,126-127,215,252-255
+  s_4ded11d943d9ad::t_c8618d9e4523d8 35-52,128,135-152,155-166,220-221,225-227,264-267
+  s_4ded11d943d9ad::t_54d4ccb8f33d17 53-69,153-154,167-170
+  s_4ded11d943d9ad::t_4d64f06f02be14 273-275,277
+  s_4ded11d943d9ad::t_7fe6ff00923422 70-84,184-188,192,194
+  s_4ded11d943d9ad::t_7bb90f0b481c6f 276
+  s_dacc4258b3b1ef::t_af6d153540acf8 98-114
+  s_4ded11d943d9ad::t_b0a223288f2532 85-97,282
+  s_dacc4258b3b1ef::t_c1e3ae12b8652b 19-20,27-29
+  s_dacc4258b3b1ef::t_e2fc6aaab5c915 1-18,21-26,30,33-34,115-125,129-134,172-182,193,195-196,203-214,216-219,222-224,228-251,256-263,268-272,278-281
+  s_dacc4258b3b1ef::t_d4bfb68974a471 171,183,189-191,197-202
+tests/test_desktop_vieneu.py
+  s_4ded11d943d9ad::t_5c776d89f70063 260
+  s_4ded11d943d9ad::t_07327a7d0bac91 1,3-48,50-87,165-259,261-342
+  s_4ded11d943d9ad::t_1644455e3e9e01 88,148-155
+  s_4ded11d943d9ad::t_6d8653c2d18f0e 2,49,89-147,156-164
+docs/agent-devkit/plans/2026-09-27-mcp-shared-app-voice-library-plan.md
+  s_c82da8f2978bfc::t_e7835d11ebdd3e 14
+  s_c82da8f2978bfc::t_dcd60bd4187090 101-102,112,126
+  s_c82da8f2978bfc::t_a5821065c18250 100
+  s_c82da8f2978bfc::t_51fd468f80738e 1-11,13,15-56,64-99,103-111,113-125
+  s_c82da8f2978bfc::t_394348a2a7c3bd 57-63
+  s_c82da8f2978bfc::t_a9e18f54133483 12
+README.md
+  s_c82da8f2978bfc::t_dad689a6e9c16e 37-41,44-49
+  s_c82da8f2978bfc::t_0d6c8d574a6d65 54-56,59-73,95-99
+  s_4ded11d943d9ad::t_c1556c159f3c33 122,127-130,162-165,169-175
+  s_4ded11d943d9ad::t_88e2d722c74890 160
+  s_c82da8f2978bfc::t_cd990b44d895db 74-94
+  s_c82da8f2978bfc::t_e8ca77168d3ec9 30-36,42-43,50-53,57-58,100-114
+docs/agent-devkit/plans/2026-10-08-desktop-audiocpp-vieneu-plan.md
+  s_4ded11d943d9ad::t_dec09c9da9181f 118
+  s_4ded11d943d9ad::t_8d0012b7fc054e 143
+  s_4ded11d943d9ad::t_64f2bf6dd05d69 1-12,15-32,34,36,43-53,57,64-74,76,78,86-97,99-111,115,119-142,144-149
+  s_4ded11d943d9ad::t_33c00a4c3ad6cd 13-14,33,54,98
+  s_4ded11d943d9ad::t_dc5a50547ed30f 35,37-42,55-56,58-63,77,79-85,113-114,116-117
+  s_4ded11d943d9ad::t_ecf6c0df86ae58 75,112
+tests/test_desktop.py
+  s_4ded11d943d9ad::t_6649716aae5155 65
+  s_4ded11d943d9ad::t_9a27d8aa53833e 11,25-33,42-44,51-64,66-106,121-125,523-542
+  s_4ded11d943d9ad::t_4b1e9c412f888f 107-120
+  s_4ded11d943d9ad::t_1644455e3e9e01 219-224,259-261,383-385,431,442-444
+  s_4ded11d943d9ad::t_bb12e29854babb 132,173,197,229,267,298,323,354,377-379,451,508
+  s_4ded11d943d9ad::t_8053a397d91de1 543
+apps/desktop/src-tauri/tauri.conf.json
+  s_4ded11d943d9ad::t_c1556c159f3c33 37
+apps/desktop/src/App.tsx
+  s_4ded11d943d9ad::t_78d73c4e2bf3e2 1829-1848,1860-1861,1866-1873
+  s_4ded11d943d9ad::t_755fdf0dcd36fc 158,401-403,886,1422,1431,1449-1467,1469,1486-1609,1611-1612,1749,2224-2233,2365-2366
+  s_4ded11d943d9ad::t_ae11aa0dccfaad 1641,1645-1647,1665-1667,1673,1688,1695,1712-1713,1715,1743-1748,1750-1753,1756,1758-1764,1771
+  s_4ded11d943d9ad::t_63080b1812177e 1887-1890,1942-1945,2080-2085
+  s_4ded11d943d9ad::t_5a2dcd8c559974 924-925,948-949,1083,1114-1121,1172,1174
+  s_4ded11d943d9ad::t_0deeef92903d5e 157,159-160,271-272,323,364-367
+  s_4ded11d943d9ad::t_8c336fbce53c24 914-915,927-928,930-932,938-939,951-952,954-956,967-970,1064-1082,1084-1113,1122-1126
+  s_4ded11d943d9ad::t_76ae8b219f9e27 1995,2093
+  s_4ded11d943d9ad::t_304010b48118b3 1987-1994,1996-1997,2000-2040,2046,2048,2053-2070
+  s_4ded11d943d9ad::t_d831f7993c9ba4 37-38,151-156,244-245,252,255-256,263,266-270,273-276,306-322,324-334,389-393,418,436
+  s_4ded11d943d9ad::t_0d5771a26abd62 1247-1248,1256,1258,1269,1274-1275,1283,1285,1296,1300-1310,1318-1324,1407,1411-1421,1423-1424,1430,1433-1444
+  s_4ded11d943d9ad::t_c5fdcacfe5ae65 1689-1694,1709-1711,2153-2156,2183-2184,2191,2221-2223,2234,2263-2265,2273-2274,2276-2280,2324-2325,2333,2335,2348
+  s_4ded11d943d9ad::t_5aefae9b459040 1432,2367
+docs/llm/workflows/desktop-vieneu.md
+  s_4ded11d943d9ad::t_d6c9c18f83f61d 16,52-54,64-65
+  s_4ded11d943d9ad::t_fdd5e3d72e9617 29-33
+  s_4ded11d943d9ad::t_098883de927da5 1-15,17-28,34-51,55-63,66-118
+tests/test_server.py
+  s_c82da8f2978bfc::t_f47034a2ec1566 125
+  s_c82da8f2978bfc::t_c18904ca1e07c3 107-124,126-133
+  s_c82da8f2978bfc::t_e7835d11ebdd3e 6,15-23,25,27-45,47-81,83-88,90-98,100,102-103
+  s_c82da8f2978bfc::t_6dd7e367a5d928 2,4,104-106,134-153
+  s_c82da8f2978bfc::t_63afa8504e9d4d 24,26,46,82,89,99,101
+  s_c82da8f2978bfc::t_a02d8502770a3f 5
+docs/agent-devkit/specs/2026-09-27-mcp-shared-app-voice-library-design.md
+  s_c82da8f2978bfc::t_a82caf6df1fedb 15-21
+  s_c82da8f2978bfc::t_51fd468f80738e 85
+  s_c82da8f2978bfc::t_2f92f260bb87a8 49,72,74-77
+  s_c82da8f2978bfc::t_38a9d00c2859cc 1-14,22-48,50-71,73,78-84
+apps/desktop/src/lib/sidecar.ts
+  s_4ded11d943d9ad::t_fda90145ae3264 5-6,68-77
+src/tts_mcp/desktop_vieneu.py
+  s_4ded11d943d9ad::t_ff89de0fea7607 530
+  s_4ded11d943d9ad::t_dbb70e8cc3b3b8 1-163,168-176,181-188,193-212,217-301,305-319,328-343,347-370,374-398,402-420,424-432,436-465,471-506,510-529,531-574
+  s_4ded11d943d9ad::t_1644455e3e9e01 164-167,177-180,189-192,213-216,302-304,320-327,344-346,371-373,399-401,421-423,433-435,466-470,507-509
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8a4205feba8f656ee61b6a3d8921c78e86406037",
+  "prompts": {},
+  "sessions": {
+    "s_4ded11d943d9ad": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11981-687a-7031-8673-360cc6384d58",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_c82da8f2978bfc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e1d9-3384-74d2-8832-08bfe866bb34",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_dacc4258b3b1ef": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11942-cf07-71f0-9c86-8aebb66bb49a",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
