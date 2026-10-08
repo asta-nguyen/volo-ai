@@ -19,6 +19,7 @@ npm-debug.log*
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
 apps/desktop/src-tauri/binaries/tts-sidecar-*
+apps/desktop/src-tauri/binaries/audiocpp-cli-*
 
 # Local model and generated audio data
 .tts-mcp/

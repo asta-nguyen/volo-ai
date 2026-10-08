@@ -1,3 +1,36 @@
+## 2026-09-28
+
+Source commit at read time: `6b7c1d666c6a9f42d9ec0f48e203f11e008a9e7c`
+
+- Page: `architecture/overview.md`
+  Sources:
+  - `pyproject.toml`
+  - `src/tts_mcp/engine.py`
+  - `src/tts_mcp/convert.py`
+  - `src/tts_mcp/cli.py`
+  - `src/tts_mcp/server.py`
+  - `src/tts_mcp/desktop.py`
+  - `apps/desktop/src/lib/sidecar.ts`
+  - `apps/desktop/src/App.tsx`
+  - `tests/test_server.py`
+  - `tests/test_engine.py`
+- Page: `workflows/mcp-voice-library.md`
+  Sources:
+  - `src/tts_mcp/server.py`
+  - `src/tts_mcp/engine.py`
+  - `src/tts_mcp/convert.py`
+  - `apps/desktop/src/lib/sidecar.ts`
+  - `apps/desktop/src/App.tsx`
+  - `tests/test_server.py`
+  - `tests/test_engine.py`
+  - `README.md`
+- Page: `INDEX.md`
+  Sources:
+  - `src/tts_mcp/server.py`
+  - `src/tts_mcp/engine.py`
+  - `src/tts_mcp/desktop.py`
+  - `apps/desktop/src/App.tsx`
+
 ## 2026-09-12
 
 Source commit at read time: `fca8f16` (`init: add core agent skills for feature development workflow`)

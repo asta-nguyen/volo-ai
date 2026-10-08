@@ -26,6 +26,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ffmpeg", required=True, type=Path, help="FFmpeg executable to bundle")
     parser.add_argument(
+        "--audiocpp", required=True, type=Path, help="audio.cpp audiocpp_cli executable to bundle"
+    )
+    parser.add_argument(
         "--target", default=None, help="Rust target triple; defaults to the current host"
     )
     args = parser.parse_args()
@@ -33,6 +36,9 @@ def main() -> int:
     ffmpeg = args.ffmpeg.resolve()
     if not ffmpeg.is_file():
         parser.error(f"FFmpeg executable not found: {ffmpeg}")
+    audiocpp = args.audiocpp.resolve()
+    if not audiocpp.is_file():
+        parser.error(f"audio.cpp CLI executable not found: {audiocpp}")
 
     target = args.target or host_triple()
     extension = ".exe" if target.endswith("windows-msvc") else ""
@@ -60,6 +66,12 @@ def main() -> int:
         str(work_dir),
         "--collect-all",
         "omnivoice",
+        "--collect-all",
+        "vieneu",
+        "--collect-all",
+        "vieneu_utils",
+        "--collect-all",
+        "onnxruntime",
         "--add-binary",
         f"{ffmpeg}{separator}.",
         str(ROOT / "src" / "tts_mcp" / "desktop.py"),
@@ -74,7 +86,12 @@ def main() -> int:
     shutil.copy2(built, destination)
     if not destination.name.endswith(".exe"):
         destination.chmod(destination.stat().st_mode | 0o111)
+    audiocpp_destination = BINARIES / f"audiocpp-cli-{target}{extension}"
+    shutil.copy2(audiocpp, audiocpp_destination)
+    if not audiocpp_destination.name.endswith(".exe"):
+        audiocpp_destination.chmod(audiocpp_destination.stat().st_mode | 0o111)
     print(destination)
+    print(audiocpp_destination)
     return 0
 
 

@@ -34,6 +34,6 @@
     "targets": "all",
     "icon": ["icons/icon.png"],
     "resources": ["resources/seed-voices"],
-    "externalBin": ["binaries/tts-sidecar"]
+    "externalBin": ["binaries/tts-sidecar", "binaries/audiocpp-cli"]
   }
 }

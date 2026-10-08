@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import math
 import os
 import queue
@@ -22,6 +23,7 @@ from tts_mcp.engine import (
     get_engine,
     validate_language,
 )
+from tts_mcp.desktop_vieneu import VieNeuProvider
 
 OUTPUT_DIR = DATA_DIR / "outputs"
 ALLOWED_FORMATS = {"wav", "mp3"}
@@ -197,11 +199,19 @@ def _synthesize(request: dict[str, Any], engine: Engine) -> dict[str, Any]:
     return {"audio_path": str(output_path), "format": output_format}
 
 
+def _provider_id(request: dict[str, Any]) -> str:
+    provider = request.get("provider")
+    if not isinstance(provider, str) or provider not in {"omnivoice", "vieneu"}:
+        raise ValueError("Provider must be omnivoice or vieneu")
+    return provider
+
+
 def dispatch_request(
     request: dict[str, Any],
     engine: Engine,
     emit: Callable[[dict[str, Any]], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
+    vieneu_provider: VieNeuProvider | None = None,
 ) -> dict[str, Any]:
     """Handle one decoded request and return one terminal response."""
     request_id = _request_id(request)
@@ -209,6 +219,9 @@ def dispatch_request(
     try:
         if operation == "status":
             status = engine.model_status()
+            provider = vieneu_provider or VieNeuProvider(DATA_DIR)
+            vieneu_status = provider.status()
+            omnivoice_available = importlib.util.find_spec("omnivoice") is not None
             return _ok(
                 request_id,
                 {
@@ -218,10 +231,27 @@ def dispatch_request(
                     "model": status["model"],
                     "tokenizer": status["tokenizer"],
                     "asr_model": status["asr_model"],
+                    "providers": {
+                        "omnivoice": {
+                            "model_ready": bool(status["ready"]),
+                            "runtime_available": omnivoice_available,
+                            "preprocessing_available": True,
+                            "unavailable_reason": None
+                            if omnivoice_available
+                            else "OmniVoice package is unavailable in this environment",
+                        },
+                        "vieneu": vieneu_status,
+                    },
                 },
             )
         if operation == "prepare_model":
-            result = engine.ensure_model(
+            provider_id = _provider_id(request)
+            prepare = (
+                engine.ensure_model
+                if provider_id == "omnivoice"
+                else (vieneu_provider or VieNeuProvider(DATA_DIR)).ensure_model
+            )
+            result = prepare(
                 on_progress=(
                     (lambda progress: emit({"id": request_id, "event": "progress", **progress}))
                     if emit
@@ -231,7 +261,13 @@ def dispatch_request(
             )
             return _ok(request_id, {"model_ready": bool(result["ready"])})
         if operation == "synthesize":
-            return _ok(request_id, _synthesize(request, engine))
+            provider_id = _provider_id(request)
+            if provider_id == "omnivoice":
+                result = _synthesize(request, engine)
+            else:
+                provider = vieneu_provider or VieNeuProvider(DATA_DIR)
+                result = provider.synthesize(request, Engine.list_voices(), OUTPUT_DIR)
+            return _ok(request_id, result)
         if operation == "save_voice":
             name = request["name"]
             ref_audio = _validate_reference_audio(request["ref_audio"])
@@ -281,7 +317,12 @@ def dispatch_request(
         return _error(request_id, "internal_error", "The local TTS operation failed")
 
 
-def run_protocol(source: TextIO, target: TextIO, engine: Engine) -> None:
+def run_protocol(
+    source: TextIO,
+    target: TextIO,
+    engine: Engine,
+    vieneu_provider: VieNeuProvider | None = None,
+) -> None:
     """Run the sidecar protocol, allowing cancel during model preparation."""
     requests: queue.Queue[dict[str, Any] | None] = queue.Queue()
     active: dict[str, threading.Event] = {}
@@ -341,6 +382,7 @@ def run_protocol(source: TextIO, target: TextIO, engine: Engine) -> None:
                             engine,
                             emit=write,
                             should_cancel=cancel_event.is_set,
+                            vieneu_provider=vieneu_provider,
                         )
                     )
                 finally:
@@ -351,14 +393,14 @@ def run_protocol(source: TextIO, target: TextIO, engine: Engine) -> None:
             workers.add(worker)
             worker.start()
             continue
-        write(dispatch_request(request, engine))
+        write(dispatch_request(request, engine, vieneu_provider=vieneu_provider))
 
     for worker in tuple(workers):
         worker.join()
 
 
 def main() -> None:
-    run_protocol(sys.stdin, sys.stdout, get_engine())
+    run_protocol(sys.stdin, sys.stdout, get_engine(), VieNeuProvider(DATA_DIR))
 
 
 if __name__ == "__main__":

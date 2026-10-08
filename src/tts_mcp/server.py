@@ -66,17 +66,17 @@ def clone(
     steps: int = 32,
     normalize: bool = False,
 ) -> str:
-    """Clone a voice from reference audio and generate speech.
+    """Generate speech using a saved voice profile or reference audio.
 
     Provide ref_audio_path and optionally ref_text.
-    Or use a saved voice profile name with the 'voice' parameter.
+    Or use a saved Clone or Design profile name with the 'voice' parameter.
 
     Args:
         text: Text to synthesize.
         output_path: Output file path (.wav, .mp3, .flac).
         ref_audio_path: Path to reference audio file (3-15 seconds recommended).
         ref_text: Transcript of reference audio (auto-transcribed if omitted).
-        voice: Name of a saved voice profile (use instead of ref_audio_path).
+        voice: Name of a saved Clone or Design profile (use instead of ref_audio_path).
         speed: Speech speed factor (default 1.0).
         steps: Diffusion steps (16=fast, 32=balanced, default 32).
         normalize: Normalize numbers to words (default false).
@@ -91,8 +91,14 @@ def clone(
         "num_step": steps,
         "normalize_text": normalize,
     }
+    audio_label = "Cloned"
     if voice:
-        gen_kwargs["voice_clone_prompt"] = engine.load_voice(voice)
+        profile = engine.load_voice_profile(voice)
+        if profile["kind"] == "clone":
+            gen_kwargs["voice_clone_prompt"] = profile["prompt"]
+        else:
+            audio_label = "Designed"
+            gen_kwargs["instruct"] = profile["instruct"]
     elif ref_audio_path:
         gen_kwargs["ref_audio"] = ref_audio_path
         if ref_text:
@@ -101,7 +107,7 @@ def clone(
         raise ValueError("Provide either 'ref_audio_path' or 'voice' parameter")
     audio = engine.generate(**gen_kwargs)
     path = save_audio(audio, output_path)
-    return f"Cloned audio saved to: {path}"
+    return f"{audio_label} audio saved to: {path}"
 
 
 @server.tool()
@@ -154,7 +160,12 @@ def list_voices() -> str:
         return "No saved voices. Use save_voice to create one."
     lines = [f"Saved voices ({len(voices)}):"]
     for v in voices:
-        lines.append(f"  - {v['name']} (ref: {v.get('ref_audio', '?')})")
+        line = f"  - {v['name']} ({v['kind']}, {v['language']})"
+        if v["kind"] == "clone":
+            line += f"; ref_audio: {v['ref_audio']}"
+        else:
+            line += f"; design_instruction: {v['design_instruction']}"
+        lines.append(line)
     return "\n".join(lines)
 
 

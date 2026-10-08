@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from tts_mcp.desktop import dispatch_request, run_protocol
-from tts_mcp.engine import DownloadCancelled
+from tts_mcp.engine import DownloadCancelled, Engine
 
 
 class DesktopWorkerTests(unittest.TestCase):
@@ -22,6 +22,15 @@ class DesktopWorkerTests(unittest.TestCase):
 
     def test_status_returns_supported_languages(self):
         engine = Mock()
+        vieneu_provider = Mock()
+        vieneu_provider.status.return_value = {
+            "model_ready": False,
+            "runtime_available": True,
+            "preprocessing_available": True,
+            "preset_voices": [{"id": "minh_quan_pro", "name": "Minh Quân Pro", "label": "Default"}],
+            "default_voice": "minh_quan_pro",
+            "unavailable_reason": None,
+        }
         engine.model_status.return_value = {
             "ready": False,
             "device": "cpu",
@@ -30,19 +39,97 @@ class DesktopWorkerTests(unittest.TestCase):
             "asr_model": "asr-id",
         }
 
-        response = dispatch_request({"id": "1", "type": "status"}, engine)
+        response = dispatch_request(
+            {"id": "1", "type": "status"}, engine, vieneu_provider=vieneu_provider
+        )
 
         self.assertTrue(response["ok"])
         self.assertEqual(response["result"]["languages"], ["en", "vi"])
         self.assertEqual(response["result"]["model"], "model-id")
         self.assertEqual(response["result"]["tokenizer"], "tokenizer-id")
         self.assertEqual(response["result"]["asr_model"], "asr-id")
+        self.assertEqual(
+            response["result"]["providers"]["vieneu"]["preset_voices"][0]["id"],
+            "minh_quan_pro",
+        )
+        self.assertIn("omnivoice", response["result"]["providers"])
+
+    def test_prepare_and_synthesis_require_known_provider(self):
+        engine = Mock()
+        vieneu_provider = Mock()
+        for request in (
+            {"id": "missing-prepare", "type": "prepare_model"},
+            {"id": "unknown-prepare", "type": "prepare_model", "provider": "other"},
+            {"id": "missing-synthesis", "type": "synthesize"},
+            {"id": "unknown-synthesis", "type": "synthesize", "provider": "other"},
+            {"id": "invalid-synthesis", "type": "synthesize", "provider": []},
+        ):
+            response = dispatch_request(request, engine, vieneu_provider=vieneu_provider)
+            self.assertFalse(response["ok"])
+            self.assertEqual(response["error"]["code"], "invalid_input")
+        engine.ensure_model.assert_not_called()
+        vieneu_provider.ensure_model.assert_not_called()
+        vieneu_provider.synthesize.assert_not_called()
+
+    def test_omnivoice_requests_keep_engine_dispatch(self):
+        engine = Mock()
+        engine.ensure_model.return_value = {"ready": True}
+        response = dispatch_request(
+            {"id": "omnivoice-prepare", "type": "prepare_model", "provider": "omnivoice"},
+            engine,
+        )
+
+        self.assertTrue(response["ok"])
+        engine.ensure_model.assert_called_once()
+
+    def test_vieneu_preset_dispatches_to_adapter(self):
+        engine = Mock()
+        vieneu_provider = Mock()
+        vieneu_provider.synthesize.return_value = {"audio_path": "/tmp/result.wav", "format": "wav"}
+        request = {
+            "id": "vieneu",
+            "type": "synthesize",
+            "provider": "vieneu",
+            "voice": "preset",
+            "preset_id": "minh_quan_pro",
+        }
+        with patch.object(Engine, "list_voices", return_value=[]):
+            response = dispatch_request(request, engine, vieneu_provider=vieneu_provider)
+
+        self.assertTrue(response["ok"])
+        vieneu_provider.synthesize.assert_called_once()
+        engine.generate.assert_not_called()
+
+    def test_vieneu_design_profile_is_rejected(self):
+        from tts_mcp.desktop_vieneu import VieNeuProvider
+
+        engine = Mock()
+        with tempfile.TemporaryDirectory() as directory:
+            provider = VieNeuProvider(Path(directory))
+            request = {
+                "id": "vieneu-design",
+                "type": "synthesize",
+                "provider": "vieneu",
+                "text": "hello",
+                "voice": "profile",
+                "voice_name": "designer",
+            }
+            with patch.object(
+                Engine, "list_voices", return_value=[{"name": "designer", "kind": "design"}]
+            ):
+                response = dispatch_request(request, engine, vieneu_provider=provider)
+
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "invalid_input")
+        self.assertIn("Design profiles", response["error"]["message"])
+        engine.generate.assert_not_called()
 
     def test_invalid_language_returns_structured_error(self):
         response = dispatch_request(
             {
                 "id": "2",
                 "type": "synthesize",
+                "provider": "omnivoice",
                 "text": "hello",
                 "language": "fr",
                 "voice": "auto",
@@ -83,6 +170,7 @@ class DesktopWorkerTests(unittest.TestCase):
                 {
                     "id": "4",
                     "type": "synthesize",
+                    "provider": "omnivoice",
                     "text": "hello",
                     "language": "en",
                     "voice": "file",
@@ -106,6 +194,7 @@ class DesktopWorkerTests(unittest.TestCase):
                 {
                     "id": "4b",
                     "type": "synthesize",
+                    "provider": "omnivoice",
                     "text": "hello",
                     "language": "en",
                     "voice": "file",
@@ -127,13 +216,17 @@ class DesktopWorkerTests(unittest.TestCase):
             reference = Path(directory) / "reference.wav"
             self.write_wav(reference)
             output_dir = Path(directory) / "outputs"
-            with patch("tts_mcp.desktop.OUTPUT_DIR", output_dir), patch(
-                "tts_mcp.desktop.save_audio", return_value=str(output_dir / "result.wav")
-            ) as save_audio:
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch(
+                    "tts_mcp.desktop.save_audio", return_value=str(output_dir / "result.wav")
+                ) as save_audio,
+            ):
                 response = dispatch_request(
                     {
                         "id": "5",
                         "type": "synthesize",
+                        "provider": "omnivoice",
                         "text": "hello",
                         "language": "vi",
                         "voice": "file",
@@ -163,13 +256,15 @@ class DesktopWorkerTests(unittest.TestCase):
             "audio_chunk_duration": 12,
         }
         try:
-            with patch("tts_mcp.desktop.OUTPUT_DIR", output_dir), patch(
-                "tts_mcp.desktop.save_audio", return_value=str(output_dir / "result.wav")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch("tts_mcp.desktop.save_audio", return_value=str(output_dir / "result.wav")),
             ):
                 response = dispatch_request(
                     {
                         "id": "design",
                         "type": "synthesize",
+                        "provider": "omnivoice",
                         "text": "hello",
                         "language": "en",
                         "voice": "design",
@@ -200,6 +295,7 @@ class DesktopWorkerTests(unittest.TestCase):
                 {
                     "id": "design-invalid",
                     "type": "synthesize",
+                    "provider": "omnivoice",
                     "text": "hello",
                     "voice": "design",
                     "instruct": instruct,
@@ -224,6 +320,7 @@ class DesktopWorkerTests(unittest.TestCase):
                 {
                     "id": f"incompatible-{index}",
                     "type": "synthesize",
+                    "provider": "omnivoice",
                     "text": "hello",
                     "format": "wav",
                     **payload,
@@ -254,6 +351,7 @@ class DesktopWorkerTests(unittest.TestCase):
                 {
                     "id": f"invalid-value-{index}",
                     "type": "synthesize",
+                    "provider": "omnivoice",
                     "text": "hello",
                     "voice": "auto",
                     "format": "wav",
@@ -276,11 +374,15 @@ class DesktopWorkerTests(unittest.TestCase):
         events = []
 
         response = dispatch_request(
-            {"id": "6", "type": "prepare_model"}, engine, emit=events.append
+            {"id": "6", "type": "prepare_model", "provider": "omnivoice"},
+            engine,
+            emit=events.append,
         )
 
         self.assertTrue(response["ok"])
-        self.assertEqual(events, [{"id": "6", "event": "progress", "phase": "download", "progress": 0.5}])
+        self.assertEqual(
+            events, [{"id": "6", "event": "progress", "phase": "download", "progress": 0.5}]
+        )
 
     def test_save_and_delete_voice_requests(self):
         engine = Mock()
@@ -326,9 +428,7 @@ class DesktopWorkerTests(unittest.TestCase):
 
         self.assertTrue(response["ok"])
         self.assertEqual(response["result"], {"name": "designer", "kind": "design"})
-        engine.save_design_voice.assert_called_once_with(
-            "designer", "warm, low, confident", "vi"
-        )
+        engine.save_design_voice.assert_called_once_with("designer", "warm, low, confident", "vi")
 
     def test_profile_synthesis_resolves_clone_and_design_profiles(self):
         engine = Mock()
@@ -339,14 +439,16 @@ class DesktopWorkerTests(unittest.TestCase):
         ]
         output_dir = Path(tempfile.mkdtemp())
         try:
-            with patch("tts_mcp.desktop.OUTPUT_DIR", output_dir), patch(
-                "tts_mcp.desktop.save_audio", return_value=str(output_dir / "result.wav")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch("tts_mcp.desktop.save_audio", return_value=str(output_dir / "result.wav")),
             ):
                 for name in ("clone", "designer"):
                     response = dispatch_request(
                         {
                             "id": name,
                             "type": "synthesize",
+                            "provider": "omnivoice",
                             "text": "hello",
                             "language": "en",
                             "voice": "profile",
@@ -403,7 +505,7 @@ class DesktopWorkerTests(unittest.TestCase):
                 raise DownloadCancelled("Model download cancelled")
 
         source = io.StringIO(
-            json.dumps({"id": "prepare", "type": "prepare_model"})
+            json.dumps({"id": "prepare", "type": "prepare_model", "provider": "omnivoice"})
             + "\n"
             + json.dumps({"id": "cancel", "type": "cancel", "request_id": "prepare"})
             + "\n"
@@ -417,6 +519,27 @@ class DesktopWorkerTests(unittest.TestCase):
         self.assertTrue(by_id["cancel"]["ok"])
         self.assertFalse(by_id["prepare"]["ok"])
         self.assertEqual(by_id["prepare"]["error"]["code"], "cancelled")
+
+    def test_protocol_cancels_selected_provider_preparation(self):
+        class BlockingProvider:
+            def ensure_model(self, on_progress=None, should_cancel=None):
+                while not should_cancel():
+                    time.sleep(0.001)
+                raise DownloadCancelled("VieNeu model download cancelled")
+
+        source = io.StringIO(
+            json.dumps({"id": "prepare-vieneu", "type": "prepare_model", "provider": "vieneu"})
+            + "\n"
+            + json.dumps({"id": "cancel", "type": "cancel", "request_id": "prepare-vieneu"})
+            + "\n"
+        )
+        target = io.StringIO()
+        run_protocol(source, target, Mock(), BlockingProvider())
+
+        responses = [json.loads(line) for line in target.getvalue().splitlines()]
+        by_id = {response["id"]: response for response in responses}
+        self.assertTrue(by_id["cancel"]["ok"])
+        self.assertEqual(by_id["prepare-vieneu"]["error"]["code"], "cancelled")
 
 
 if __name__ == "__main__":

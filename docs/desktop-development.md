@@ -20,7 +20,7 @@ declared audio file.
 ```sh
 python -m venv .venv
 . .venv/bin/activate
-python -m pip install -e '.[mp3]'
+python -m pip install -e '.[mp3,desktop-vieneu]'
 python -m unittest discover -s tests -v
 npm --prefix apps/desktop install
 npm --prefix apps/desktop run tauri dev
@@ -30,6 +30,12 @@ The desktop sidecar is launched by Tauri. The development launcher can use the
 repository sidecar wrapper, but release packaging must use the target-named
 PyInstaller executable produced below.
 
+The first-run screen offers OmniVoice and VieNeu-TTS without downloading
+assets until the user requests preparation. The Model tab can be reopened to
+inspect and install either provider; its detailed model fields describe
+OmniVoice. VieNeu presets come from the pinned local manifest, and the
+workspace also offers saved Clone profiles and one-off reference files.
+
 The React UI uses `i18next` and `react-i18next` for its English/Vietnamese
 interface locale. Tailwind CSS v4 is loaded from `src/styles.css` through the
 Vite plugin, while source-owned shadcn-style primitives backed by Base UI live
@@ -37,8 +43,7 @@ in `src/components/ui.tsx`. The app uses `lucide-react` for icons and Motion
 for reduced-motion-aware route and state transitions. The
 Settings language is separate from the synthesis language selected in the
 workspace. Settings is split into General, Model, and Storage tabs. The Model
-tab can be reopened after first-run setup to inspect the verified 100% state,
-the OmniVoice/tokenizer/Whisper assets, device, model IDs, and target languages.
+tab retains OmniVoice asset, device, model ID, and target-language details.
 
 The optional `tn` extra is not required by the desktop release; it adds native
 OpenFST/Pynini dependencies for text normalization.
@@ -63,13 +68,48 @@ Prettier formats the TypeScript, TSX, CSS, JSON, and HTML files under
 Install the build tool, then build on the native target host:
 
 ```sh
+python -m pip install -e '.[mp3,desktop-vieneu]'
 python -m pip install -r requirements-build.txt
-python scripts/build_sidecar.py --ffmpeg /absolute/path/to/ffmpeg
+python scripts/build_sidecar.py \
+  --ffmpeg /absolute/path/to/ffmpeg \
+  --audiocpp /absolute/path/to/audiocpp_cli \
+  --target <rust-target-triple>
 ```
 
-The script stages a target-named executable under
-`apps/desktop/src-tauri/binaries/`. Tauri expects one executable per target;
-build each of these on its matching host:
+Check out audio.cpp at `v0.9.0` and build its CPU backend on the matching host.
+For macOS (Apple Silicon or Intel), run from that checkout:
+
+```sh
+cmake -S . -B build/macos-cpu-release \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DENGINE_ENABLE_CUDA=OFF \
+  -DENGINE_ENABLE_VULKAN=OFF \
+  -DENGINE_ENABLE_METAL=OFF \
+  -DENGINE_ENABLE_OPENMP=OFF \
+  -DGGML_OPENMP=OFF \
+  -DAUDIOCPP_MODEL_SET=custom \
+  -DAUDIOCPP_MODELS=vieneu_v3_turbo
+cmake --build build/macos-cpu-release \
+  --parallel "$(sysctl -n hw.logicalcpu)" \
+  --target audiocpp_cli
+```
+
+Linux and Windows use these commands from the audio.cpp checkout:
+
+```sh
+scripts/build_linux.sh --backend cpu --model-set custom --models vieneu_v3_turbo --target audiocpp_cli
+```
+
+```powershell
+scripts\build_windows.ps1 -Preset windows-cpu-release -ModelSet custom -Models "vieneu_v3_turbo" -Target audiocpp_cli
+```
+
+For local development, set `TTS_MCP_AUDIOCPP_PATH` to the resulting CLI path.
+The release packaging script accepts that path as `--audiocpp`.
+
+The packaging script stages target-named Python and audio.cpp executables under
+`apps/desktop/src-tauri/binaries/`. Tauri expects native binaries; build each
+target on its matching host:
 
 - `aarch64-apple-darwin`
 - `x86_64-apple-darwin`
@@ -83,6 +123,6 @@ npm --prefix apps/desktop run build
 npm --prefix apps/desktop run tauri build
 ```
 
-The model checkpoint, audio tokenizer, and Whisper ASR assets download on
-first launch. Keep the downloaded model out of the installer and verify the
-offline flow after setup.
+OmniVoice and VieNeu assets download only after the user selects a provider
+and requests setup. Keep downloaded assets out of the installer; later runs
+reuse them from the platform app-data directory.

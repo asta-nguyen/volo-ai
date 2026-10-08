@@ -34,6 +34,8 @@ import {
   type AudioFormat,
   type GenerationConfig,
   type Language,
+  type ProviderId,
+  type ProviderStatus,
   type ProgressEvent,
   type RequestLog,
   type StatusResult,
@@ -146,6 +148,16 @@ function readSynthesisLanguage(): Language {
   return saved === "vi" ? "vi" : "en";
 }
 
+function readProvider(): ProviderId {
+  return typeof window !== "undefined" && localStorage.getItem("volo-ai.provider") === "vieneu"
+    ? "vieneu"
+    : "omnivoice";
+}
+
+function providerIsReady(status: ProviderStatus | undefined): boolean {
+  return Boolean(status?.model_ready && status.runtime_available && status.preprocessing_available);
+}
+
 function formatLogTime(timestamp: number): string {
   return new Intl.DateTimeFormat(undefined, {
     hour: "2-digit",
@@ -229,23 +241,39 @@ function ErrorMessage({ children }: { children: React.ReactNode }) {
 
 function SetupScreen({
   copy,
+  provider,
+  providers,
   progressEvent,
   isPreparing,
   isCancelling,
   setupError,
   onPrepare,
   onCancel,
+  onProviderChange,
 }: {
   copy: UiCopy;
+  provider: ProviderId;
+  providers: Record<ProviderId, ProviderStatus> | null;
   progressEvent: ProgressEvent | null;
   isPreparing: boolean;
   isCancelling: boolean;
   setupError: string | null;
   onPrepare: () => void;
   onCancel: () => void;
+  onProviderChange: (provider: ProviderId) => void;
 }) {
   const progress = Math.round((progressEvent?.progress ?? 0) * 100);
-  const assets = [copy.setupAssetOmniVoice, copy.setupAssetTokenizer, copy.setupAssetWhisper];
+  const isOmniVoice = provider === "omnivoice";
+  const assets = isOmniVoice
+    ? [copy.setupAssetOmniVoice, copy.setupAssetTokenizer, copy.setupAssetWhisper]
+    : [copy.setupAssetVieNeuModel, copy.setupAssetVieNeuVoices, copy.setupAssetVieNeuEncoder];
+  const selectedStatus = providers?.[provider];
+  const selectedReady = providerIsReady(selectedStatus);
+  const assetsNeedDownload = !selectedStatus?.model_ready;
+  const providerChoices: Array<[ProviderId, string]> = [
+    ["omnivoice", copy.providerOmni],
+    ["vieneu", copy.providerVieNeu],
+  ];
   return (
     <main className="flex min-h-screen items-center justify-center overflow-auto bg-(--background) px-6 py-10 text-(--foreground)">
       <div className="w-full max-w-4xl">
@@ -275,6 +303,35 @@ function SetupScreen({
               </div>
             </CardHeader>
             <CardContent className="p-7">
+              <section className="mb-5">
+                <SectionLabel>{copy.chooseProvider}</SectionLabel>
+                <p className="mt-2 text-sm text-(--muted-foreground)">
+                  {copy.selectProviderDescription}
+                </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {providerChoices.map(([id, label]) => (
+                    <button
+                      type="button"
+                      key={id}
+                      aria-pressed={provider === id}
+                      onClick={() => onProviderChange(id)}
+                      className={`rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${provider === id ? "border-(--accent) bg-(--accent-soft)" : "border-(--border) bg-(--surface-muted) hover:border-(--border-strong)"}`}
+                    >
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold">{label}</span>
+                        <Badge>
+                          {providerIsReady(providers?.[id]) ? copy.ready : copy.unavailable}
+                        </Badge>
+                      </span>
+                      {providers?.[id]?.unavailable_reason && (
+                        <span className="mt-2 block text-xs leading-5 text-(--muted-foreground)">
+                          {providers[id].unavailable_reason}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </section>
               <div className="rounded-2xl border border-(--border) bg-(--surface-muted) p-5">
                 <div className="flex items-center justify-between gap-4">
                   <div>
@@ -304,7 +361,10 @@ function SetupScreen({
                 </div>
               )}
               <div className="mt-6 flex flex-wrap gap-3">
-                <Button onClick={onPrepare} disabled={isPreparing || isCancelling}>
+                <Button
+                  onClick={onPrepare}
+                  disabled={isPreparing || isCancelling || (!assetsNeedDownload && !selectedReady)}
+                >
                   {isPreparing ? (
                     <LoaderCircle className="size-4 animate-spin" />
                   ) : (
@@ -326,6 +386,11 @@ function SetupScreen({
               <p className="mt-4 text-xs leading-5 text-(--muted-foreground)">
                 {copy.resumeDownload}
               </p>
+              {!setupError && selectedStatus?.unavailable_reason && (
+                <div className="mt-4">
+                  <ErrorMessage>{selectedStatus.unavailable_reason}</ErrorMessage>
+                </div>
+              )}
             </CardContent>
           </Card>
           <div className="grid gap-4">
@@ -333,7 +398,9 @@ function SetupScreen({
               <CardHeader>
                 <div>
                   <SectionLabel>{copy.setupDownloads}</SectionLabel>
-                  <CardTitle className="mt-2">{copy.setupAssets}</CardTitle>
+                  <CardTitle className="mt-2">
+                    {isOmniVoice ? copy.setupAssets : copy.providerVieNeu}
+                  </CardTitle>
                 </div>
                 <ShieldCheck className="size-5 text-(--success)" />
               </CardHeader>
@@ -348,7 +415,7 @@ function SetupScreen({
                   </div>
                 ))}
                 <p className="pt-2 text-xs leading-5 text-(--muted-foreground)">
-                  {copy.setupAssetsDescription}
+                  {isOmniVoice ? copy.setupAssetsDescription : copy.setupAssetsVieNeuDescription}
                 </p>
               </CardContent>
             </Card>
@@ -366,7 +433,7 @@ function SetupScreen({
                 </p>
                 <div className="mt-5 flex items-center gap-2 text-xs font-semibold">
                   <HardDrive className="size-4 text-(--accent)" />
-                  {copy.setupStorageValue}
+                  {isOmniVoice ? copy.setupStorageValue : copy.setupStorageVieNeuValue}
                 </div>
                 <p className="mt-2 text-xs leading-5 text-(--muted-foreground)">
                   {copy.setupStorageDescription}
@@ -816,9 +883,7 @@ function VoiceProfilesView({
                 </>
               ) : (
                 <div className="space-y-2">
-                  <Label htmlFor="profile-design-instruction">
-                    {copy.voiceDesignInstruction}
-                  </Label>
+                  <Label htmlFor="profile-design-instruction">{copy.voiceDesignInstruction}</Label>
                   <Textarea
                     id="profile-design-instruction"
                     value={designInstruction}
@@ -846,6 +911,8 @@ function VoiceProfilesView({
 function SettingsView({
   copy,
   appLanguage,
+  selectedProvider,
+  providers,
   modelReady,
   engineOnline,
   device,
@@ -854,13 +921,22 @@ function SettingsView({
   tokenizerId,
   asrModelId,
   modelStatusError,
+  setupError,
+  progressEvent,
   isRefreshingStatus,
+  isPreparing,
+  preparingProvider,
   onChangeLanguage,
+  onSelectProvider,
+  onPrepareProvider,
+  onCancelPrepare,
   onRefreshStatus,
   onBack,
 }: {
   copy: UiCopy;
   appLanguage: AppLanguage;
+  selectedProvider: ProviderId;
+  providers: Record<ProviderId, ProviderStatus> | null;
   modelReady: boolean;
   engineOnline: boolean;
   device: string;
@@ -869,8 +945,15 @@ function SettingsView({
   tokenizerId: string;
   asrModelId: string;
   modelStatusError: string | null;
+  setupError: string | null;
+  progressEvent: ProgressEvent | null;
   isRefreshingStatus: boolean;
+  isPreparing: boolean;
+  preparingProvider: ProviderId | null;
   onChangeLanguage: (language: AppLanguage) => void;
+  onSelectProvider: (provider: ProviderId) => void;
+  onPrepareProvider: (provider: ProviderId) => void;
+  onCancelPrepare: () => void;
   onRefreshStatus: () => void;
   onBack: () => void;
 }) {
@@ -881,6 +964,10 @@ function SettingsView({
     ["storage", copy.storageTab],
   ];
   const assets = [copy.setupAssetOmniVoice, copy.setupAssetTokenizer, copy.setupAssetWhisper];
+  const providerChoices: Array<[ProviderId, string]> = [
+    ["omnivoice", copy.providerOmni],
+    ["vieneu", copy.providerVieNeu],
+  ];
   return (
     <div>
       <PageHeader
@@ -974,6 +1061,69 @@ function SettingsView({
               </div>
             </CardHeader>
             <CardContent>
+              <div className="mb-6">
+                <SectionLabel>{copy.providerStatus}</SectionLabel>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  {providerChoices.map(([id, label]) => {
+                    const status = providers?.[id];
+                    const isActive = selectedProvider === id;
+                    const isInstalling = preparingProvider === id;
+                    return (
+                      <div
+                        key={id}
+                        className="rounded-2xl border border-(--border) bg-(--surface-muted) p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold">{label}</p>
+                            <p className="mt-1 text-xs leading-5 text-(--muted-foreground)">
+                              {status?.unavailable_reason ?? copy.providerRuntimeReady}
+                            </p>
+                          </div>
+                          <Badge>{providerIsReady(status) ? copy.ready : copy.unavailable}</Badge>
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant={isActive ? "secondary" : "ghost"}
+                            disabled={isActive}
+                            onClick={() => onSelectProvider(id)}
+                          >
+                            {isActive ? copy.activeProvider : copy.selectProvider}
+                          </Button>
+                          {!status?.model_ready && !isInstalling && (
+                            <Button
+                              size="sm"
+                              onClick={() => onPrepareProvider(id)}
+                              disabled={isPreparing}
+                            >
+                              {copy.downloadProvider}
+                            </Button>
+                          )}
+                          {isInstalling && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={onCancelPrepare}
+                              disabled={!isPreparing}
+                            >
+                              {copy.cancelDownload}
+                            </Button>
+                          )}
+                        </div>
+                        {isInstalling && progressEvent && (
+                          <div className="mt-4">
+                            <Progress value={Math.round((progressEvent.progress ?? 0) * 100)} />
+                            <p className="mt-2 text-xs text-(--muted-foreground)">
+                              {progressEvent.message ?? progressEvent.asset ?? copy.verifyAssets}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
               <div className="rounded-2xl border border-(--border) bg-(--surface-muted) p-5">
                 <div className="flex items-end justify-between gap-4">
                   <Metric
@@ -1019,9 +1169,9 @@ function SettingsView({
                 <Metric label={copy.languages} value="EN · VI" />
                 <Metric label={copy.sampleRate} value="24 KHZ" />
               </div>
-              {modelStatusError && (
+              {(setupError || modelStatusError) && (
                 <div className="mt-5">
-                  <ErrorMessage>{modelStatusError}</ErrorMessage>
+                  <ErrorMessage>{setupError ?? modelStatusError}</ErrorMessage>
                 </div>
               )}
             </CardContent>
@@ -1094,6 +1244,8 @@ function AdvancedNumberField({
 
 function WorkspaceView({
   copy,
+  provider,
+  mode,
   language,
   text,
   speed,
@@ -1101,7 +1253,9 @@ function WorkspaceView({
   advanced,
   advancedError,
   voices,
+  presetVoices,
   selectedVoice,
+  refAudio,
   result,
   audioUrl,
   error,
@@ -1112,10 +1266,13 @@ function WorkspaceView({
   onFormatChange,
   onAdvancedChange,
   onVoiceSelectionChange,
+  onChooseReference,
   onSynthesize,
   onExport,
 }: {
   copy: UiCopy;
+  provider: ProviderId;
+  mode: VoiceMode;
   language: Language;
   text: string;
   speed: number;
@@ -1123,7 +1280,9 @@ function WorkspaceView({
   advanced: AdvancedDraft;
   advancedError: string | null;
   voices: VoiceProfile[];
+  presetVoices: Array<{ id: string; name: string; label: string }>;
   selectedVoice: string;
+  refAudio: string | null;
   result: SynthesisResult | null;
   audioUrl: string | null;
   error: string | null;
@@ -1134,9 +1293,21 @@ function WorkspaceView({
   onFormatChange: (format: AudioFormat) => void;
   onAdvancedChange: (patch: Partial<AdvancedDraft>) => void;
   onVoiceSelectionChange: (name: string) => void;
+  onChooseReference: () => void;
   onSynthesize: () => void;
   onExport: () => void;
 }) {
+  const isOmniVoice = provider === "omnivoice";
+  const visibleVoices = isOmniVoice ? voices : voices.filter((voice) => voice.kind === "clone");
+  const selectedSource = isOmniVoice
+    ? mode === "profile"
+      ? `profile:${selectedVoice}`
+      : "auto"
+    : mode === "profile"
+      ? `profile:${selectedVoice}`
+      : mode === "file"
+        ? "file"
+        : `preset:${selectedVoice}`;
   return (
     <div>
       <PageHeader
@@ -1144,10 +1315,13 @@ function WorkspaceView({
         title={copy.title}
         description={copy.workspaceDescription}
         action={
-          <Badge>
-            <span className="mr-2 size-1.5 rounded-full bg-(--success)" />
-            {copy.modelReady}
-          </Badge>
+          <div className="flex flex-wrap gap-2">
+            <Badge>{isOmniVoice ? copy.providerOmni : copy.providerVieNeu}</Badge>
+            <Badge>
+              <span className="mr-2 size-1.5 rounded-full bg-(--success)" />
+              {copy.modelReady}
+            </Badge>
+          </div>
         }
       />
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_370px]">
@@ -1230,47 +1404,69 @@ function WorkspaceView({
               <Label>{copy.voiceSource}</Label>
               <div className="mt-2 space-y-3">
                 <Select
-                  value={selectedVoice}
+                  value={selectedSource}
                   onValueChange={onVoiceSelectionChange}
                   aria-label={copy.voiceSource}
                 >
-                  <SelectItem value="auto">
-                    {copy.autoVoice} · {copy.autoVoiceDescription}
-                  </SelectItem>
-                  {voices.map((voice) => (
-                    <SelectItem key={voice.name} value={voice.name}>
+                  {isOmniVoice ? (
+                    <SelectItem value="auto">
+                      {copy.autoVoice} · {copy.autoVoiceDescription}
+                    </SelectItem>
+                  ) : (
+                    presetVoices.map((voice) => (
+                      <SelectItem key={voice.id} value={`preset:${voice.id}`}>
+                        {voice.label}
+                      </SelectItem>
+                    ))
+                  )}
+                  {!isOmniVoice && <SelectItem value="file">{copy.referenceFile}</SelectItem>}
+                  {visibleVoices.map((voice) => (
+                    <SelectItem key={`${voice.name}-label`} value={`profile:${voice.name}`}>
                       {voice.name} · {voice.language.toUpperCase()}
                       {voice.is_default ? ` · ${copy.defaultVoice}` : ""}
                     </SelectItem>
                   ))}
                 </Select>
-                {voices.length === 0 && (
-                  <p className="text-xs leading-5 text-(--muted-foreground)">
-                    {copy.noProfiles}
-                  </p>
+                {visibleVoices.length === 0 && presetVoices.length === 0 && (
+                  <p className="text-xs leading-5 text-(--muted-foreground)">{copy.noProfiles}</p>
+                )}
+                {!isOmniVoice && mode === "file" && (
+                  <Button
+                    variant="secondary"
+                    className="w-full justify-start"
+                    onClick={onChooseReference}
+                    disabled={isGenerating}
+                  >
+                    <FolderOpen className="size-4 text-(--accent)" />
+                    <span className="truncate">
+                      {refAudio ? fileName(refAudio) : copy.chooseReference}
+                    </span>
+                  </Button>
                 )}
               </div>
             </div>
             <Separator />
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="speed">{copy.speed}</Label>
-                <span className="rounded-md bg-(--surface-muted) px-2 py-1 font-mono text-xs font-semibold">
-                  {speed.toFixed(2)}×
-                </span>
+            {isOmniVoice && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="speed">{copy.speed}</Label>
+                  <span className="rounded-md bg-(--surface-muted) px-2 py-1 font-mono text-xs font-semibold">
+                    {speed.toFixed(2)}×
+                  </span>
+                </div>
+                <input
+                  id="speed"
+                  aria-label={copy.speed}
+                  type="range"
+                  min="0.25"
+                  max="2"
+                  step="0.05"
+                  value={speed}
+                  onChange={(event) => onSpeedChange(Number(event.target.value))}
+                  className="w-full accent-(--accent)"
+                />
               </div>
-              <input
-                id="speed"
-                aria-label={copy.speed}
-                type="range"
-                min="0.25"
-                max="2"
-                step="0.05"
-                value={speed}
-                onChange={(event) => onSpeedChange(Number(event.target.value))}
-                className="w-full accent-(--accent)"
-              />
-            </div>
+            )}
             <div>
               <Label>{copy.outputFormat}</Label>
               <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl bg-(--surface-muted) p-1.5">
@@ -1287,131 +1483,133 @@ function WorkspaceView({
                 ))}
               </div>
             </div>
-            <details className="group rounded-xl border border-(--border) bg-(--surface-muted)">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3.5 py-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring)">
-                {copy.advancedSettings}
-                <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
-              </summary>
-              <div className="border-t border-(--border) px-3.5 pb-3.5 pt-3">
-                <p className="text-xs leading-5 text-(--muted-foreground)">
-                  {copy.advancedSettingsDescription}
-                </p>
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  <AdvancedNumberField
-                    label={copy.fixedDuration}
-                    value={advanced.duration}
-                    min="0.1"
-                    step="0.1"
-                    disabled={isGenerating}
-                    onChange={(value) => onAdvancedChange({ duration: value })}
-                  />
-                  <AdvancedNumberField
-                    label={copy.diffusionSteps}
-                    value={advanced.steps}
-                    min="1"
-                    step="1"
-                    disabled={isGenerating}
-                    onChange={(value) => onAdvancedChange({ steps: value })}
-                  />
-                  <AdvancedNumberField
-                    label={copy.guidanceScale}
-                    value={advanced.guidance_scale}
-                    min="0"
-                    step="0.1"
-                    disabled={isGenerating}
-                    onChange={(value) => onAdvancedChange({ guidance_scale: value })}
-                  />
-                  <AdvancedNumberField
-                    label={copy.tShift}
-                    value={advanced.t_shift}
-                    min="0"
-                    step="0.1"
-                    disabled={isGenerating}
-                    onChange={(value) => onAdvancedChange({ t_shift: value })}
-                  />
-                  <AdvancedNumberField
-                    label={copy.positionTemperature}
-                    value={advanced.position_temperature}
-                    min="0"
-                    step="0.1"
-                    disabled={isGenerating}
-                    onChange={(value) => onAdvancedChange({ position_temperature: value })}
-                  />
-                  <AdvancedNumberField
-                    label={copy.classTemperature}
-                    value={advanced.class_temperature}
-                    min="0"
-                    step="0.1"
-                    disabled={isGenerating}
-                    onChange={(value) => onAdvancedChange({ class_temperature: value })}
-                  />
-                  <AdvancedNumberField
-                    label={copy.layerPenaltyFactor}
-                    value={advanced.layer_penalty_factor}
-                    min="0"
-                    step="0.1"
-                    disabled={isGenerating}
-                    onChange={(value) => onAdvancedChange({ layer_penalty_factor: value })}
-                  />
-                  <AdvancedNumberField
-                    label={copy.chunkDuration}
-                    value={advanced.audio_chunk_duration}
-                    min="0.1"
-                    step="0.1"
-                    disabled={isGenerating}
-                    onChange={(value) => onAdvancedChange({ audio_chunk_duration: value })}
-                  />
-                  <AdvancedNumberField
-                    label={copy.chunkThreshold}
-                    value={advanced.audio_chunk_threshold}
-                    min="0.1"
-                    step="0.1"
-                    disabled={isGenerating}
-                    onChange={(value) => onAdvancedChange({ audio_chunk_threshold: value })}
-                  />
-                  <AdvancedNumberField
-                    label={copy.padDuration}
-                    value={advanced.pad_duration}
-                    min="0"
-                    step="0.05"
-                    disabled={isGenerating}
-                    onChange={(value) => onAdvancedChange({ pad_duration: value })}
-                  />
-                  <AdvancedNumberField
-                    label={copy.fadeDuration}
-                    value={advanced.fade_duration}
-                    min="0"
-                    step="0.05"
-                    disabled={isGenerating}
-                    onChange={(value) => onAdvancedChange({ fade_duration: value })}
-                  />
+            {isOmniVoice && (
+              <details className="group rounded-xl border border-(--border) bg-(--surface-muted)">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3.5 py-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring)">
+                  {copy.advancedSettings}
+                  <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
+                </summary>
+                <div className="border-t border-(--border) px-3.5 pb-3.5 pt-3">
+                  <p className="text-xs leading-5 text-(--muted-foreground)">
+                    {copy.advancedSettingsDescription}
+                  </p>
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <AdvancedNumberField
+                      label={copy.fixedDuration}
+                      value={advanced.duration}
+                      min="0.1"
+                      step="0.1"
+                      disabled={isGenerating}
+                      onChange={(value) => onAdvancedChange({ duration: value })}
+                    />
+                    <AdvancedNumberField
+                      label={copy.diffusionSteps}
+                      value={advanced.steps}
+                      min="1"
+                      step="1"
+                      disabled={isGenerating}
+                      onChange={(value) => onAdvancedChange({ steps: value })}
+                    />
+                    <AdvancedNumberField
+                      label={copy.guidanceScale}
+                      value={advanced.guidance_scale}
+                      min="0"
+                      step="0.1"
+                      disabled={isGenerating}
+                      onChange={(value) => onAdvancedChange({ guidance_scale: value })}
+                    />
+                    <AdvancedNumberField
+                      label={copy.tShift}
+                      value={advanced.t_shift}
+                      min="0"
+                      step="0.1"
+                      disabled={isGenerating}
+                      onChange={(value) => onAdvancedChange({ t_shift: value })}
+                    />
+                    <AdvancedNumberField
+                      label={copy.positionTemperature}
+                      value={advanced.position_temperature}
+                      min="0"
+                      step="0.1"
+                      disabled={isGenerating}
+                      onChange={(value) => onAdvancedChange({ position_temperature: value })}
+                    />
+                    <AdvancedNumberField
+                      label={copy.classTemperature}
+                      value={advanced.class_temperature}
+                      min="0"
+                      step="0.1"
+                      disabled={isGenerating}
+                      onChange={(value) => onAdvancedChange({ class_temperature: value })}
+                    />
+                    <AdvancedNumberField
+                      label={copy.layerPenaltyFactor}
+                      value={advanced.layer_penalty_factor}
+                      min="0"
+                      step="0.1"
+                      disabled={isGenerating}
+                      onChange={(value) => onAdvancedChange({ layer_penalty_factor: value })}
+                    />
+                    <AdvancedNumberField
+                      label={copy.chunkDuration}
+                      value={advanced.audio_chunk_duration}
+                      min="0.1"
+                      step="0.1"
+                      disabled={isGenerating}
+                      onChange={(value) => onAdvancedChange({ audio_chunk_duration: value })}
+                    />
+                    <AdvancedNumberField
+                      label={copy.chunkThreshold}
+                      value={advanced.audio_chunk_threshold}
+                      min="0.1"
+                      step="0.1"
+                      disabled={isGenerating}
+                      onChange={(value) => onAdvancedChange({ audio_chunk_threshold: value })}
+                    />
+                    <AdvancedNumberField
+                      label={copy.padDuration}
+                      value={advanced.pad_duration}
+                      min="0"
+                      step="0.05"
+                      disabled={isGenerating}
+                      onChange={(value) => onAdvancedChange({ pad_duration: value })}
+                    />
+                    <AdvancedNumberField
+                      label={copy.fadeDuration}
+                      value={advanced.fade_duration}
+                      min="0"
+                      step="0.05"
+                      disabled={isGenerating}
+                      onChange={(value) => onAdvancedChange({ fade_duration: value })}
+                    />
+                  </div>
+                  <div className="mt-4 grid gap-2">
+                    {(
+                      [
+                        ["denoise", copy.denoise],
+                        ["preprocess_prompt", copy.preprocessPrompt],
+                        ["postprocess_output", copy.postprocessOutput],
+                        ["normalize_text", copy.normalizeText],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <label
+                        key={key}
+                        className="flex items-center gap-2 text-xs text-(--muted-foreground)"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={advanced[key]}
+                          disabled={isGenerating}
+                          onChange={(event) => onAdvancedChange({ [key]: event.target.checked })}
+                          className="size-4 accent-(--accent)"
+                        />
+                        <span>{label}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
-                <div className="mt-4 grid gap-2">
-                  {(
-                    [
-                      ["denoise", copy.denoise],
-                      ["preprocess_prompt", copy.preprocessPrompt],
-                      ["postprocess_output", copy.postprocessOutput],
-                      ["normalize_text", copy.normalizeText],
-                    ] as const
-                  ).map(([key, label]) => (
-                    <label
-                      key={key}
-                      className="flex items-center gap-2 text-xs text-(--muted-foreground)"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={advanced[key]}
-                        disabled={isGenerating}
-                        onChange={(event) => onAdvancedChange({ [key]: event.target.checked })}
-                        className="size-4 accent-(--accent)"
-                      />
-                      <span>{label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </details>
+              </details>
+            )}
             {advancedError && <ErrorMessage>{advancedError}</ErrorMessage>}
             <div className="grid gap-2">
               <Button size="lg" onClick={onSynthesize} disabled={isGenerating}>
@@ -1440,11 +1638,13 @@ function App() {
   const { t, i18n: translator } = useTranslation();
   const prefersReducedMotion = useReducedMotion();
   const [view, setView] = useState<AppView>("workspace");
-  const [modelReady, setModelReady] = useState(false);
+  const [provider, setProvider] = useState<ProviderId>(readProvider);
   const [modelProgress, setModelProgress] = useState<ProgressEvent | null>(null);
   const [setupError, setSetupError] = useState<string | null>(null);
   const [language, setLanguage] = useState<Language>(readSynthesisLanguage);
-  const [mode, setMode] = useState<VoiceMode>("auto");
+  const [mode, setMode] = useState<VoiceMode>(() =>
+    readProvider() === "vieneu" ? "preset" : "auto",
+  );
   const [text, setText] = useState("The quietest tools often do the most important work.");
   const [speed, setSpeed] = useState(1);
   const [format, setFormat] = useState<AudioFormat>("wav");
@@ -1462,12 +1662,15 @@ function App() {
   const [voiceImportStatus, setVoiceImportStatus] = useState<ImportStatus | null>(null);
   const [seedImportStatus, setSeedImportStatus] = useState<ImportStatus | null>(null);
   const [deletingVoice, setDeletingVoice] = useState<string | null>(null);
-  const [selectedVoice, setSelectedVoice] = useState("auto");
+  const [selectedVoice, setSelectedVoice] = useState(() =>
+    readProvider() === "vieneu" ? "" : "auto",
+  );
   const [profileName, setProfileName] = useState("");
   const [profileKind, setProfileKind] = useState<VoiceKind>("clone");
   const [designInstruction, setDesignInstruction] = useState("");
   const [result, setResult] = useState<SynthesisResult | null>(null);
   const [isPreparing, setIsPreparing] = useState(false);
+  const [preparingProvider, setPreparingProvider] = useState<ProviderId | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1482,6 +1685,14 @@ function App() {
 
   const appLanguage: AppLanguage = translator.language === "vi" ? "vi" : "en";
   const copy: UiCopy = createUiCopy(t);
+  const providerStatuses = engineStatus?.providers ?? null;
+  const modelReady = providerStatuses
+    ? providerIsReady(providerStatuses[provider])
+    : provider === "omnivoice" && Boolean(engineStatus?.model_ready);
+  const omniVoiceReady = providerStatuses
+    ? providerIsReady(providerStatuses.omnivoice)
+    : Boolean(engineStatus?.model_ready);
+  const presetVoices = engineStatus?.providers?.vieneu?.preset_voices ?? [];
   const audioUrl = useMemo(() => (result ? convertFileSrc(result.audio_path) : null), [result]);
 
   useEffect(() => {
@@ -1495,11 +1706,13 @@ function App() {
         setEngineOnline(true);
         setDevice(status.device);
         setEngineStatus(status);
-        if (status.model_ready) {
-          setModelReady(true);
-          await importBundledSeedVoices();
+        const selectedReady = status.providers
+          ? providerIsReady(status.providers[provider])
+          : provider === "omnivoice" && status.model_ready;
+        if (selectedReady) {
+          if (provider === "omnivoice") await importBundledSeedVoices();
           await refreshVoices();
-        } else await prepareModel();
+        }
       } catch (reason) {
         if (active)
           setSetupError(
@@ -1527,20 +1740,35 @@ function App() {
     void refreshVoices();
   }, [view, modelReady]);
 
-  async function prepareModel() {
+  useEffect(() => {
+    if (provider !== "vieneu" || !engineStatus) return;
+    const defaultVoice = engineStatus.providers?.vieneu?.default_voice;
+    const manifestVoices = engineStatus.providers?.vieneu?.preset_voices ?? [];
+    setMode((current) => (current === "profile" || current === "file" ? current : "preset"));
+    setSelectedVoice((current) =>
+      manifestVoices.some((voice) => voice.id === current) ? current : (defaultVoice ?? ""),
+    );
+  }, [provider, engineStatus]);
+
+  async function prepareModel(target: ProviderId = provider) {
     setSetupError(null);
     setIsPreparing(true);
+    setPreparingProvider(target);
     try {
-      await client.request<{ model_ready: boolean }>({ type: "prepare_model" });
-      setModelReady(true);
-      await importBundledSeedVoices();
-      await refreshVoices();
+      await client.request<{ model_ready: boolean }>({ type: "prepare_model", provider: target });
+      const status = await client.request<StatusResult>({ type: "status" });
+      setEngineStatus(status);
+      setEngineOnline(true);
+      setDevice(status.device);
+      if (target === "omnivoice" && target === provider) await importBundledSeedVoices();
+      if (target === provider) await refreshVoices();
     } catch (reason) {
       setSetupError(
         reason instanceof Error ? reason.message : translator.t("errors.modelSetupFailed"),
       );
     } finally {
       setIsPreparing(false);
+      setPreparingProvider(null);
     }
   }
 
@@ -1552,7 +1780,6 @@ function App() {
       setEngineOnline(true);
       setDevice(status.device);
       setEngineStatus(status);
-      setModelReady(status.model_ready);
     } catch (reason) {
       setModelStatusError(
         reason instanceof Error ? reason.message : translator.t("errors.engineUnavailable"),
@@ -1599,6 +1826,26 @@ function App() {
   function changeAppLanguage(next: AppLanguage) {
     setAppLanguage(next);
   }
+
+  function changeProvider(next: ProviderId) {
+    setProvider(next);
+    localStorage.setItem("volo-ai.provider", next);
+    setView("workspace");
+    setSetupError(null);
+    setError(null);
+    setResult(null);
+    setRefAudio(null);
+    if (next === "omnivoice") {
+      setMode("auto");
+      setSelectedVoice("auto");
+      if (omniVoiceReady) void importBundledSeedVoices();
+    } else {
+      setMode("preset");
+      setSelectedVoice(engineStatus?.providers?.vieneu?.default_voice ?? "");
+    }
+    void refreshVoices();
+  }
+
   function changeSynthesisLanguage(next: Language) {
     setLanguage(next);
     localStorage.setItem("volo-ai.synthesis-language", next);
@@ -1610,13 +1857,20 @@ function App() {
     }
   }
 
-  function changeVoiceSelection(name: string) {
-    if (name === "auto") {
+  function changeVoiceSelection(value: string) {
+    if (value === "auto") {
       setMode("auto");
       setSelectedVoice("auto");
       return;
     }
-    setMode("profile");
+    if (value === "file") {
+      setMode("file");
+      return;
+    }
+    const separator = value.indexOf(":");
+    const kind = separator >= 0 ? value.slice(0, separator) : "profile";
+    const name = separator >= 0 ? value.slice(separator + 1) : value;
+    setMode(kind === "preset" ? "preset" : "profile");
     setSelectedVoice(name);
   }
 
@@ -1630,6 +1884,10 @@ function App() {
   }
 
   async function importVoiceFile() {
+    if (!omniVoiceReady) {
+      setVoiceImportStatus({ message: copy.omnivoiceProfileRequired, tone: "error" });
+      return;
+    }
     let selected: string | string[] | null;
     try {
       selected = await open({
@@ -1681,6 +1939,10 @@ function App() {
   }
 
   async function importSeedFolder() {
+    if (!omniVoiceReady) {
+      setSeedImportStatus({ message: copy.omnivoiceProfileRequired, tone: "error" });
+      return;
+    }
     let selected: string | string[] | null;
     try {
       selected = await open({ multiple: false, directory: true });
@@ -1722,66 +1984,90 @@ function App() {
   async function synthesize() {
     setError(null);
     if (!text.trim()) return setError(copy.enterText);
-    if (mode === "profile" && selectedVoice === "auto") return setError(copy.selectProfile);
+    if (mode === "profile" && !selectedVoice) return setError(copy.selectProfile);
+    if (provider === "omnivoice" && mode !== "auto" && mode !== "profile") {
+      return setError(copy.selectProfile);
+    }
+    if (provider === "vieneu" && mode === "preset" && !selectedVoice) {
+      return setError(copy.selectProfile);
+    }
+    if (provider === "vieneu" && mode === "file" && !refAudio) {
+      return setError(copy.chooseReferenceError);
+    }
+    if (provider === "vieneu" && mode === "auto") return setError(copy.selectProfile);
     let steps: number | undefined;
     let duration: number | undefined;
-    let generationConfig: GenerationConfig;
-    try {
-      steps = readAdvancedNumber(advanced.steps, copy.diffusionSteps, {
-        integer: true,
-        positive: true,
-      });
-      if (steps === undefined) throw new Error(copy.invalidSteps);
-      duration = readAdvancedNumber(advanced.duration, copy.fixedDuration, { positive: true });
-      generationConfig = {
-        guidance_scale: readAdvancedNumber(advanced.guidance_scale, copy.guidanceScale),
-        t_shift: readAdvancedNumber(advanced.t_shift, copy.tShift),
-        position_temperature: readAdvancedNumber(
-          advanced.position_temperature,
-          copy.positionTemperature,
-        ),
-        class_temperature: readAdvancedNumber(advanced.class_temperature, copy.classTemperature),
-        layer_penalty_factor: readAdvancedNumber(
-          advanced.layer_penalty_factor,
-          copy.layerPenaltyFactor,
-        ),
-        denoise: advanced.denoise,
-        preprocess_prompt: advanced.preprocess_prompt,
-        postprocess_output: advanced.postprocess_output,
-        audio_chunk_duration: readAdvancedNumber(
-          advanced.audio_chunk_duration,
-          copy.chunkDuration,
-          { positive: true },
-        ),
-        audio_chunk_threshold: readAdvancedNumber(
-          advanced.audio_chunk_threshold,
-          copy.chunkThreshold,
-          { positive: true },
-        ),
-        pad_duration: readAdvancedNumber(advanced.pad_duration, copy.padDuration),
-        fade_duration: readAdvancedNumber(advanced.fade_duration, copy.fadeDuration),
-      };
-    } catch (reason) {
-      setAdvancedError(reason instanceof Error ? reason.message : copy.invalidAdvancedValue);
-      return;
+    let generationConfig: GenerationConfig = {};
+    if (provider === "omnivoice") {
+      try {
+        steps = readAdvancedNumber(advanced.steps, copy.diffusionSteps, {
+          integer: true,
+          positive: true,
+        });
+        if (steps === undefined) throw new Error(copy.invalidSteps);
+        duration = readAdvancedNumber(advanced.duration, copy.fixedDuration, { positive: true });
+        generationConfig = {
+          guidance_scale: readAdvancedNumber(advanced.guidance_scale, copy.guidanceScale),
+          t_shift: readAdvancedNumber(advanced.t_shift, copy.tShift),
+          position_temperature: readAdvancedNumber(
+            advanced.position_temperature,
+            copy.positionTemperature,
+          ),
+          class_temperature: readAdvancedNumber(advanced.class_temperature, copy.classTemperature),
+          layer_penalty_factor: readAdvancedNumber(
+            advanced.layer_penalty_factor,
+            copy.layerPenaltyFactor,
+          ),
+          denoise: advanced.denoise,
+          preprocess_prompt: advanced.preprocess_prompt,
+          postprocess_output: advanced.postprocess_output,
+          audio_chunk_duration: readAdvancedNumber(
+            advanced.audio_chunk_duration,
+            copy.chunkDuration,
+            { positive: true },
+          ),
+          audio_chunk_threshold: readAdvancedNumber(
+            advanced.audio_chunk_threshold,
+            copy.chunkThreshold,
+            { positive: true },
+          ),
+          pad_duration: readAdvancedNumber(advanced.pad_duration, copy.padDuration),
+          fade_duration: readAdvancedNumber(advanced.fade_duration, copy.fadeDuration),
+        };
+      } catch (reason) {
+        setAdvancedError(reason instanceof Error ? reason.message : copy.invalidAdvancedValue);
+        return;
+      }
     }
     setAdvancedError(null);
     setIsGenerating(true);
     setResult(null);
     try {
-      const response = await client.request<SynthesisResult>({
+      const request: { type: string; [key: string]: unknown } = {
         type: "synthesize",
+        provider,
         text,
         language,
         voice: mode,
-        voice_name: mode === "profile" ? selectedVoice : undefined,
-        speed,
         format,
-        steps,
-        duration,
-        normalize_text: advanced.normalize_text,
-        generation_config: generationConfig,
-      });
+      };
+      if (provider === "omnivoice") {
+        Object.assign(request, {
+          voice_name: mode === "profile" ? selectedVoice : undefined,
+          speed,
+          steps,
+          duration,
+          normalize_text: advanced.normalize_text,
+          generation_config: generationConfig,
+        });
+      } else if (mode === "preset") {
+        request.preset_id = selectedVoice;
+      } else if (mode === "profile") {
+        request.voice_name = selectedVoice;
+      } else {
+        request.ref_audio = refAudio;
+      }
+      const response = await client.request<SynthesisResult>(request);
       setResult(response);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : copy.synthesisFailed);
@@ -1791,6 +2077,12 @@ function App() {
   }
 
   async function saveProfile() {
+    if (!omniVoiceReady) {
+      const message = copy.omnivoiceProfileRequired;
+      setError(message);
+      setProfileError(message);
+      return;
+    }
     if (!profileName.trim()) {
       const message = copy.profileNameRequired;
       setError(message);
@@ -1798,7 +2090,7 @@ function App() {
       return;
     }
     if (profileKind === "clone" && !refAudio) {
-      const message = copy.chooseReference;
+      const message = copy.chooseReferenceError;
       setError(message);
       setProfileError(message);
       return;
@@ -1858,6 +2150,10 @@ function App() {
   }
 
   function useProfile(name: string) {
+    if (provider === "vieneu" && voices.find((voice) => voice.name === name)?.kind === "design") {
+      setError(copy.vieneuDesignUnsupported);
+      return;
+    }
     setSelectedVoice(name);
     setMode("profile");
     setView("workspace");
@@ -1884,12 +2180,15 @@ function App() {
     return (
       <SetupScreen
         copy={copy}
+        provider={provider}
+        providers={providerStatuses}
         progressEvent={modelProgress}
         isPreparing={isPreparing}
         isCancelling={isCancelling}
         setupError={setupError}
         onPrepare={() => void prepareModel()}
         onCancel={() => void cancelModelPreparation()}
+        onProviderChange={changeProvider}
       />
     );
 
@@ -1919,18 +2218,20 @@ function App() {
             <p className="mb-3 px-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-(--muted-foreground)">
               {copy.workspace}
             </p>
-            {navItems.map(([item, label, Icon]) => (
-              <button
-                type="button"
-                key={item as string}
-                onClick={() => setView(item as AppView)}
-                aria-current={view === item ? "page" : undefined}
-                className={`group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${view === item ? "bg-(--accent-soft) text-(--accent)" : "text-(--muted-foreground) hover:bg-(--surface-muted) hover:text-(--foreground)"}`}
-              >
-                <Icon className="size-4" />
-                {label}
-              </button>
-            ))}
+            {navItems
+              .filter(([item]) => item !== "profiles" || provider === "omnivoice")
+              .map(([item, label, Icon]) => (
+                <button
+                  type="button"
+                  key={item as string}
+                  onClick={() => setView(item as AppView)}
+                  aria-current={view === item ? "page" : undefined}
+                  className={`group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${view === item ? "bg-(--accent-soft) text-(--accent)" : "text-(--muted-foreground) hover:bg-(--surface-muted) hover:text-(--foreground)"}`}
+                >
+                  <Icon className="size-4" />
+                  {label}
+                </button>
+              ))}
           </nav>
           <div className="mt-auto border-t border-(--border) px-2 pt-5">
             <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-(--muted-foreground)">
@@ -1959,7 +2260,9 @@ function App() {
                   <SettingsView
                     copy={copy}
                     appLanguage={appLanguage}
-                    modelReady={modelReady}
+                    selectedProvider={provider}
+                    providers={providerStatuses}
+                    modelReady={omniVoiceReady}
                     engineOnline={engineOnline}
                     device={device}
                     dataDir={dataDir}
@@ -1967,7 +2270,14 @@ function App() {
                     tokenizerId={engineStatus?.tokenizer ?? "Audio tokenizer"}
                     asrModelId={engineStatus?.asr_model ?? "Whisper ASR"}
                     modelStatusError={modelStatusError}
+                    setupError={setupError}
+                    progressEvent={modelProgress}
                     isRefreshingStatus={isRefreshingStatus}
+                    isPreparing={isPreparing}
+                    preparingProvider={preparingProvider}
+                    onSelectProvider={changeProvider}
+                    onPrepareProvider={(target) => void prepareModel(target)}
+                    onCancelPrepare={() => void cancelModelPreparation()}
                     onChangeLanguage={changeAppLanguage}
                     onRefreshStatus={() => void refreshModelStatus()}
                     onBack={() => setView("workspace")}
@@ -2011,6 +2321,8 @@ function App() {
                 ) : (
                   <WorkspaceView
                     copy={copy}
+                    provider={provider}
+                    mode={mode}
                     language={language}
                     text={text}
                     speed={speed}
@@ -2018,7 +2330,9 @@ function App() {
                     advanced={advanced}
                     advancedError={advancedError}
                     voices={voices}
+                    presetVoices={presetVoices}
                     selectedVoice={selectedVoice}
+                    refAudio={refAudio}
                     result={result}
                     audioUrl={audioUrl}
                     error={error}
@@ -2031,6 +2345,7 @@ function App() {
                       setAdvanced((current) => ({ ...current, ...patch }))
                     }
                     onVoiceSelectionChange={changeVoiceSelection}
+                    onChooseReference={() => void chooseReference()}
                     onSynthesize={() => void synthesize()}
                     onExport={() => void exportAudio()}
                   />
@@ -2047,7 +2362,9 @@ function App() {
               <span>
                 {copy.device} / {engineOnline ? "AUTO" : "OFFLINE"}
               </span>
-              <span>{copy.sampleRate} / 24000 HZ</span>
+              <span>
+                {copy.sampleRate} / {provider === "vieneu" ? 48000 : 24000} HZ
+              </span>
               <span className="ml-auto text-(--foreground)">{copy.allAudioLocal}</span>
             </div>
           </footer>

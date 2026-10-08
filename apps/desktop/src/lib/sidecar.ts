@@ -2,7 +2,8 @@ import { Command, type Child } from "@tauri-apps/plugin-shell";
 import { appDataDir } from "@tauri-apps/api/path";
 
 export type Language = "en" | "vi";
-export type VoiceMode = "auto" | "profile";
+export type ProviderId = "omnivoice" | "vieneu";
+export type VoiceMode = "auto" | "profile" | "preset" | "file";
 export type VoiceKind = "clone" | "design";
 export type AudioFormat = "wav" | "mp3";
 
@@ -64,6 +65,16 @@ export type StatusResult = {
   model: string;
   tokenizer: string;
   asr_model: string;
+  providers: Record<ProviderId, ProviderStatus>;
+};
+
+export type ProviderStatus = {
+  model_ready: boolean;
+  runtime_available: boolean;
+  preprocessing_available: boolean;
+  unavailable_reason: string | null;
+  preset_voices?: Array<{ id: string; name: string; label: string }>;
+  default_voice?: string | null;
 };
 
 export type SynthesisResult = {
