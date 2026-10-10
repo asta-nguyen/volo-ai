@@ -142,7 +142,8 @@ class EngineTests(unittest.TestCase):
                 }
                 self.assertIn("voice_profiles", tables)
                 self.assertIn("app_seeds", tables)
-                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 2)
+                self.assertIn("audio_history", tables)
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 3)
                 self.assertEqual(connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)
                 self.assertEqual(connection.execute("PRAGMA busy_timeout").fetchone()[0], 5000)
                 connection.close()
@@ -191,10 +192,85 @@ class EngineTests(unittest.TestCase):
                 row = connection.execute(
                     "SELECT kind, design_instruction FROM voice_profiles WHERE name = 'legacy'"
                 ).fetchone()
-                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 2)
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 3)
                 self.assertEqual(row["kind"], "clone")
                 self.assertIsNone(row["design_instruction"])
                 connection.close()
+
+    def test_schema_v2_migrates_without_changing_profiles_or_seeds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self.storage_patches(root):
+                connection = Engine._open_storage()
+                connection.execute(
+                    """
+                    INSERT INTO voice_profiles
+                        (name, language, kind, prompt_path, created_at, updated_at)
+                    VALUES ('kept', 'vi', 'clone', 'voices/kept/prompt.pt', 'created', 'updated')
+                    """
+                )
+                connection.execute(
+                    "INSERT INTO app_seeds (seed_key, version, installed_at) VALUES (?, ?, ?)",
+                    ("demo", 1, "installed"),
+                )
+                connection.execute("DROP TABLE audio_history")
+                connection.execute("PRAGMA user_version = 2")
+                connection.commit()
+                connection.close()
+
+                connection = Engine._open_storage()
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 3)
+                self.assertEqual(
+                    tuple(
+                        connection.execute("SELECT name, language FROM voice_profiles").fetchone()
+                    ),
+                    ("kept", "vi"),
+                )
+                self.assertEqual(
+                    tuple(connection.execute("SELECT seed_key, version FROM app_seeds").fetchone()),
+                    ("demo", 1),
+                )
+                connection.close()
+
+    def test_audio_history_round_trip_and_delete(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self.storage_patches(root):
+                entry = {
+                    "file_name": "take.wav",
+                    "provider": "vieneu",
+                    "voice_name": "minh_quan_pro",
+                    "format": "wav",
+                    "text": "Xin chào",
+                    "created_at": "2026-10-08T12:00:00+00:00",
+                }
+                Engine.record_audio_history(**entry)
+
+                self.assertEqual(Engine.list_audio_history(), [entry])
+                self.assertTrue(Engine.delete_audio_history("take.wav"))
+                self.assertEqual(Engine.list_audio_history(), [])
+                self.assertFalse(Engine.delete_audio_history("take.wav"))
+
+    def test_audio_history_rejects_invalid_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.storage_patches(Path(tmp)):
+                valid = {
+                    "file_name": "take.wav",
+                    "provider": "omnivoice",
+                    "voice_name": "auto",
+                    "format": "wav",
+                    "text": "hello",
+                    "created_at": "2026-10-08T12:00:00+00:00",
+                }
+                for key, value in (
+                    ("file_name", "../take.wav"),
+                    ("file_name", "take.flac"),
+                    ("provider", "other"),
+                    ("format", "mp3"),
+                ):
+                    with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                        Engine.record_audio_history(**{**valid, key: value})
+                self.assertEqual(Engine.list_audio_history(), [])
 
     def test_save_voice_copies_reference_and_persists_metadata(self):
         engine = Engine()

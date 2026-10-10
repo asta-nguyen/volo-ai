@@ -32,11 +32,18 @@ but do not yet have dedicated feature pages:
   from the Voice Profiles view.
 - [ ] Desktop settings and interface localization — Settings stores the app
   locale separately from the synthesis language and exposes General, Model,
-  and Storage tabs for local engine status and data location.
+  Storage, and MCP tabs. The MCP tab generates copyable setup for Codex CLI,
+  Claude Code, Claude Desktop, Cursor, VS Code / GitHub Copilot, and Zed,
+  including the app data path; Settings is also reachable from the first-run
+  setup screen.
+- [ ] Desktop audio history — the app lists and plays WAV/MP3 files from its
+  output directory, including older files without synthesis metadata, confirms
+  before deletion, and keeps the five latest session takes in Workspace.
 - [ ] CLI generation and profile management — `tts_mcp/cli.py`.
-- [x] MCP voice generation from saved Clone/Design profiles or external
-  reference audio — MCP `list_voices` and `clone`; see the shared-store setup
-  and profile behavior in the workflow page.
+- [x] MCP provider setup and voice generation — `status` and `prepare_model`
+  report/prepare OmniVoice and VieNeu; `speak` and `clone` select VieNeu
+  presets or Clone/reference voices while keeping OmniVoice as the default.
+  MCP profile and shared-store behavior is in the workflow page.
 
 ## Sources
 
@@ -46,6 +53,7 @@ but do not yet have dedicated feature pages:
 - `src/tts_mcp/server.py`
 - `tests/test_server.py`
 - `tests/test_engine.py`
+- `tests/test_desktop.py`
 - `apps/desktop/src/App.tsx`
 - `apps/desktop/src/components/ui.tsx`
 - `apps/desktop/src/lib/utils.ts`

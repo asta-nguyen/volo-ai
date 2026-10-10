@@ -9,10 +9,14 @@
 - [Voice Studio and Design Profiles](specs/2026-09-14-voice-studio-design-profiles-design.md)
 - [MCP Access to the Volo AI Voice Library](specs/2026-09-27-mcp-shared-app-voice-library-design.md)
 - [Desktop audio.cpp VieNeu provider](specs/2026-10-08-desktop-audiocpp-vieneu-design.md)
+- [VieNeu-TTS support in the MCP server](specs/2026-10-08-mcp-vieneu-provider-design.md)
+- [Desktop Audio History](specs/2026-10-08-desktop-audio-history-design.md)
 
 ## Plans
 
 - [Desktop audio.cpp VieNeu implementation plan](plans/2026-10-08-desktop-audiocpp-vieneu-plan.md)
+- [MCP VieNeu support implementation plan](plans/2026-10-08-mcp-vieneu-provider-plan.md)
+- [Desktop Audio History implementation plan](plans/2026-10-08-desktop-audio-history-plan.md)
 - [MCP Access to the Volo AI Voice Library plan](plans/2026-09-27-mcp-shared-app-voice-library-plan.md)
 - [Local TTS Desktop App plan](plans/2026-09-12-local-tts-desktop-app-plan.md)
 - [Advanced OmniVoice Controls plan](plans/2026-09-12-advanced-omnivoice-controls-plan.md)

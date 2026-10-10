@@ -82,6 +82,17 @@ export type SynthesisResult = {
   format: AudioFormat;
 };
 
+export type AudioHistoryItem = {
+  id: string;
+  audio_path: string;
+  format: AudioFormat;
+  created_at: string;
+  provider: ProviderId | null;
+  voice_name: string | null;
+  text: string | null;
+  metadata_available: boolean;
+};
+
 export class SidecarError extends Error {
   constructor(
     public code: string,
@@ -199,6 +210,18 @@ export class SidecarClient {
 
   getLogs(): RequestLog[] {
     return [...this.logs];
+  }
+
+  clearLogs(): void {
+    this.logs = [];
+    this.logListeners.forEach((listener) =>
+      listener({
+        id: "cleared",
+        operation: "clear",
+        status: "success",
+        startedAt: Date.now(),
+      }),
+    );
   }
 
   async cancelPreparation(): Promise<void> {

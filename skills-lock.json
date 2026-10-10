@@ -5,31 +5,31 @@
       "source": "asta-nguyen/agent-devkit",
       "sourceType": "github",
       "skillPath": "skills/brainstorm-feature/SKILL.md",
-      "computedHash": "94a4ebc04922e9a3e693b6dad899b8050903072a5471ee7f0a59c4973ed4ecbb"
+      "computedHash": "8fd717bd6b25acc0f84b824c9dc841b44426d552bb2f6cf5a653b858878349a1"
     },
     "context-handoff": {
       "source": "asta-nguyen/agent-devkit",
       "sourceType": "github",
       "skillPath": "skills/context-handoff/SKILL.md",
-      "computedHash": "1af9b2e80e7056c3f9e9ba9a535ef5e5c8c30ce87d9a91a1f5ff8cd9fb4a0b41"
+      "computedHash": "3e5720a19306a150828a415b586c0d19f95f21cb66a1f5bfad249a9d2a954bc2"
     },
     "document-wiki": {
       "source": "asta-nguyen/agent-devkit",
       "sourceType": "github",
       "skillPath": "skills/document-wiki/SKILL.md",
-      "computedHash": "103a494de038d16202e8e93f270fc4c86e26db7fc6103992f10b1568c45348e8"
+      "computedHash": "ebb01218213adfc382dccbfa4d4530044839636d4533d79ce76738f7db1841aa"
     },
     "estimate-feature": {
       "source": "asta-nguyen/agent-devkit",
       "sourceType": "github",
       "skillPath": "skills/estimate-feature/SKILL.md",
-      "computedHash": "6f564ee6f7265b7baa76278e7bb8b23a429bf5c707c13e3b3467a7a81951198d"
+      "computedHash": "b5533541a698d6f027e25f20864cb9d81144034a215202311b81ce75d101a8a2"
     },
     "implement-task": {
       "source": "asta-nguyen/agent-devkit",
       "sourceType": "github",
       "skillPath": "skills/implement-task/SKILL.md",
-      "computedHash": "cee50bcbae846230969b21cb4868c01c28e5e4924b559c74e89e8749ccec3a4c"
+      "computedHash": "f7be1d194869a25c51b3b2a40823b279466b987ee6cf5a568c150313b32037e8"
     },
     "lean-audit": {
       "source": "asta-nguyen/agent-devkit",
@@ -41,7 +41,7 @@
       "source": "asta-nguyen/agent-devkit",
       "sourceType": "github",
       "skillPath": "skills/plan-feature/SKILL.md",
-      "computedHash": "92e8742f06c6f0c83bbad66ab7a1128cb7746df82ef2e8beb2b86f2b4470ba10"
+      "computedHash": "75bc94bcc36c3f7f2f8a9522c9a561ad17815f039f1f6bec49e175a411bfc037"
     },
     "read-codebase-context": {
       "source": "asta-nguyen/agent-devkit",
@@ -53,13 +53,13 @@
       "source": "asta-nguyen/agent-devkit",
       "sourceType": "github",
       "skillPath": "skills/review-and-verify/SKILL.md",
-      "computedHash": "246ebdcce186206a60f200ec50985d118c51a9c51d7debedee97c607c5d481fe"
+      "computedHash": "d137b230064177313bcc7c769b00eba2aa01a08f7fecf75ce441f191a9b5c553"
     },
     "setup-codebase": {
       "source": "asta-nguyen/agent-devkit",
       "sourceType": "github",
       "skillPath": "skills/setup-codebase/SKILL.md",
-      "computedHash": "92160d1cc6336eb6ecd406c952d08531d2939a2e207c66ed84e0641dfc9df49a"
+      "computedHash": "e68e54cafb547ab58a6efd5fea71f213161ba535cbb903a43aa4e6e98204b723"
     },
     "setup-openez": {
       "source": "asta-nguyen/agent-devkit",
@@ -71,13 +71,13 @@
       "source": "asta-nguyen/agent-devkit",
       "sourceType": "github",
       "skillPath": "skills/systematic-debugging/SKILL.md",
-      "computedHash": "35590375f4913f4ede3574c318a23b2c55c5ad26f0dd7e466a6d3705775ec066"
+      "computedHash": "d99263f05ff7c1138d7f6dff7dacec13cbf0fd77f5f0737af73e365a774bc728"
     },
     "using-devkit": {
       "source": "asta-nguyen/agent-devkit",
       "sourceType": "github",
       "skillPath": "skills/using-devkit/SKILL.md",
-      "computedHash": "3f5b6983b128eec6a3551181d14c264c7c76a06432f960ea836cb1d9c6d0e2bc"
+      "computedHash": "80330284e6d11026a4d6f1fc7a8e2e747b324138650cb2125aabea51ca428092"
     }
   }
 }

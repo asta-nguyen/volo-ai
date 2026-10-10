@@ -2,8 +2,9 @@
 
 ## Business rules
 
-- The desktop supports OmniVoice and VieNeu-TTS. CLI and MCP generation remain
-  OmniVoice-only.
+- The desktop sidecar and MCP server support OmniVoice and VieNeu-TTS. The CLI
+  remains OmniVoice-only; MCP provider setup and tool behavior are documented
+  in the [MCP voice library workflow](mcp-voice-library.md).
 - `prepare_model` and `synthesize` require `provider: "omnivoice"` or
   `provider: "vieneu"`; the sidecar does not silently switch providers.
 - `status` reports model-asset readiness separately from runtime and
@@ -104,6 +105,7 @@
 
 - `src/tts_mcp/desktop.py`
 - `src/tts_mcp/desktop_vieneu.py`
+- `src/tts_mcp/server.py`
 - `src/tts_mcp/engine.py`
 - `src/tts_mcp/convert.py`
 - `apps/desktop/src/App.tsx`
@@ -114,5 +116,6 @@
 - `pyproject.toml`
 - `tests/test_desktop.py`
 - `tests/test_desktop_vieneu.py`
+- `tests/test_server.py`
 - `tests/test_build_sidecar.py`
 - `docs/desktop-development.md`

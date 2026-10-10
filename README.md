@@ -30,7 +30,8 @@ current release scope.
 ## Use the MCP server
 
 The local server uses stdio and exposes `speak`, `clone`, `design`,
-`list_voices`, `save_voice`, and `delete_voice`. From the repository root,
+`list_voices`, `save_voice`, `delete_voice`, `status`, and `prepare_model`.
+From the repository root,
 install the project in a virtual environment:
 
 ```sh
@@ -48,28 +49,44 @@ Python environment. Replace `/absolute/path/to/tts` below with that path.
 `tts mcp` starts the stdio server directly; MCP clients run that command for
 you after setup.
 
+Volo AI's **Settings → MCP** tab generates a copyable setup command or config
+for Codex CLI, Claude Code, Claude Desktop, Cursor, VS Code / GitHub Copilot,
+and Zed.
+It includes the app's data directory so the MCP server can share voice profiles
+and model assets with the desktop app. Replace the `tts` executable placeholder
+with the path from the Python environment where `tts-mcp` is installed.
+
 For Codex CLI:
 
 ```sh
 codex mcp add volo-tts \
   --env 'TTS_MCP_DATA_DIR=/path/copied/from/Volo AI Settings/Storage' \
+  --env 'TTS_MCP_AUDIOCPP_PATH=/absolute/path/to/audiocpp_cli' \
+  --env 'TTS_MCP_FFMPEG_PATH=/absolute/path/to/ffmpeg' \
   -- /absolute/path/to/tts mcp
 codex mcp list
 ```
 
 Replace the `TTS_MCP_DATA_DIR` value with the exact directory shown in Volo AI
-under **Settings → Storage**. This makes MCP use the same voice library, model
-assets, and generated-audio folder as the app. To configure an already-added
-server, the equivalent `~/.codex/config.toml` entry is:
+under **Settings → Storage**. This makes MCP use the same voice library and
+model assets as the app. MCP audio is written to each tool call's `output_path`.
+To configure an already-added server, the equivalent `~/.codex/config.toml` entry is:
 
 ```toml
 [mcp_servers.volo-tts.env]
 TTS_MCP_DATA_DIR = "/path/copied/from/Volo AI Settings/Storage"
+TTS_MCP_AUDIOCPP_PATH = "/absolute/path/to/audiocpp_cli"
+TTS_MCP_FFMPEG_PATH = "/absolute/path/to/ffmpeg"
 ```
 
 Without this setting, the server keeps using `~/.tts-mcp` as a separate store.
 When the shared path is set, `save_voice` and `delete_voice` change the app's
 voice library too; saving a profile with an existing name replaces it.
+
+`TTS_MCP_AUDIOCPP_PATH` points the MCP process to the CPU `audiocpp_cli`
+executable required by VieNeu. Set `TTS_MCP_FFMPEG_PATH` when FFmpeg is not on
+`PATH`; VieNeu needs it for reference-audio cloning, and MP3 export also needs
+FFmpeg.
 
 For example, ask an agent to call `list_voices` with no arguments, then pass
 one of the returned profile names to `clone`:
@@ -98,6 +115,67 @@ Omit `ref_text` when the reference transcript should be detected automatically.
 Saved Clone and Design profiles both work with `clone(voice=...)`; external
 reference audio continues to use `ref_audio_path`.
 
+### VieNeu-TTS
+
+Install the optional VieNeu preprocessing package into the same Python
+environment that runs `tts mcp`:
+
+```sh
+python -m pip install -e '.[desktop-vieneu]'
+# Add mp3 when you also want MP3 output.
+python -m pip install -e '.[desktop-vieneu,mp3]'
+```
+
+Configure `TTS_MCP_AUDIOCPP_PATH` in the MCP server environment as shown above.
+Keep `TTS_MCP_DATA_DIR` pointed at the Volo AI **Settings → Storage** path to
+reuse the app's VieNeu model and saved Clone profiles. Set
+`TTS_MCP_FFMPEG_PATH` if FFmpeg is not available on `PATH`.
+
+VieNeu setup is explicit. Call `status` to inspect `providers.vieneu`. On a
+fresh setup, `preset_voices` is empty until the local manifest is downloaded.
+Call `prepare_model` with `{"provider": "vieneu"}`, then call `status` again
+to choose a preset ID from `preset_voices`. Use that ID in `speak`:
+
+```json
+{
+  "text": "Xin chào, đây là giọng VieNeu.",
+  "output_path": "/tmp/vieneu.wav",
+  "provider": "vieneu",
+  "voice": "preset",
+  "preset_id": "truc_ly",
+  "language": "vi"
+}
+```
+
+For cloning, use a saved Clone profile name or provide a one-off reference
+file. `language` accepts `en` or `vi` and defaults to English:
+
+```json
+{
+  "text": "Xin chào.",
+  "output_path": "/tmp/vieneu-clone.wav",
+  "provider": "vieneu",
+  "voice": "My-Voice",
+  "language": "vi"
+}
+```
+
+For a one-off reference file, omit `voice` and pass `ref_audio_path`:
+
+```json
+{
+  "text": "Xin chào.",
+  "output_path": "/tmp/vieneu-reference.wav",
+  "provider": "vieneu",
+  "ref_audio_path": "/path/to/reference.wav",
+  "language": "vi"
+}
+```
+
+VieNeu does not consume `ref_text` and cannot use Design profiles. Omitting
+`provider` keeps existing OmniVoice behavior. VieNeu does not download assets
+automatically and never falls back to OmniVoice; run `prepare_model` first.
+
 For Claude Code:
 
 ```sh
@@ -107,8 +185,9 @@ claude mcp list
 
 The server uses `~/.tts-mcp` for model assets, voice profiles, and generated
 audio by default. Set `TTS_MCP_DATA_DIR` in the MCP client's server
-environment to choose another data directory. The first generation may
-download the local model assets. See the [Codex MCP guide](https://developers.openai.com/codex/mcp)
+environment to choose another data directory. The first OmniVoice generation
+may download its local model assets; VieNeu requires an explicit
+`prepare_model(provider="vieneu")` call. See the [Codex MCP guide](https://developers.openai.com/codex/mcp)
 and [Claude Code MCP guide](https://code.claude.com/docs/en/mcp) for client
 configuration details.
 

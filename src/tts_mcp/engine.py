@@ -35,7 +35,7 @@ SUPPORTED_LANGUAGES = ("en", "vi")
 REFERENCE_AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg"}
 VOICE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 SEED_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
-DB_SCHEMA_VERSION = 2
+DB_SCHEMA_VERSION = 3
 _STORAGE_LOCK = threading.RLock()
 _MIGRATED_STORAGES: set[tuple[Path, Path]] = set()
 GENERATION_CONFIG_KEYS = frozenset(
@@ -70,6 +70,20 @@ def validate_language(language: str) -> str:
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _validate_audio_history_file_name(file_name: str) -> str:
+    if (
+        not isinstance(file_name, str)
+        or not file_name
+        or Path(file_name).name != file_name
+        or "/" in file_name
+        or "\\" in file_name
+        or Path(file_name).stem in {"", ".", ".."}
+        or Path(file_name).suffix.lower() not in {".wav", ".mp3"}
+    ):
+        raise ValueError("Audio history file name must be a WAV or MP3 basename")
+    return file_name
 
 
 def _relative_data_path(path: Path) -> str:
@@ -210,6 +224,22 @@ def _open_database() -> sqlite3.Connection:
             CREATE UNIQUE INDEX idx_voice_profiles_default_language
                 ON voice_profiles(language) WHERE is_default = 1;
             PRAGMA user_version = 2;
+            """
+        )
+        connection.commit()
+    current_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+    if current_version < 3:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS audio_history (
+                file_name TEXT PRIMARY KEY,
+                provider TEXT NOT NULL CHECK (provider IN ('omnivoice', 'vieneu')),
+                voice_name TEXT NOT NULL,
+                format TEXT NOT NULL CHECK (format IN ('wav', 'mp3')),
+                text TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            PRAGMA user_version = 3;
             """
         )
         connection.commit()
@@ -978,6 +1008,66 @@ class Engine:
                     legacy_path.unlink()
                     deleted = True
             return deleted
+
+    @staticmethod
+    def record_audio_history(
+        file_name: str,
+        provider: str,
+        voice_name: str,
+        format: str,
+        text: str,
+        created_at: str,
+    ) -> None:
+        file_name = _validate_audio_history_file_name(file_name)
+        if not isinstance(provider, str) or provider not in {"omnivoice", "vieneu"}:
+            raise ValueError("Audio history provider must be omnivoice or vieneu")
+        if (
+            not isinstance(format, str)
+            or format not in {"wav", "mp3"}
+            or Path(file_name).suffix.lower() != f".{format}"
+        ):
+            raise ValueError("Audio history format must match the WAV or MP3 file name")
+        if not isinstance(voice_name, str) or not voice_name.strip():
+            raise ValueError("Audio history voice name must not be empty")
+        if not isinstance(text, str):
+            raise ValueError("Audio history text must be a string")
+        if not isinstance(created_at, str) or not created_at.strip():
+            raise ValueError("Audio history creation time must not be empty")
+        with _STORAGE_LOCK:
+            with closing(Engine._open_storage()) as connection:
+                with connection:
+                    connection.execute(
+                        """
+                        INSERT INTO audio_history
+                            (file_name, provider, voice_name, format, text, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (file_name, provider, voice_name.strip(), format, text, created_at),
+                    )
+
+    @staticmethod
+    def list_audio_history() -> list[dict[str, Any]]:
+        with _STORAGE_LOCK:
+            with closing(Engine._open_storage()) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT file_name, provider, voice_name, format, text, created_at
+                    FROM audio_history
+                    ORDER BY created_at DESC, file_name ASC
+                    """
+                ).fetchall()
+        return [dict(row) for row in rows]
+
+    @staticmethod
+    def delete_audio_history(file_name: str) -> bool:
+        file_name = _validate_audio_history_file_name(file_name)
+        with _STORAGE_LOCK:
+            with closing(Engine._open_storage()) as connection:
+                with connection:
+                    cursor = connection.execute(
+                        "DELETE FROM audio_history WHERE file_name = ?", (file_name,)
+                    )
+                return cursor.rowcount > 0
 
 
 # Module-level convenience

@@ -71,6 +71,8 @@ def main() -> int:
         "--collect-all",
         "vieneu_utils",
         "--collect-all",
+        "sea_g2p",
+        "--collect-all",
         "onnxruntime",
         "--add-binary",
         f"{ffmpeg}{separator}.",

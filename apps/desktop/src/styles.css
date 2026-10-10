@@ -36,6 +36,30 @@
   text-rendering: optimizeLegibility;
 }
 
+html.dark,
+[data-theme="dark"] {
+  --background: #111413;
+  --surface: #181d1a;
+  --surface-muted: #222824;
+  --foreground: #ecefe9;
+  --muted-foreground: #8e958d;
+  --border: #2c332e;
+  --border-strong: #3d4640;
+  --accent: #e07a5f;
+  --accent-strong: #f08c73;
+  --accent-soft: #2e201c;
+  --accent-border: #4d2e26;
+  --ring: #e07a5f;
+  --success: #5ca075;
+  --success-surface: #17261d;
+  --success-border: #23402e;
+  --warning: #d98a3f;
+  --destructive: #d95d52;
+  --destructive-strong: #e67369;
+  --destructive-surface: #2b1715;
+  --destructive-border: #492522;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -47,9 +71,10 @@ body,
 }
 
 body {
-  min-width: 980px;
+  min-width: 768px;
   margin: 0;
   background: var(--background);
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 button,

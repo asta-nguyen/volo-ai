@@ -134,6 +134,7 @@ class VieNeuProvider:
         self.data_dir = Path(data_dir)
         self.root = self.data_dir / "models" / "vieneu"
         self._download_lock = threading.Lock()
+        self._synthesis_lock = threading.Lock()
         self._speaker_encoder: Any = None
 
     @property
@@ -155,7 +156,11 @@ class VieNeuProvider:
         target = _target_triple() if getattr(sys, "frozen", False) else None
         if target:
             suffix = ".exe" if target.endswith("windows-msvc") else ""
-            return Path(sys.executable).resolve().with_name(f"audiocpp-cli-{target}{suffix}")
+            binary = Path(sys.executable).resolve().with_name(f"audiocpp-cli-{target}{suffix}")
+            if binary.is_file():
+                return binary
+            tauri_binary = binary.with_name(f"audiocpp-cli{suffix}")
+            return tauri_binary if tauri_binary.is_file() else binary
         return None
 
     def _runtime_status(self) -> tuple[bool, str | None]:
@@ -228,9 +233,15 @@ class VieNeuProvider:
         runtime_available, runtime_reason = self._runtime_status()
         preprocessing_available, preprocessing_reason = self._preprocessing_status()
         manifest = self._manifest()
+        model_ready = self._model_ready()
         reason = runtime_reason or preprocessing_reason
+        if reason is None and not model_ready:
+            reason = (
+                "VieNeu model assets are not ready; "
+                "run prepare_model(provider='vieneu') first"
+            )
         return {
-            "model_ready": self._model_ready(),
+            "model_ready": model_ready,
             "runtime_available": runtime_available,
             "preprocessing_available": preprocessing_available,
             "preset_voices": manifest[0] if manifest else [],
@@ -443,6 +454,17 @@ class VieNeuProvider:
         request: dict[str, Any],
         voices: list[dict[str, Any]],
         output_dir: Path,
+        output_path: Path | str | None = None,
+    ) -> dict[str, str]:
+        with self._synthesis_lock:
+            return self._synthesize(request, voices, output_dir, output_path)
+
+    def _synthesize(
+        self,
+        request: dict[str, Any],
+        voices: list[dict[str, Any]],
+        output_dir: Path,
+        output_path: Path | str | None,
     ) -> dict[str, str]:
         text = request.get("text")
         if not isinstance(text, str) or not text.strip():
@@ -451,6 +473,9 @@ class VieNeuProvider:
         output_format = str(request.get("format", "wav")).lower().lstrip(".")
         if output_format not in OUTPUT_FORMATS:
             raise ValueError("Format must be wav or mp3")
+        destination = Path(output_path) if output_path is not None else None
+        if destination is not None and destination.suffix.lower() != f".{output_format}":
+            raise ValueError("Output path extension must match the selected wav or mp3 format")
         self._reject_fields(
             request,
             ("speed", "steps", "duration", "normalize_text", "generation_config", "instruct"),
@@ -505,7 +530,7 @@ class VieNeuProvider:
             raise RuntimeError(preprocessing_reason or "VieNeu preprocessing is unavailable")
         if not self._model_ready():
             raise RuntimeError(
-                "VieNeu model assets are not ready; download the model in setup first"
+                "VieNeu model assets are not ready; run prepare_model(provider='vieneu') first"
             )
 
         from vieneu_utils.phonemize_text import phonemize_text_with_emotions
@@ -517,8 +542,15 @@ class VieNeuProvider:
         if binary is None:
             raise RuntimeError("audio.cpp CLI is unavailable")
 
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{uuid.uuid4().hex}.{output_format}"
+        if destination is None:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            destination = output_dir / f"{uuid.uuid4().hex}.{output_format}"
+            working_output = destination
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            working_output = destination.with_name(
+                f".{destination.stem}.{uuid.uuid4().hex}.tmp{destination.suffix}"
+            )
         try:
             with tempfile.TemporaryDirectory(prefix="vieneu-") as temporary_dir:
                 temp_dir = Path(temporary_dir)
@@ -560,15 +592,17 @@ class VieNeuProvider:
                 audio, sample_rate = sf.read(str(native_output), dtype="float32", always_2d=True)
                 save_audio(
                     np.asarray(audio, dtype=np.float32),
-                    str(output_path),
+                    str(working_output),
                     sample_rate=sample_rate,
                     ffmpeg_path=_resolve_ffmpeg(),
                 )
+            if working_output != destination:
+                working_output.replace(destination)
         except (OSError, subprocess.SubprocessError) as exc:
             detail = getattr(exc, "stderr", None)
-            output_path.unlink(missing_ok=True)
+            working_output.unlink(missing_ok=True)
             raise RuntimeError(f"VieNeu synthesis failed: {detail or exc}") from exc
         except Exception:
-            output_path.unlink(missing_ok=True)
+            working_output.unlink(missing_ok=True)
             raise
-        return {"audio_path": str(output_path), "format": output_format}
+        return {"audio_path": str(destination), "format": output_format}

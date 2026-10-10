@@ -8,29 +8,40 @@ import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "motion/
 import {
   AlertCircle,
   AudioLines,
+  Check,
   CheckCircle2,
   ChevronRight,
   CircleStop,
+  Clock,
+  Copy,
   Download,
   FileAudio,
+  FileText,
   FolderOpen,
   HardDrive,
+  History,
   Languages,
   Library,
   LoaderCircle,
   Logs,
+  Monitor,
+  Moon,
   Play,
   Plus,
   RotateCcw,
+  Search,
   Settings2,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  Sun,
   Trash2,
+  Wand2,
   type LucideIcon,
 } from "lucide-react";
 import {
   SidecarClient,
+  type AudioHistoryItem,
   type AudioFormat,
   type GenerationConfig,
   type Language,
@@ -45,6 +56,7 @@ import {
   type VoiceProfile,
 } from "./lib/sidecar";
 import { createUiCopy, setAppLanguage, type AppLanguage, type UiCopy } from "./lib/i18n";
+import { cn } from "./lib/utils";
 import {
   Badge,
   Button,
@@ -63,10 +75,100 @@ import {
   Skeleton,
   Textarea,
 } from "./components/ui";
+import { AudioPlayer, InlineAudioPreview } from "./components/AudioPlayer";
+
+export type ThemeMode = "light" | "dark" | "system";
+
+export function readTheme(): ThemeMode {
+  return (localStorage.getItem("volo-ai.theme") as ThemeMode) || "system";
+}
+
+export function applyTheme(theme: ThemeMode) {
+  localStorage.setItem("volo-ai.theme", theme);
+  const isDark =
+    theme === "dark" ||
+    (theme === "system" &&
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches);
+  if (isDark) {
+    document.documentElement.classList.add("dark");
+    document.documentElement.setAttribute("data-theme", "dark");
+  } else {
+    document.documentElement.classList.remove("dark");
+    document.documentElement.setAttribute("data-theme", "light");
+  }
+}
+
+export type TakeItem = {
+  id: string;
+  timestamp: number;
+  provider: ProviderId;
+  voiceName: string;
+  format: AudioFormat;
+  audioPath: string;
+  text: string;
+};
+
+const SAMPLE_SCRIPTS = {
+  vi: [
+    {
+      titleKey: "sampleNews" as const,
+      text: "Chào mừng quý thính giả đến với bản tin công nghệ của Volo AI. Hôm nay chúng ta sẽ cùng khám phá công nghệ giọng nói AI thế hệ mới hoạt động hoàn toàn offline trên thiết bị của bạn.",
+    },
+    {
+      titleKey: "sampleStory" as const,
+      text: "Đêm mùa thu tĩnh lặng, tiếng lá rơi khẽ khàng ngoài hiên vắng. Những công cụ giản dị nhất lại thường tạo nên những điều phi thường.",
+    },
+    {
+      titleKey: "sampleConversation" as const,
+      text: "Xin chào bạn, hôm nay thời tiết rất đẹp. Giọng nói bạn đang nghe được tạo trực tiếp với chất lượng cao và tốc độ phản hồi tức thì.",
+    },
+  ],
+  en: [
+    {
+      titleKey: "sampleNews" as const,
+      text: "The quietest tools often do the most important work. Welcome to Volo AI, your private, high-fidelity local voice synthesis studio.",
+    },
+    {
+      titleKey: "sampleStory" as const,
+      text: "High in the misty mountains, the ancient library stood silent, waiting for someone to speak the forgotten words into the twilight.",
+    },
+    {
+      titleKey: "sampleConversation" as const,
+      text: "Good morning! It's fantastic to have you here. Let's see what kind of creative audio experiences we can shape today.",
+    },
+  ],
+};
 
 const client = new SidecarClient();
-type AppView = "workspace" | "profiles" | "settings" | "logs";
-type SettingsTab = "general" | "model" | "storage";
+type AppView = "workspace" | "profiles" | "history" | "settings" | "logs";
+type SettingsTab = "general" | "model" | "storage" | "mcp";
+type McpClientId = "codex" | "claude-code" | "claude-desktop" | "cursor" | "vscode" | "zed";
+
+function shellQuote(value: string) {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function buildMcpConfig(clientId: McpClientId, dataDir: string): string {
+  const command = "/absolute/path/to/tts";
+  const args = ["mcp"];
+  const env = { TTS_MCP_DATA_DIR: dataDir };
+
+  if (clientId === "codex") {
+    return `codex mcp add volo-tts --env ${shellQuote(`TTS_MCP_DATA_DIR=${dataDir}`)} -- ${shellQuote(command)} mcp`;
+  }
+  if (clientId === "claude-code") {
+    return `claude mcp add --scope user --env ${shellQuote(`TTS_MCP_DATA_DIR=${dataDir}`)} volo-tts -- ${shellQuote(command)} mcp`;
+  }
+
+  const server = { command, args, env };
+  const config =
+    clientId === "zed"
+      ? { context_servers: { "volo-tts": server } }
+      : { mcpServers: { "volo-tts": server } };
+  return JSON.stringify(config, null, 2);
+}
+
 const BUNDLED_SEED_DIRECTORY = "resources/seed-voices";
 type SeedImportResult = {
   imported: Array<{ id: string; name: string; language: string }>;
@@ -250,6 +352,8 @@ function SetupScreen({
   onPrepare,
   onCancel,
   onProviderChange,
+  onOpenHistory,
+  onOpenSettings,
 }: {
   copy: UiCopy;
   provider: ProviderId;
@@ -261,6 +365,8 @@ function SetupScreen({
   onPrepare: () => void;
   onCancel: () => void;
   onProviderChange: (provider: ProviderId) => void;
+  onOpenHistory: () => void;
+  onOpenSettings: () => void;
 }) {
   const progress = Math.round((progressEvent?.progress ?? 0) * 100);
   const isOmniVoice = provider === "omnivoice";
@@ -382,6 +488,14 @@ function SetupScreen({
                     {isCancelling ? copy.cancelling : copy.cancelDownload}
                   </Button>
                 )}
+                <Button variant="ghost" onClick={onOpenHistory}>
+                  <History className="size-4" />
+                  {copy.audioHistory}
+                </Button>
+                <Button variant="ghost" onClick={onOpenSettings}>
+                  <Settings2 className="size-4" />
+                  {copy.settings}
+                </Button>
               </div>
               <p className="mt-4 text-xs leading-5 text-(--muted-foreground)">
                 {copy.resumeDownload}
@@ -447,9 +561,25 @@ function SetupScreen({
   );
 }
 
-function LogsView({ logs, copy }: { logs: RequestLog[]; copy: UiCopy }) {
+function LogsView({
+  logs,
+  copy,
+  onClearLogs,
+}: {
+  logs: RequestLog[];
+  copy: UiCopy;
+  onClearLogs: () => void;
+}) {
+  const [filter, setFilter] = useState<"all" | "success" | "error">("all");
   const successCount = logs.filter((entry) => entry.status === "success").length;
   const errorCount = logs.filter((entry) => entry.status === "error").length;
+
+  const filteredLogs = useMemo(() => {
+    if (filter === "success") return logs.filter((l) => l.status === "success");
+    if (filter === "error") return logs.filter((l) => l.status === "error");
+    return logs;
+  }, [logs, filter]);
+
   return (
     <div>
       <PageHeader
@@ -457,10 +587,36 @@ function LogsView({ logs, copy }: { logs: RequestLog[]; copy: UiCopy }) {
         title={copy.localActivity}
         description={copy.logsDescription}
         action={
-          <Badge className="border-(--border) bg-(--surface-muted) text-(--muted-foreground)">
-            <span className="mr-2 size-1.5 rounded-full bg-(--success)" />
-            {copy.sessionOnly}
-          </Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex rounded-xl border border-(--border) bg-(--surface) p-1">
+              {(
+                [
+                  ["all", copy.filterAll],
+                  ["success", copy.filterSuccess],
+                  ["error", copy.filterError],
+                ] as const
+              ).map(([f, label]) => (
+                <button
+                  type="button"
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${filter === f ? "bg-(--accent-soft) text-(--accent)" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {logs.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={onClearLogs} title={copy.clearLogs}>
+                <Trash2 className="size-3.5 text-(--destructive)" />
+                <span className="text-xs text-(--destructive)">{copy.clearLogs}</span>
+              </Button>
+            )}
+            <Badge className="border-(--border) bg-(--surface-muted) text-(--muted-foreground)">
+              <span className="mr-2 size-1.5 rounded-full bg-(--success)" />
+              {copy.sessionOnly}
+            </Badge>
+          </div>
         }
       />
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
@@ -478,7 +634,7 @@ function LogsView({ logs, copy }: { logs: RequestLog[]; copy: UiCopy }) {
         ))}
       </div>
       <Card>
-        {logs.length === 0 ? (
+        {filteredLogs.length === 0 ? (
           <CardContent className="flex min-h-72 flex-col items-center justify-center p-8 text-center">
             <div className="grid size-12 place-items-center rounded-2xl bg-(--surface-muted) text-(--muted-foreground)">
               <Logs className="size-5" />
@@ -490,7 +646,7 @@ function LogsView({ logs, copy }: { logs: RequestLog[]; copy: UiCopy }) {
           </CardContent>
         ) : (
           <div className="divide-y divide-(--border)">
-            {logs.map((entry) => (
+            {filteredLogs.map((entry) => (
               <motion.article
                 key={entry.id}
                 initial={{ opacity: 0, y: 6 }}
@@ -787,10 +943,19 @@ function VoiceProfilesView({
                             </span>
                           )}
                         </div>
-                        <Button size="sm" onClick={() => onUse(voice.name)}>
-                          <Play className="size-3.5" />
-                          {copy.useProfile}
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          {voice.ref_audio && (
+                            <InlineAudioPreview
+                              src={convertFileSrc(voice.ref_audio)}
+                              label={copy.previewAudio}
+                              pauseLabel={copy.pauseAudio}
+                            />
+                          )}
+                          <Button size="sm" onClick={() => onUse(voice.name)}>
+                            <Play className="size-3.5" />
+                            {copy.useProfile}
+                          </Button>
+                        </div>
                       </div>
                     </motion.article>
                   ))}
@@ -857,18 +1022,29 @@ function VoiceProfilesView({
                 <>
                   <div className="space-y-2">
                     <Label>{copy.referenceAudio}</Label>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="w-full justify-start"
-                      onClick={onChooseReference}
-                      disabled={isSaving}
-                    >
-                      <FolderOpen className="size-4 text-(--accent)" />
-                      <span className="truncate">
-                        {refAudio ? fileName(refAudio) : copy.noAudioSelected}
-                      </span>
-                    </Button>
+                    <div className="flex flex-col gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="w-full justify-start"
+                        onClick={onChooseReference}
+                        disabled={isSaving}
+                      >
+                        <FolderOpen className="size-4 text-(--accent)" />
+                        <span className="truncate">
+                          {refAudio ? fileName(refAudio) : copy.noAudioSelected}
+                        </span>
+                      </Button>
+                      {refAudio && (
+                        <div className="flex items-center gap-2">
+                          <InlineAudioPreview
+                            src={convertFileSrc(refAudio)}
+                            label={copy.previewAudio}
+                            pauseLabel={copy.pauseAudio}
+                          />
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="profile-transcript">{copy.referenceTranscript}</Label>
@@ -911,6 +1087,7 @@ function VoiceProfilesView({
 function SettingsView({
   copy,
   appLanguage,
+  theme,
   selectedProvider,
   providers,
   modelReady,
@@ -927,6 +1104,7 @@ function SettingsView({
   isPreparing,
   preparingProvider,
   onChangeLanguage,
+  onChangeTheme,
   onSelectProvider,
   onPrepareProvider,
   onCancelPrepare,
@@ -935,6 +1113,7 @@ function SettingsView({
 }: {
   copy: UiCopy;
   appLanguage: AppLanguage;
+  theme: ThemeMode;
   selectedProvider: ProviderId;
   providers: Record<ProviderId, ProviderStatus> | null;
   modelReady: boolean;
@@ -951,6 +1130,7 @@ function SettingsView({
   isPreparing: boolean;
   preparingProvider: ProviderId | null;
   onChangeLanguage: (language: AppLanguage) => void;
+  onChangeTheme: (theme: ThemeMode) => void;
   onSelectProvider: (provider: ProviderId) => void;
   onPrepareProvider: (provider: ProviderId) => void;
   onCancelPrepare: () => void;
@@ -958,10 +1138,43 @@ function SettingsView({
   onBack: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("model");
+  const [copiedDataDir, setCopiedDataDir] = useState(false);
+  const [copiedMcpConfig, setCopiedMcpConfig] = useState(false);
+  const [mcpClient, setMcpClient] = useState<McpClientId>("codex");
+  const mcpSetupConfig = dataDir ? buildMcpConfig(mcpClient, dataDir) : copy.loadingDataPath;
+
+  const handleCopyDataDir = async () => {
+    if (!dataDir) return;
+    try {
+      await navigator.clipboard.writeText(dataDir);
+      setCopiedDataDir(true);
+      setTimeout(() => setCopiedDataDir(false), 2000);
+    } catch {}
+  };
+
+  const handleCopyMcpConfig = async () => {
+    if (!dataDir) return;
+    try {
+      await navigator.clipboard.writeText(mcpSetupConfig);
+      setCopiedMcpConfig(true);
+      setTimeout(() => setCopiedMcpConfig(false), 2000);
+    } catch {}
+  };
+
+  const mcpClients: Array<[McpClientId, string]> = [
+    ["codex", copy.mcpClientCodex],
+    ["claude-code", copy.mcpClientClaudeCode],
+    ["claude-desktop", copy.mcpClientClaudeDesktop],
+    ["cursor", copy.mcpClientCursor],
+    ["vscode", copy.mcpClientVSCode],
+    ["zed", copy.mcpClientZed],
+  ];
+
   const tabs: Array<[SettingsTab, string]> = [
     ["model", copy.modelTab],
     ["general", copy.generalTab],
     ["storage", copy.storageTab],
+    ["mcp", copy.mcpTab],
   ];
   const assets = [copy.setupAssetOmniVoice, copy.setupAssetTokenizer, copy.setupAssetWhisper];
   const providerChoices: Array<[ProviderId, string]> = [
@@ -1001,31 +1214,66 @@ function SettingsView({
       </div>
       <div className="grid gap-5 lg:grid-cols-2">
         {activeTab === "general" && (
-          <Card>
-            <CardHeader>
-              <div>
-                <SectionLabel>{copy.appLanguage}</SectionLabel>
-                <CardTitle className="mt-2">{copy.interfaceLanguage}</CardTitle>
-              </div>
-              <Languages className="size-5 text-(--accent)" />
-            </CardHeader>
-            <CardContent>
-              <CardDescription>{copy.appLanguageDescription}</CardDescription>
-              <div className="mt-5 grid grid-cols-2 gap-2 rounded-xl bg-(--surface-muted) p-1.5">
-                {(["en", "vi"] as AppLanguage[]).map((item) => (
-                  <button
-                    type="button"
-                    key={item}
-                    onClick={() => onChangeLanguage(item)}
-                    aria-pressed={appLanguage === item}
-                    className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${appLanguage === item ? "bg-(--surface) text-(--foreground) shadow-sm" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
-                  >
-                    {item === "en" ? copy.english : copy.vietnamese}
-                  </button>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          <>
+            <Card>
+              <CardHeader>
+                <div>
+                  <SectionLabel>{copy.appLanguage}</SectionLabel>
+                  <CardTitle className="mt-2">{copy.interfaceLanguage}</CardTitle>
+                </div>
+                <Languages className="size-5 text-(--accent)" />
+              </CardHeader>
+              <CardContent>
+                <CardDescription>{copy.appLanguageDescription}</CardDescription>
+                <div className="mt-5 grid grid-cols-2 gap-2 rounded-xl bg-(--surface-muted) p-1.5">
+                  {(["en", "vi"] as AppLanguage[]).map((item) => (
+                    <button
+                      type="button"
+                      key={item}
+                      onClick={() => onChangeLanguage(item)}
+                      aria-pressed={appLanguage === item}
+                      className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${appLanguage === item ? "bg-(--surface) text-(--foreground) shadow-sm" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
+                    >
+                      {item === "en" ? copy.english : copy.vietnamese}
+                    </button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div>
+                  <SectionLabel>{copy.theme}</SectionLabel>
+                  <CardTitle className="mt-2">{copy.theme}</CardTitle>
+                </div>
+                <Sun className="size-5 text-(--accent)" />
+              </CardHeader>
+              <CardContent>
+                <CardDescription>{copy.themeDescription}</CardDescription>
+                <div className="mt-5 grid grid-cols-3 gap-2 rounded-xl bg-(--surface-muted) p-1.5">
+                  {(
+                    [
+                      ["light", copy.themeLight, Sun],
+                      ["dark", copy.themeDark, Moon],
+                      ["system", copy.themeSystem, Monitor],
+                    ] as const
+                  ).map(([item, label, Icon]) => (
+                    <button
+                      type="button"
+                      key={item}
+                      onClick={() => onChangeTheme(item)}
+                      aria-pressed={theme === item}
+                      className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${theme === item ? "bg-(--surface) text-(--foreground) shadow-sm" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
+                    >
+                      <Icon className="size-3.5" />
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </>
         )}
         {activeTab === "model" && (
           <Card className="lg:col-span-2">
@@ -1187,12 +1435,99 @@ function SettingsView({
               <HardDrive className="size-5 text-(--accent)" />
             </CardHeader>
             <CardContent>
-              <code className="block overflow-x-auto rounded-xl border border-(--border) bg-(--surface-muted) p-3.5 font-mono text-xs text-(--foreground)">
-                {dataDir ?? copy.loadingDataPath}
-              </code>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <code className="block flex-1 overflow-x-auto rounded-xl border border-(--border) bg-(--surface-muted) p-3.5 font-mono text-xs text-(--foreground)">
+                  {dataDir ?? copy.loadingDataPath}
+                </code>
+                {dataDir && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleCopyDataDir}
+                    className="shrink-0 gap-1.5"
+                  >
+                    {copiedDataDir ? (
+                      <>
+                        <Check className="size-3.5 text-(--success)" />
+                        <span className="text-(--success)">{copy.appDataCopied}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="size-3.5" />
+                        <span>{copy.copyAppData}</span>
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
               <p className="mt-3 text-sm leading-6 text-(--muted-foreground)">
                 {copy.storageDescription}
               </p>
+            </CardContent>
+          </Card>
+        )}
+        {activeTab === "mcp" && (
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <div>
+                <SectionLabel>{copy.mcpSection}</SectionLabel>
+                <CardTitle className="mt-2">{copy.mcpTitle}</CardTitle>
+                <CardDescription className="mt-2">{copy.mcpDescription}</CardDescription>
+              </div>
+              <Settings2 className="size-5 text-(--accent)" />
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <SectionLabel>{copy.mcpClientLabel}</SectionLabel>
+                <Select
+                  value={mcpClient}
+                  onValueChange={(value) => setMcpClient(value as McpClientId)}
+                  aria-label={copy.mcpClientLabel}
+                  className="max-w-xs"
+                >
+                  {mcpClients.map(([id, name]) => (
+                    <SelectItem key={id} value={id}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                </Select>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <SectionLabel>{copy.mcpConfigurationLabel}</SectionLabel>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleCopyMcpConfig}
+                  disabled={!dataDir}
+                  className="gap-1.5"
+                >
+                  {copiedMcpConfig ? (
+                    <>
+                      <Check className="size-3.5 text-(--success)" />
+                      <span className="text-(--success)">{copy.mcpConfigCopied}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="size-3.5" />
+                      <span>{copy.copyMcpConfig}</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+              <pre className="mt-3 overflow-x-auto rounded-xl border border-(--border) bg-(--surface-muted) p-4 font-mono text-xs leading-6 text-(--foreground)">
+                <code>{mcpSetupConfig}</code>
+              </pre>
+              <p className="mt-3 text-sm leading-6 text-(--muted-foreground)">
+                {copy.mcpExecutableHelp}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-(--muted-foreground)">
+                {copy.mcpClientHelp[mcpClient]}
+              </p>
+              <div className="mt-4 rounded-xl border border-(--border) bg-(--surface-muted) p-4">
+                <p className="text-sm leading-6 text-(--muted-foreground)">
+                  {copy.mcpVieNeuHelp}
+                </p>
+              </div>
             </CardContent>
           </Card>
         )}
@@ -1242,9 +1577,172 @@ function AdvancedNumberField({
   );
 }
 
+function AudioHistoryView({
+  copy,
+  appLanguage,
+  items,
+  isLoading,
+  error,
+  deletingFileName,
+  onRetry,
+  onDelete,
+}: {
+  copy: UiCopy;
+  appLanguage: AppLanguage;
+  items: AudioHistoryItem[];
+  isLoading: boolean;
+  error: string | null;
+  deletingFileName: string | null;
+  onRetry: () => void;
+  onDelete: (fileName: string) => void;
+}) {
+  const [confirmDeleteFileName, setConfirmDeleteFileName] = useState<string | null>(null);
+  const confirmedItem = items.find((item) => item.id === confirmDeleteFileName);
+  const locale = appLanguage === "vi" ? "vi-VN" : "en-US";
+
+  return (
+    <div>
+      <PageHeader
+        eyebrow={copy.audioHistoryEyebrow}
+        title={copy.audioHistoryTitle}
+        description={copy.audioHistoryDescription}
+        action={
+          <div className="flex items-center gap-3">
+            <span className="hidden text-xs text-(--muted-foreground) sm:inline">
+              {items.length} {copy.audioHistoryCount}
+            </span>
+            <Button variant="secondary" onClick={onRetry} disabled={isLoading}>
+              {isLoading ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : (
+                <RotateCcw className="size-4" />
+              )}
+              <span>{copy.audioHistoryRetry}</span>
+            </Button>
+          </div>
+        }
+      />
+
+      {error && (
+        <div className="mb-5">
+          <ErrorMessage>{error}</ErrorMessage>
+        </div>
+      )}
+
+      {isLoading && items.length === 0 ? (
+        <Card>
+          <CardContent className="flex items-center gap-3 p-6 text-sm text-(--muted-foreground)">
+            <LoaderCircle className="size-4 animate-spin" />
+            {copy.audioHistoryLoading}
+          </CardContent>
+        </Card>
+      ) : items.length === 0 ? (
+        error ? null : (
+          <Card>
+            <CardContent className="flex flex-col items-center px-6 py-14 text-center">
+              <div className="grid size-12 place-items-center rounded-2xl bg-(--accent-soft) text-(--accent)">
+                <History className="size-5" />
+              </div>
+              <h2 className="mt-4 font-semibold">{copy.audioHistoryEmptyTitle}</h2>
+              <p className="mt-2 max-w-md text-sm leading-6 text-(--muted-foreground)">
+                {copy.audioHistoryEmptyDescription}
+              </p>
+            </CardContent>
+          </Card>
+        )
+      ) : (
+        <div className="space-y-3">
+          {items.map((item) => {
+            const voiceName =
+              item.voice_name === "auto"
+                ? copy.autoVoice
+                : item.voice_name === "design"
+                  ? copy.designVoice
+                  : item.voice_name === "file"
+                    ? copy.referenceFile
+                    : item.voice_name;
+            const createdAt = new Date(item.created_at);
+            const dateLabel = Number.isNaN(createdAt.valueOf())
+              ? item.created_at
+              : new Intl.DateTimeFormat(locale, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                }).format(createdAt);
+
+            return (
+              <Card key={item.id}>
+                <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="line-clamp-2 min-w-0 text-sm font-semibold leading-6">
+                        {item.id}
+                      </h2>
+                      <Badge className="font-mono text-[9px] uppercase tracking-wider">
+                        {item.format}
+                      </Badge>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-2 text-xs text-(--muted-foreground)">
+                      <span>{dateLabel}</span>
+                      {item.provider && (
+                        <span>{item.provider === "vieneu" ? "VieNeu" : "OmniVoice"}</span>
+                      )}
+                      {voiceName && <span>{voiceName}</span>}
+                    </div>
+                    {item.metadata_available && item.text && (
+                      <p className="mt-2 line-clamp-2 text-xs leading-5 text-(--muted-foreground)">
+                        {item.text}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <InlineAudioPreview
+                      src={convertFileSrc(item.audio_path)}
+                      label={copy.previewAudio}
+                      pauseLabel={copy.pauseAudio}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`${copy.audioHistoryDelete}: ${item.id}`}
+                      title={copy.audioHistoryDelete}
+                      disabled={Boolean(deletingFileName)}
+                      onClick={() => setConfirmDeleteFileName(item.id)}
+                    >
+                      <Trash2 className="size-4 text-(--destructive)" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={Boolean(confirmDeleteFileName)}
+        title={copy.audioHistoryDelete}
+        description={copy.audioHistoryConfirmDelete}
+        confirmLabel={copy.audioHistoryDelete}
+        cancelLabel={copy.cancel}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDeleteFileName(null);
+        }}
+        onConfirm={() => {
+          if (confirmedItem) onDelete(confirmedItem.id);
+          setConfirmDeleteFileName(null);
+        }}
+        busy={deletingFileName === confirmDeleteFileName}
+      />
+    </div>
+  );
+}
+
 function WorkspaceView({
   copy,
   provider,
+  providerStatuses,
+  onProviderChange,
   mode,
   language,
   text,
@@ -1260,6 +1758,9 @@ function WorkspaceView({
   audioUrl,
   error,
   isGenerating,
+  takes,
+  activeTakeId,
+  onSelectTake,
   onLanguageChange,
   onTextChange,
   onSpeedChange,
@@ -1272,6 +1773,8 @@ function WorkspaceView({
 }: {
   copy: UiCopy;
   provider: ProviderId;
+  providerStatuses: Record<ProviderId, ProviderStatus> | null;
+  onProviderChange: (provider: ProviderId) => void;
   mode: VoiceMode;
   language: Language;
   text: string;
@@ -1287,6 +1790,9 @@ function WorkspaceView({
   audioUrl: string | null;
   error: string | null;
   isGenerating: boolean;
+  takes: TakeItem[];
+  activeTakeId: string | null;
+  onSelectTake: (take: TakeItem) => void;
   onLanguageChange: (language: Language) => void;
   onTextChange: (text: string) => void;
   onSpeedChange: (speed: number) => void;
@@ -1308,6 +1814,32 @@ function WorkspaceView({
       : mode === "file"
         ? "file"
         : `preset:${selectedVoice}`;
+
+  const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
+  const estSeconds = Math.max(1, Math.round(wordCount / 2.5));
+  const [copiedText, setCopiedText] = useState(false);
+  const [sampleMenuOpen, setSampleMenuOpen] = useState(false);
+
+  const handleCopyText = async () => {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedText(true);
+      setTimeout(() => setCopiedText(false), 2000);
+    } catch {}
+  };
+
+  const currentSamples = SAMPLE_SCRIPTS[language] || SAMPLE_SCRIPTS.en;
+
+  const activeVoiceName = useMemo(() => {
+    if (mode === "profile") return selectedVoice;
+    if (mode === "preset") {
+      return presetVoices.find((p) => p.id === selectedVoice)?.label ?? selectedVoice;
+    }
+    if (refAudio) return fileName(refAudio);
+    return copy.autoVoice;
+  }, [mode, selectedVoice, presetVoices, refAudio, copy.autoVoice]);
+
   return (
     <div>
       <PageHeader
@@ -1326,14 +1858,93 @@ function WorkspaceView({
       />
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_370px]">
         <Card className="overflow-hidden">
-          <CardHeader className="border-b border-(--border) pb-5">
-            <div>
-              <SectionLabel>{copy.scriptCanvas}</SectionLabel>
-              <CardTitle className="mt-2">{copy.untitledSpeech}</CardTitle>
+          <CardHeader className="border-b border-(--border) pb-4">
+            <div className="flex flex-wrap items-center justify-between gap-4 w-full">
+              <div>
+                <SectionLabel>{copy.scriptCanvas}</SectionLabel>
+                <CardTitle className="mt-1">{copy.untitledSpeech}</CardTitle>
+              </div>
+
+              {/* Stats & Actions */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Word & Duration Pill */}
+                <div className="flex items-center gap-2 rounded-xl border border-(--border) bg-(--surface-muted) px-3 py-1.5 font-mono text-xs text-(--muted-foreground)">
+                  <span className="font-semibold text-(--foreground)">
+                    {wordCount} {copy.words}
+                  </span>
+                  <span>·</span>
+                  <span>
+                    {text.length} {copy.characters}
+                  </span>
+                  <span>·</span>
+                  <span className="flex items-center gap-1 text-(--accent)">
+                    <Clock className="size-3" />
+                    ~{estSeconds}s {copy.estimatedDuration}
+                  </span>
+                </div>
+
+                {/* Sample scripts dropdown */}
+                <div className="relative">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setSampleMenuOpen(!sampleMenuOpen)}
+                    className="h-8 gap-1.5 text-xs"
+                    title={copy.sampleScripts}
+                  >
+                    <Wand2 className="size-3.5 text-(--accent)" />
+                    <span>{copy.sampleScripts}</span>
+                  </Button>
+
+                  {sampleMenuOpen && (
+                    <div className="absolute right-0 top-10 z-30 min-w-56 overflow-hidden rounded-xl border border-(--border) bg-(--surface) p-1.5 shadow-xl">
+                      {currentSamples.map((sample) => (
+                        <button
+                          key={sample.titleKey}
+                          type="button"
+                          onClick={() => {
+                            onTextChange(sample.text);
+                            setSampleMenuOpen(false);
+                          }}
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-(--foreground) hover:bg-(--surface-muted)"
+                        >
+                          <Sparkles className="size-3 text-(--accent)" />
+                          <span>{copy[sample.titleKey as keyof UiCopy] as string}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Copy text */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleCopyText}
+                  className="h-8 px-2.5 text-xs text-(--muted-foreground) hover:text-(--foreground)"
+                  title={copy.copyScript}
+                >
+                  {copiedText ? (
+                    <Check className="size-3.5 text-(--success)" />
+                  ) : (
+                    <Copy className="size-3.5" />
+                  )}
+                </Button>
+
+                {/* Clear text */}
+                {text.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onTextChange("")}
+                    className="h-8 px-2 text-xs text-(--muted-foreground) hover:text-(--destructive)"
+                    title={copy.clearScript}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                )}
+              </div>
             </div>
-            <span className="font-mono text-xs font-semibold text-(--muted-foreground)">
-              {text.length.toString().padStart(3, "0")} {copy.characters}
-            </span>
           </CardHeader>
           <CardContent className="p-0">
             <Textarea
@@ -1359,18 +1970,74 @@ function WorkspaceView({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <SectionLabel>{copy.outputPreview}</SectionLabel>
-                <h2 className="mt-2 text-base font-semibold">
+                <h2 className="mt-1 text-base font-semibold">
                   {result ? copy.renderedTake : copy.nothingRendered}
                 </h2>
               </div>
               {result && <Badge>{copy.ready}</Badge>}
             </div>
-            {audioUrl ? (
-              <audio className="mt-5 h-10 w-full" controls src={audioUrl} />
+
+            {audioUrl && result ? (
+              <div className="mt-4">
+                <AudioPlayer
+                  src={audioUrl}
+                  audioPath={result.audio_path}
+                  format={result.format}
+                  sampleRate={provider === "vieneu" ? 48000 : 24000}
+                  voiceName={activeVoiceName}
+                  copy={copy}
+                  onExport={onExport}
+                  autoPlay={false}
+                />
+              </div>
             ) : (
-              <div className="mt-5 flex items-center gap-3 rounded-xl border border-dashed border-(--border-strong) px-4 py-5 text-sm text-(--muted-foreground)">
-                <Play className="size-4 text-(--accent)" />
-                {copy.generateTake}
+              <div className="mt-4 flex items-center gap-3 rounded-xl border border-dashed border-(--border-strong) bg-(--surface) px-4 py-6 text-sm text-(--muted-foreground)">
+                <div className="flex size-9 items-center justify-center rounded-xl bg-(--surface-muted) text-(--accent)">
+                  <Play className="size-4" />
+                </div>
+                <span>{copy.generateTake}</span>
+              </div>
+            )}
+
+            {/* Session Takes History */}
+            {takes.length > 0 && (
+              <div className="mt-5 border-t border-(--border) pt-4">
+                <div className="flex items-center justify-between mb-2.5">
+                  <div className="flex items-center gap-2">
+                    <History className="size-3.5 text-(--accent)" />
+                    <SectionLabel>{copy.takeHistory}</SectionLabel>
+                  </div>
+                  <span className="font-mono text-[10px] text-(--muted-foreground)">
+                    {takes.length} {copy.take.toLowerCase()}(s)
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {takes.map((take, index) => {
+                    const isActive = activeTakeId === take.id;
+                    const takeNum = takes.length - index;
+                    return (
+                      <button
+                        type="button"
+                        key={take.id}
+                        onClick={() => onSelectTake(take)}
+                        className={cn(
+                          "flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs transition-all",
+                          isActive
+                            ? "border-(--accent) bg-(--surface) font-semibold text-(--accent) shadow-sm"
+                            : "border-(--border) bg-(--surface) text-(--muted-foreground) hover:border-(--border-strong) hover:text-(--foreground)",
+                        )}
+                      >
+                        <Play className={cn("size-3", isActive ? "fill-current" : "")} />
+                        <span>
+                          {copy.take} #{takeNum}
+                        </span>
+                        <span className="font-mono text-[10px] uppercase opacity-75">
+                          {take.voiceName} · {take.format}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -1384,6 +2051,34 @@ function WorkspaceView({
             <SlidersHorizontal className="size-5 text-(--accent)" />
           </CardHeader>
           <CardContent className="space-y-6">
+            {/* Quick Provider Switcher */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <Label>{copy.chooseProvider}</Label>
+                <Badge className="text-[9px]">
+                  {providerIsReady(providerStatuses?.[provider]) ? copy.ready : copy.unavailable}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-2 gap-1 rounded-xl border border-(--border) bg-(--surface-muted) p-1">
+                {(
+                  [
+                    ["omnivoice", copy.providerOmni],
+                    ["vieneu", copy.providerVieNeu],
+                  ] as const
+                ).map(([pId, label]) => (
+                  <button
+                    type="button"
+                    key={pId}
+                    onClick={() => onProviderChange(pId)}
+                    aria-pressed={provider === pId}
+                    className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${provider === pId ? "bg-(--surface) text-(--foreground) shadow-sm" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div>
               <Label>{copy.synthesisLanguage}</Label>
               <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl bg-(--surface-muted) p-1.5">
@@ -1447,12 +2142,29 @@ function WorkspaceView({
             </div>
             <Separator />
             {isOmniVoice && (
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="speed">{copy.speed}</Label>
-                  <span className="rounded-md bg-(--surface-muted) px-2 py-1 font-mono text-xs font-semibold">
-                    {speed.toFixed(2)}×
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {[0.8, 1.0, 1.25, 1.5].map((preset) => (
+                      <button
+                        type="button"
+                        key={preset}
+                        onClick={() => onSpeedChange(preset)}
+                        className={cn(
+                          "rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-semibold transition-colors",
+                          Math.abs(speed - preset) < 0.04
+                            ? "border-(--accent) bg-(--accent-soft) text-(--accent)"
+                            : "border-(--border) bg-(--surface) text-(--muted-foreground) hover:text-(--foreground)",
+                        )}
+                      >
+                        {preset}×
+                      </button>
+                    ))}
+                    <span className="ml-1 rounded-md bg-(--surface-muted) px-2 py-1 font-mono text-xs font-semibold">
+                      {speed.toFixed(2)}×
+                    </span>
+                  </div>
                 </div>
                 <input
                   id="speed"
@@ -1486,104 +2198,126 @@ function WorkspaceView({
             {isOmniVoice && (
               <details className="group rounded-xl border border-(--border) bg-(--surface-muted)">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3.5 py-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring)">
-                  {copy.advancedSettings}
-                  <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
+                  <span>{copy.advancedSettings}</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAdvancedChange(DEFAULT_ADVANCED);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-md border border-(--border) bg-(--surface) px-2 py-0.5 text-[10px] font-medium text-(--muted-foreground) transition-colors hover:border-(--accent) hover:text-(--accent)"
+                      title={copy.resetDefaults}
+                    >
+                      <RotateCcw className="size-2.5" />
+                      <span>{copy.resetDefaults}</span>
+                    </button>
+                    <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
+                  </div>
                 </summary>
-                <div className="border-t border-(--border) px-3.5 pb-3.5 pt-3">
+                <div className="border-t border-(--border) px-3.5 pb-3.5 pt-3 space-y-4">
                   <p className="text-xs leading-5 text-(--muted-foreground)">
                     {copy.advancedSettingsDescription}
                   </p>
-                  <div className="mt-4 grid grid-cols-2 gap-3">
-                    <AdvancedNumberField
-                      label={copy.fixedDuration}
-                      value={advanced.duration}
-                      min="0.1"
-                      step="0.1"
-                      disabled={isGenerating}
-                      onChange={(value) => onAdvancedChange({ duration: value })}
-                    />
-                    <AdvancedNumberField
-                      label={copy.diffusionSteps}
-                      value={advanced.steps}
-                      min="1"
-                      step="1"
-                      disabled={isGenerating}
-                      onChange={(value) => onAdvancedChange({ steps: value })}
-                    />
-                    <AdvancedNumberField
-                      label={copy.guidanceScale}
-                      value={advanced.guidance_scale}
-                      min="0"
-                      step="0.1"
-                      disabled={isGenerating}
-                      onChange={(value) => onAdvancedChange({ guidance_scale: value })}
-                    />
-                    <AdvancedNumberField
-                      label={copy.tShift}
-                      value={advanced.t_shift}
-                      min="0"
-                      step="0.1"
-                      disabled={isGenerating}
-                      onChange={(value) => onAdvancedChange({ t_shift: value })}
-                    />
-                    <AdvancedNumberField
-                      label={copy.positionTemperature}
-                      value={advanced.position_temperature}
-                      min="0"
-                      step="0.1"
-                      disabled={isGenerating}
-                      onChange={(value) => onAdvancedChange({ position_temperature: value })}
-                    />
-                    <AdvancedNumberField
-                      label={copy.classTemperature}
-                      value={advanced.class_temperature}
-                      min="0"
-                      step="0.1"
-                      disabled={isGenerating}
-                      onChange={(value) => onAdvancedChange({ class_temperature: value })}
-                    />
-                    <AdvancedNumberField
-                      label={copy.layerPenaltyFactor}
-                      value={advanced.layer_penalty_factor}
-                      min="0"
-                      step="0.1"
-                      disabled={isGenerating}
-                      onChange={(value) => onAdvancedChange({ layer_penalty_factor: value })}
-                    />
-                    <AdvancedNumberField
-                      label={copy.chunkDuration}
-                      value={advanced.audio_chunk_duration}
-                      min="0.1"
-                      step="0.1"
-                      disabled={isGenerating}
-                      onChange={(value) => onAdvancedChange({ audio_chunk_duration: value })}
-                    />
-                    <AdvancedNumberField
-                      label={copy.chunkThreshold}
-                      value={advanced.audio_chunk_threshold}
-                      min="0.1"
-                      step="0.1"
-                      disabled={isGenerating}
-                      onChange={(value) => onAdvancedChange({ audio_chunk_threshold: value })}
-                    />
-                    <AdvancedNumberField
-                      label={copy.padDuration}
-                      value={advanced.pad_duration}
-                      min="0"
-                      step="0.05"
-                      disabled={isGenerating}
-                      onChange={(value) => onAdvancedChange({ pad_duration: value })}
-                    />
-                    <AdvancedNumberField
-                      label={copy.fadeDuration}
-                      value={advanced.fade_duration}
-                      min="0"
-                      step="0.05"
-                      disabled={isGenerating}
-                      onChange={(value) => onAdvancedChange({ fade_duration: value })}
-                    />
+                  <div>
+                    <SectionLabel>{copy.qualityGroup}</SectionLabel>
+                    <div className="mt-2.5 grid grid-cols-2 gap-3">
+                      <AdvancedNumberField
+                        label={copy.diffusionSteps}
+                        value={advanced.steps}
+                        min="1"
+                        step="1"
+                        disabled={isGenerating}
+                        onChange={(value) => onAdvancedChange({ steps: value })}
+                      />
+                      <AdvancedNumberField
+                        label={copy.guidanceScale}
+                        value={advanced.guidance_scale}
+                        min="0"
+                        step="0.1"
+                        disabled={isGenerating}
+                        onChange={(value) => onAdvancedChange({ guidance_scale: value })}
+                      />
+                      <AdvancedNumberField
+                        label={copy.tShift}
+                        value={advanced.t_shift}
+                        min="0"
+                        step="0.1"
+                        disabled={isGenerating}
+                        onChange={(value) => onAdvancedChange({ t_shift: value })}
+                      />
+                      <AdvancedNumberField
+                        label={copy.layerPenaltyFactor}
+                        value={advanced.layer_penalty_factor}
+                        min="0"
+                        step="0.1"
+                        disabled={isGenerating}
+                        onChange={(value) => onAdvancedChange({ layer_penalty_factor: value })}
+                      />
+                      <AdvancedNumberField
+                        label={copy.positionTemperature}
+                        value={advanced.position_temperature}
+                        min="0"
+                        step="0.1"
+                        disabled={isGenerating}
+                        onChange={(value) => onAdvancedChange({ position_temperature: value })}
+                      />
+                      <AdvancedNumberField
+                        label={copy.classTemperature}
+                        value={advanced.class_temperature}
+                        min="0"
+                        step="0.1"
+                        disabled={isGenerating}
+                        onChange={(value) => onAdvancedChange({ class_temperature: value })}
+                      />
+                    </div>
                   </div>
-                  <div className="mt-4 grid gap-2">
+                  <div>
+                    <SectionLabel>{copy.chunkingGroup}</SectionLabel>
+                    <div className="mt-2.5 grid grid-cols-2 gap-3">
+                      <AdvancedNumberField
+                        label={copy.fixedDuration}
+                        value={advanced.duration}
+                        min="0.1"
+                        step="0.1"
+                        disabled={isGenerating}
+                        onChange={(value) => onAdvancedChange({ duration: value })}
+                      />
+                      <AdvancedNumberField
+                        label={copy.chunkDuration}
+                        value={advanced.audio_chunk_duration}
+                        min="0.1"
+                        step="0.1"
+                        disabled={isGenerating}
+                        onChange={(value) => onAdvancedChange({ audio_chunk_duration: value })}
+                      />
+                      <AdvancedNumberField
+                        label={copy.chunkThreshold}
+                        value={advanced.audio_chunk_threshold}
+                        min="0.1"
+                        step="0.1"
+                        disabled={isGenerating}
+                        onChange={(value) => onAdvancedChange({ audio_chunk_threshold: value })}
+                      />
+                      <AdvancedNumberField
+                        label={copy.padDuration}
+                        value={advanced.pad_duration}
+                        min="0"
+                        step="0.05"
+                        disabled={isGenerating}
+                        onChange={(value) => onAdvancedChange({ pad_duration: value })}
+                      />
+                      <AdvancedNumberField
+                        label={copy.fadeDuration}
+                        value={advanced.fade_duration}
+                        min="0"
+                        step="0.05"
+                        disabled={isGenerating}
+                        onChange={(value) => onAdvancedChange({ fade_duration: value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 border-t border-(--border) pt-3">
                     {(
                       [
                         ["denoise", copy.denoise],
@@ -1594,7 +2328,7 @@ function WorkspaceView({
                     ).map(([key, label]) => (
                       <label
                         key={key}
-                        className="flex items-center gap-2 text-xs text-(--muted-foreground)"
+                        className="flex items-center gap-2 text-xs text-(--muted-foreground) cursor-pointer"
                       >
                         <input
                           type="checkbox"
@@ -1653,6 +2387,10 @@ function App() {
   const [refAudio, setRefAudio] = useState<string | null>(null);
   const [refText, setRefText] = useState("");
   const [voices, setVoices] = useState<VoiceProfile[]>([]);
+  const [audioHistory, setAudioHistory] = useState<AudioHistoryItem[]>([]);
+  const [isLoadingAudioHistory, setIsLoadingAudioHistory] = useState(false);
+  const [audioHistoryError, setAudioHistoryError] = useState<string | null>(null);
+  const [deletingAudioFile, setDeletingAudioFile] = useState<string | null>(null);
   const [isLoadingVoices, setIsLoadingVoices] = useState(false);
   const [voiceListError, setVoiceListError] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -1682,6 +2420,18 @@ function App() {
   const [modelStatusError, setModelStatusError] = useState<string | null>(null);
   const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
   const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null);
+  const [theme, setTheme] = useState<ThemeMode>(readTheme);
+  const [takes, setTakes] = useState<TakeItem[]>([]);
+  const [activeTakeId, setActiveTakeId] = useState<string | null>(null);
+
+  useEffect(() => {
+    applyTheme(theme);
+    if (theme !== "system") return;
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const listener = () => applyTheme("system");
+    mediaQuery.addEventListener("change", listener);
+    return () => mediaQuery.removeEventListener("change", listener);
+  }, [theme]);
 
   const appLanguage: AppLanguage = translator.language === "vi" ? "vi" : "en";
   const copy: UiCopy = createUiCopy(t);
@@ -1739,6 +2489,11 @@ function App() {
     if (view !== "profiles" || !modelReady) return;
     void refreshVoices();
   }, [view, modelReady]);
+
+  useEffect(() => {
+    if (view !== "history") return;
+    void refreshAudioHistory();
+  }, [view]);
 
   useEffect(() => {
     if (provider !== "vieneu" || !engineStatus) return;
@@ -1820,6 +2575,25 @@ function App() {
       setVoiceListError(reason instanceof Error ? reason.message : copy.couldNotLoadProfiles);
     } finally {
       setIsLoadingVoices(false);
+    }
+  }
+
+  async function refreshAudioHistory() {
+    setIsLoadingAudioHistory(true);
+    setAudioHistoryError(null);
+    try {
+      const response = await client.request<{ items: AudioHistoryItem[] }>({
+        type: "list_audio_history",
+      });
+      setAudioHistory(response.items);
+    } catch (reason) {
+      setAudioHistoryError(
+        reason instanceof Error
+          ? `${copy.audioHistoryLoadFailed}: ${reason.message}`
+          : copy.audioHistoryLoadFailed,
+      );
+    } finally {
+      setIsLoadingAudioHistory(false);
     }
   }
 
@@ -2069,11 +2843,43 @@ function App() {
       }
       const response = await client.request<SynthesisResult>(request);
       setResult(response);
+      const activeVoiceLabel =
+        mode === "profile"
+          ? selectedVoice
+          : mode === "preset"
+            ? (presetVoices.find((p) => p.id === selectedVoice)?.label ?? selectedVoice)
+            : (refAudio ? fileName(refAudio) : copy.autoVoice);
+      const newTake: TakeItem = {
+        id: String(Date.now()),
+        timestamp: Date.now(),
+        provider,
+        voiceName: activeVoiceLabel,
+        format: response.format,
+        audioPath: response.audio_path,
+        text,
+      };
+      setTakes((prev) => [newTake, ...prev.slice(0, 4)]);
+      setActiveTakeId(newTake.id);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : copy.synthesisFailed);
     } finally {
       setIsGenerating(false);
     }
+  }
+
+  function handleSelectTake(take: TakeItem) {
+    setActiveTakeId(take.id);
+    setResult({ audio_path: take.audioPath, format: take.format });
+  }
+
+  function handleClearLogs() {
+    client.clearLogs();
+    setLogs([]);
+  }
+
+  function changeTheme(next: ThemeMode) {
+    setTheme(next);
+    applyTheme(next);
   }
 
   async function saveProfile() {
@@ -2149,6 +2955,35 @@ function App() {
     }
   }
 
+  async function deleteAudioHistory(audioId: string) {
+    setDeletingAudioFile(audioId);
+    setAudioHistoryError(null);
+    try {
+      const response = await client.request<{ deleted: boolean }>({
+        type: "delete_audio_history",
+        file_name: audioId,
+      });
+      if (!response.deleted) {
+        setAudioHistoryError(copy.audioHistoryDeleteFailed);
+        return;
+      }
+      setAudioHistory((current) => current.filter((entry) => entry.id !== audioId));
+      setTakes((current) => current.filter((take) => fileName(take.audioPath) !== audioId));
+      if (result && fileName(result.audio_path) === audioId) {
+        setResult(null);
+        setActiveTakeId(null);
+      }
+    } catch (reason) {
+      setAudioHistoryError(
+        reason instanceof Error
+          ? `${copy.audioHistoryDeleteFailed}: ${reason.message}`
+          : copy.audioHistoryDeleteFailed,
+      );
+    } finally {
+      setDeletingAudioFile(null);
+    }
+  }
+
   function useProfile(name: string) {
     if (provider === "vieneu" && voices.find((voice) => voice.name === name)?.kind === "design") {
       setError(copy.vieneuDesignUnsupported);
@@ -2176,7 +3011,7 @@ function App() {
     }
   }
 
-  if (!modelReady)
+  if (!modelReady && view !== "history" && view !== "settings")
     return (
       <SetupScreen
         copy={copy}
@@ -2189,6 +3024,8 @@ function App() {
         onPrepare={() => void prepareModel()}
         onCancel={() => void cancelModelPreparation()}
         onProviderChange={changeProvider}
+        onOpenHistory={() => setView("history")}
+        onOpenSettings={() => setView("settings")}
       />
     );
 
@@ -2196,6 +3033,7 @@ function App() {
   const navItems: Array<[AppView, string, LucideIcon]> = [
     ["workspace", copy.synthesize, AudioLines],
     ["profiles", copy.voiceProfiles, Library],
+    ["history", copy.audioHistory, History],
     ["settings", copy.settings, Settings2],
     ["logs", copy.logs, Logs],
   ];
@@ -2218,31 +3056,54 @@ function App() {
             <p className="mb-3 px-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-(--muted-foreground)">
               {copy.workspace}
             </p>
-            {navItems
-              .filter(([item]) => item !== "profiles" || provider === "omnivoice")
-              .map(([item, label, Icon]) => (
-                <button
-                  type="button"
-                  key={item as string}
-                  onClick={() => setView(item as AppView)}
-                  aria-current={view === item ? "page" : undefined}
-                  className={`group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${view === item ? "bg-(--accent-soft) text-(--accent)" : "text-(--muted-foreground) hover:bg-(--surface-muted) hover:text-(--foreground)"}`}
-                >
-                  <Icon className="size-4" />
-                  {label}
-                </button>
-              ))}
+            {navItems.map(([item, label, Icon]) => (
+              <button
+                type="button"
+                key={item as string}
+                onClick={() => setView(item as AppView)}
+                aria-current={view === item ? "page" : undefined}
+                className={`group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${view === item ? "bg-(--accent-soft) text-(--accent)" : "text-(--muted-foreground) hover:bg-(--surface-muted) hover:text-(--foreground)"}`}
+              >
+                <Icon className="size-4" />
+                {label}
+              </button>
+            ))}
           </nav>
-          <div className="mt-auto border-t border-(--border) px-2 pt-5">
+          <div className="mt-auto border-t border-(--border) px-2 pt-4">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-(--muted-foreground)">
+                {copy.theme}
+              </p>
+              <div className="flex items-center rounded-lg border border-(--border) bg-(--surface-muted) p-0.5">
+                {(
+                  [
+                    ["light", Sun],
+                    ["dark", Moon],
+                    ["system", Monitor],
+                  ] as const
+                ).map(([mode, Icon]) => (
+                  <button
+                    type="button"
+                    key={mode}
+                    onClick={() => changeTheme(mode)}
+                    className={`flex size-6 items-center justify-center rounded-md text-xs transition-colors ${theme === mode ? "bg-(--surface) text-(--foreground) shadow-sm" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
+                    title={mode}
+                  >
+                    <Icon className="size-3" />
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-(--muted-foreground)">
               {copy.engine}
             </p>
-            <div className="mt-3 flex items-center gap-2 text-sm font-semibold">
-              <span className="size-2 rounded-full bg-(--success)" />
-              {copy.offlineEngine}
+            <div className="mt-2 flex items-center gap-2 text-sm font-semibold">
+              <span className={`size-2 rounded-full ${modelReady ? "bg-(--success)" : "bg-(--muted-foreground)"}`} />
+              {modelReady ? copy.offlineEngine : copy.engineUnavailable}
             </div>
-            <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.1em] text-(--muted-foreground)">
-              {language.toUpperCase()} · LOCAL
+            <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.1em] text-(--muted-foreground)">
+              {language.toUpperCase()} · {provider.toUpperCase()}
             </p>
           </div>
         </aside>
@@ -2260,6 +3121,7 @@ function App() {
                   <SettingsView
                     copy={copy}
                     appLanguage={appLanguage}
+                    theme={theme}
                     selectedProvider={provider}
                     providers={providerStatuses}
                     modelReady={omniVoiceReady}
@@ -2279,11 +3141,23 @@ function App() {
                     onPrepareProvider={(target) => void prepareModel(target)}
                     onCancelPrepare={() => void cancelModelPreparation()}
                     onChangeLanguage={changeAppLanguage}
+                    onChangeTheme={changeTheme}
                     onRefreshStatus={() => void refreshModelStatus()}
                     onBack={() => setView("workspace")}
                   />
                 ) : view === "logs" ? (
-                  <LogsView logs={logs} copy={copy} />
+                  <LogsView logs={logs} copy={copy} onClearLogs={handleClearLogs} />
+                ) : view === "history" ? (
+                  <AudioHistoryView
+                    copy={copy}
+                    appLanguage={appLanguage}
+                    items={audioHistory}
+                    isLoading={isLoadingAudioHistory}
+                    error={audioHistoryError}
+                    deletingFileName={deletingAudioFile}
+                    onRetry={() => void refreshAudioHistory()}
+                    onDelete={(fileName) => void deleteAudioHistory(fileName)}
+                  />
                 ) : view === "profiles" ? (
                   <VoiceProfilesView
                     voices={voices}
@@ -2322,6 +3196,8 @@ function App() {
                   <WorkspaceView
                     copy={copy}
                     provider={provider}
+                    providerStatuses={providerStatuses}
+                    onProviderChange={changeProvider}
                     mode={mode}
                     language={language}
                     text={text}
@@ -2337,6 +3213,9 @@ function App() {
                     audioUrl={audioUrl}
                     error={error}
                     isGenerating={isGenerating}
+                    takes={takes}
+                    activeTakeId={activeTakeId}
+                    onSelectTake={handleSelectTake}
                     onLanguageChange={changeSynthesisLanguage}
                     onTextChange={setText}
                     onSpeedChange={setSpeed}

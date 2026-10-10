@@ -12,6 +12,11 @@ from tts_mcp.engine import DownloadCancelled, Engine
 
 
 class DesktopWorkerTests(unittest.TestCase):
+    def setUp(self):
+        history_patch = patch("tts_mcp.desktop.Engine.record_audio_history")
+        self.history_writer = history_patch.start()
+        self.addCleanup(history_patch.stop)
+
     @staticmethod
     def write_wav(path: Path) -> None:
         with wave.open(str(path), "wb") as audio:
@@ -99,6 +104,225 @@ class DesktopWorkerTests(unittest.TestCase):
         self.assertTrue(response["ok"])
         vieneu_provider.synthesize.assert_called_once()
         engine.generate.assert_not_called()
+
+    def test_synthesis_records_history_for_both_providers(self):
+        engine = Mock()
+        engine.generate.return_value = object()
+        engine.load_voice_profile.return_value = {"kind": "design", "instruct": "warm"}
+        vieneu_provider = Mock()
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+
+            def save_audio(_audio, path, **_kwargs):
+                Path(path).parent.mkdir(parents=True, exist_ok=True)
+                Path(path).write_bytes(b"audio")
+                return path
+
+            def vieneu_synthesize(_request, _voices, target_dir):
+                target_dir.mkdir(parents=True, exist_ok=True)
+                path = target_dir / "vieneu.wav"
+                path.write_bytes(b"audio")
+                return {"audio_path": str(path), "format": "wav"}
+
+            vieneu_provider.synthesize.side_effect = vieneu_synthesize
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch("tts_mcp.desktop.save_audio", side_effect=save_audio),
+                patch.object(Engine, "list_voices", return_value=[]),
+            ):
+                omni_response = dispatch_request(
+                    {
+                        "id": "omni-history",
+                        "type": "synthesize",
+                        "provider": "omnivoice",
+                        "text": "xin chao",
+                        "voice": "profile",
+                        "voice_name": "narrator",
+                        "format": "wav",
+                    },
+                    engine,
+                )
+                vieneu_response = dispatch_request(
+                    {
+                        "id": "vieneu-history",
+                        "type": "synthesize",
+                        "provider": "vieneu",
+                        "text": "hello",
+                        "voice": "file",
+                        "ref_audio": "/private/reference.wav",
+                        "format": "wav",
+                    },
+                    engine,
+                    vieneu_provider=vieneu_provider,
+                )
+
+        self.assertTrue(omni_response["ok"])
+        self.assertTrue(vieneu_response["ok"])
+        self.assertEqual(self.history_writer.call_count, 2)
+        omni_entry = self.history_writer.call_args_list[0].kwargs
+        self.assertEqual(omni_entry["provider"], "omnivoice")
+        self.assertEqual(omni_entry["voice_name"], "narrator")
+        self.assertEqual(omni_entry["text"], "xin chao")
+        vieneu_entry = self.history_writer.call_args_list[1].kwargs
+        self.assertEqual(vieneu_entry["provider"], "vieneu")
+        self.assertEqual(vieneu_entry["voice_name"], "file")
+        self.assertNotIn("/private/reference.wav", vieneu_entry.values())
+
+    def test_history_lists_legacy_and_recorded_files_newest_first(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            legacy = output_dir / "legacy.mp3"
+            recorded = output_dir / "recorded.wav"
+            legacy.write_bytes(b"legacy")
+            recorded.write_bytes(b"recorded")
+            metadata = [
+                {
+                    "file_name": "recorded.wav",
+                    "provider": "vieneu",
+                    "voice_name": "minh_quan_pro",
+                    "format": "wav",
+                    "text": "Xin chào",
+                    "created_at": "2020-01-01T00:00:00+00:00",
+                }
+            ]
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(Engine, "list_audio_history", return_value=metadata),
+            ):
+                response = dispatch_request(
+                    {"id": "history", "type": "list_audio_history"}, Mock()
+                )
+
+        items = response["result"]["items"]
+        self.assertTrue(response["ok"])
+        self.assertEqual([item["id"] for item in items], ["legacy.mp3", "recorded.wav"])
+        self.assertFalse(items[0]["metadata_available"])
+        self.assertIsNone(items[0]["text"])
+        self.assertTrue(items[1]["metadata_available"])
+        self.assertEqual(items[1]["text"], "Xin chào")
+
+    def test_delete_audio_history_removes_only_output_file_and_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(Engine, "delete_audio_history", return_value=True) as delete_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "delete",
+                        "type": "delete_audio_history",
+                        "file_name": "take.wav",
+                    },
+                    Mock(),
+                )
+
+                self.assertTrue(response["ok"])
+                self.assertTrue(response["result"]["deleted"])
+                self.assertFalse(audio.exists())
+                delete_metadata.assert_called_once_with("take.wav")
+
+    def test_delete_audio_history_rejects_traversal_and_symlinks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output_dir = root / "outputs"
+            output_dir.mkdir()
+            outside = root / "outside.wav"
+            outside.write_bytes(b"keep")
+            link = output_dir / "link.wav"
+            try:
+                link.symlink_to(outside)
+            except OSError:
+                self.skipTest("symlink creation is unavailable")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(Engine, "delete_audio_history") as delete_metadata,
+            ):
+                traversal = dispatch_request(
+                    {
+                        "id": "traversal",
+                        "type": "delete_audio_history",
+                        "file_name": "../outside.wav",
+                    },
+                    Mock(),
+                )
+                symlink = dispatch_request(
+                    {
+                        "id": "symlink",
+                        "type": "delete_audio_history",
+                        "file_name": "link.wav",
+                    },
+                    Mock(),
+                )
+                self.assertFalse(traversal["ok"])
+                self.assertFalse(symlink["ok"])
+                self.assertTrue(outside.exists())
+                delete_metadata.assert_not_called()
+
+    def test_delete_audio_history_unlink_failure_preserves_metadata_for_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(Path, "unlink", side_effect=OSError("disk error")),
+                patch.object(Engine, "delete_audio_history") as delete_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "delete",
+                        "type": "delete_audio_history",
+                        "file_name": "take.wav",
+                    },
+                    Mock(),
+                )
+
+            self.assertFalse(response["ok"])
+            self.assertTrue(audio.exists())
+            delete_metadata.assert_not_called()
+
+    def test_history_write_failure_keeps_audio_discoverable(self):
+        engine = Mock()
+        engine.generate.return_value = object()
+        self.history_writer.side_effect = OSError("database unavailable")
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+
+            def save_audio(_audio, path, **_kwargs):
+                Path(path).parent.mkdir(parents=True, exist_ok=True)
+                Path(path).write_bytes(b"audio")
+                return path
+
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch("tts_mcp.desktop.save_audio", side_effect=save_audio),
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "metadata-failure",
+                        "type": "synthesize",
+                        "provider": "omnivoice",
+                        "text": "hello",
+                        "voice": "auto",
+                        "format": "wav",
+                    },
+                    engine,
+                )
+                with patch.object(Engine, "list_audio_history", return_value=[]):
+                    history = dispatch_request(
+                        {"id": "list", "type": "list_audio_history"}, engine
+                    )
+                self.assertTrue(response["ok"])
+                self.assertTrue(Path(response["result"]["audio_path"]).is_file())
+                self.assertTrue(history["ok"])
+                self.assertEqual(len(history["result"]["items"]), 1)
+                self.assertFalse(history["result"]["items"][0]["metadata_available"])
 
     def test_vieneu_design_profile_is_rejected(self):
         from tts_mcp.desktop_vieneu import VieNeuProvider

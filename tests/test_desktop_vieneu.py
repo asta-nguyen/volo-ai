@@ -1,6 +1,7 @@
 import json
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import ModuleType
@@ -118,6 +119,7 @@ class VieNeuAssetTests(VieNeuAssetFixture, unittest.TestCase):
         self.assertEqual(status["preset_voices"], [])
         self.assertIsNone(status["default_voice"])
         self.assertFalse(status["model_ready"])
+        self.assertIn("prepare_model(provider='vieneu')", status["unavailable_reason"])
 
     def test_cancelled_download_stays_not_ready_then_retry_completes(self):
         calls = []
@@ -160,6 +162,20 @@ class VieNeuAssetTests(VieNeuAssetFixture, unittest.TestCase):
         self.assertFalse(status["preprocessing_available"])
         self.assertIn("TTS_MCP_AUDIOCPP_PATH", status["unavailable_reason"])
 
+    def test_frozen_sidecar_finds_tauri_binary_without_target_suffix(self):
+        binary = self.root / "audiocpp-cli"
+        binary.touch()
+        with (
+            patch.dict("os.environ", {"TTS_MCP_AUDIOCPP_PATH": ""}),
+            patch("tts_mcp.desktop_vieneu.sys.executable", str(self.root / "tts-sidecar")),
+            patch("tts_mcp.desktop_vieneu.sys.frozen", True, create=True),
+            patch(
+                "tts_mcp.desktop_vieneu._target_triple",
+                return_value="aarch64-apple-darwin",
+            ),
+        ):
+            self.assertEqual(self.provider._audio_cpp_path(), binary.resolve())
+
 
 class VieNeuSynthesisTests(VieNeuAssetFixture, unittest.TestCase):
     def setUp(self):
@@ -196,7 +212,7 @@ class VieNeuSynthesisTests(VieNeuAssetFixture, unittest.TestCase):
             sf.write(destination, np.zeros(480, dtype=np.float32), 48000)
         return subprocess_result(args)
 
-    def invoke(self, **overrides):
+    def invoke(self, output_path=None, **overrides):
         request = {
             "text": "Xin chào",
             "language": "vi",
@@ -209,7 +225,7 @@ class VieNeuSynthesisTests(VieNeuAssetFixture, unittest.TestCase):
             patch.dict("os.environ", {"TTS_MCP_AUDIOCPP_PATH": str(self.binary)}),
             patch("tts_mcp.desktop_vieneu.subprocess.run", side_effect=self.run_audio_cpp),
         ):
-            return self.provider.synthesize(request, [], self.outputs)
+            return self.provider.synthesize(request, [], self.outputs, output_path=output_path)
 
     def test_preset_uses_manifest_assets_and_writes_48khz(self):
         result = self.invoke()
@@ -218,10 +234,153 @@ class VieNeuSynthesisTests(VieNeuAssetFixture, unittest.TestCase):
         self.assertEqual(info.samplerate, 48000)
         self.assertTrue(Path(result["audio_path"]).is_file())
 
+    def test_synthesize_respects_explicit_output_path(self):
+        expected = self.root / "requested.wav"
+
+        result = self.invoke(output_path=expected)
+
+        self.assertEqual(result["audio_path"], str(expected))
+        self.assertTrue(expected.is_file())
+
+    def test_explicit_output_path_must_match_format(self):
+        with self.assertRaisesRegex(ValueError, "extension must match"):
+            self.invoke(output_path=self.root / "requested.mp3")
+
+    def test_failed_explicit_output_preserves_existing_file(self):
+        expected = self.root / "requested.wav"
+        expected.write_bytes(b"existing audio")
+
+        def fail_export(_audio, path, **_kwargs):
+            Path(path).write_bytes(b"partial audio")
+            raise RuntimeError("export failed")
+
+        with (
+            patch.dict("os.environ", {"TTS_MCP_AUDIOCPP_PATH": str(self.binary)}),
+            patch("tts_mcp.desktop_vieneu.subprocess.run", side_effect=self.run_audio_cpp),
+            patch("tts_mcp.desktop_vieneu.save_audio", side_effect=fail_export),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "export failed"):
+                self.provider.synthesize(
+                    {
+                        "text": "hello",
+                        "language": "en",
+                        "voice": "preset",
+                        "preset_id": "minh_quan_pro",
+                    },
+                    [],
+                    self.outputs,
+                    output_path=expected,
+                )
+
+        self.assertEqual(expected.read_bytes(), b"existing audio")
+        self.assertEqual(list(self.root.glob(".requested.*.tmp.wav")), [])
+
+    def test_concurrent_synthesis_is_serialized(self):
+        first_entered = threading.Event()
+        second_entered = threading.Event()
+        second_attempting = threading.Event()
+        release_first = threading.Event()
+        active = 0
+        max_active = 0
+        guard = threading.Lock()
+        errors = []
+
+        class ObservedLock:
+            def __init__(self):
+                self.lock = threading.Lock()
+
+            def __enter__(self):
+                if threading.current_thread().name == "second-synthesis":
+                    second_attempting.set()
+                self.lock.acquire()
+                return self
+
+            def __exit__(self, *_args):
+                self.lock.release()
+
+        def synthesize(_request, _voices, _output_dir, _output_path):
+            nonlocal active, max_active
+            with guard:
+                active += 1
+                max_active = max(max_active, active)
+                if threading.current_thread().name == "first-synthesis":
+                    first_entered.set()
+                else:
+                    second_entered.set()
+            if threading.current_thread().name == "first-synthesis":
+                release_first.wait(2)
+            with guard:
+                active -= 1
+            return {"audio_path": "speech.wav", "format": "wav"}
+
+        def run():
+            try:
+                self.provider.synthesize({}, [], self.outputs)
+            except Exception as exc:
+                errors.append(exc)
+
+        self.provider._synthesis_lock = ObservedLock()
+        with patch.object(self.provider, "_synthesize", side_effect=synthesize):
+            first = threading.Thread(target=run, name="first-synthesis")
+            second = threading.Thread(target=run, name="second-synthesis")
+            first.start()
+            try:
+                self.assertTrue(first_entered.wait(1))
+                second.start()
+                self.assertTrue(second_attempting.wait(1))
+                self.assertFalse(second_entered.is_set())
+            finally:
+                release_first.set()
+                first.join(2)
+                if second.ident is not None:
+                    second.join(2)
+
+        self.assertFalse(first.is_alive())
+        self.assertFalse(second.is_alive())
+        self.assertEqual(errors, [])
+        self.assertTrue(second_entered.is_set())
+        self.assertEqual(max_active, 1)
+
     def test_unknown_preset_does_not_launch_cli(self):
         with patch("tts_mcp.desktop_vieneu.subprocess.run") as run:
             with self.assertRaisesRegex(ValueError, "Unknown VieNeu preset"):
                 self.invoke(preset_id="not_in_manifest")
+
+        run.assert_not_called()
+
+    def test_unprepared_model_requires_explicit_preparation(self):
+        self.provider._model_ready = Mock(return_value=False)
+        with (
+            patch.dict("os.environ", {"TTS_MCP_AUDIOCPP_PATH": str(self.binary)}),
+            patch("tts_mcp.desktop_vieneu.subprocess.run") as run,
+        ):
+            with self.assertRaisesRegex(RuntimeError, r"prepare_model\(provider='vieneu'\)"):
+                self.provider.synthesize(
+                    {
+                        "text": "Xin chào",
+                        "language": "vi",
+                        "voice": "preset",
+                        "preset_id": "minh_quan_pro",
+                    },
+                    [],
+                    self.outputs,
+                )
+
+        run.assert_not_called()
+
+    def test_missing_reference_is_rejected_before_native_inference(self):
+        with patch("tts_mcp.desktop_vieneu.subprocess.run") as run:
+            with self.assertRaisesRegex(FileNotFoundError, "Reference audio file was not found"):
+                self.provider.synthesize(
+                    {
+                        "text": "hello",
+                        "language": "en",
+                        "voice": "file",
+                        "ref_audio": str(self.root / "missing.wav"),
+                    },
+                    [],
+                    self.outputs,
+                )
 
         run.assert_not_called()
 
@@ -330,6 +489,34 @@ class VieNeuSynthesisTests(VieNeuAssetFixture, unittest.TestCase):
             )
 
         self.assertEqual(save_audio.call_args.kwargs["sample_rate"], 48000)
+
+    def test_explicit_mp3_output_path_is_written_exactly(self):
+        expected = self.root / "requested.mp3"
+
+        def write_mp3(_audio, path, **_kwargs):
+            Path(path).write_bytes(b"fake mp3")
+            return path
+
+        with (
+            patch.dict("os.environ", {"TTS_MCP_AUDIOCPP_PATH": str(self.binary)}),
+            patch("tts_mcp.desktop_vieneu.subprocess.run", side_effect=self.run_audio_cpp),
+            patch("tts_mcp.desktop_vieneu.save_audio", side_effect=write_mp3),
+        ):
+            result = self.provider.synthesize(
+                {
+                    "text": "hello",
+                    "language": "en",
+                    "voice": "preset",
+                    "preset_id": "minh_quan_pro",
+                    "format": "mp3",
+                },
+                [],
+                self.outputs,
+                output_path=expected,
+            )
+
+        self.assertEqual(result["audio_path"], str(expected))
+        self.assertEqual(expected.read_bytes(), b"fake mp3")
 
 
 def subprocess_result(args):

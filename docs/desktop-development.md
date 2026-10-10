@@ -42,8 +42,10 @@ Vite plugin, while source-owned shadcn-style primitives backed by Base UI live
 in `src/components/ui.tsx`. The app uses `lucide-react` for icons and Motion
 for reduced-motion-aware route and state transitions. The
 Settings language is separate from the synthesis language selected in the
-workspace. Settings is split into General, Model, and Storage tabs. The Model
-tab retains OmniVoice asset, device, model ID, and target-language details.
+workspace. Settings includes General, Model, Storage, and MCP tabs. The MCP
+tab generates copyable local-server setup for Codex CLI, Claude Code, Claude
+Desktop, Cursor, VS Code / GitHub Copilot, and Zed. The Model tab retains
+OmniVoice asset, device, model ID, and target-language details.
 
 The optional `tn` extra is not required by the desktop release; it adds native
 OpenFST/Pynini dependencies for text normalization.
@@ -117,6 +119,11 @@ target on its matching host:
 - `x86_64-unknown-linux-gnu`
 
 ## Build the desktop app
+
+Tauri packages the target-named sidecars already under
+`apps/desktop/src-tauri/binaries/`; it does not rebuild the Python worker.
+Rebuild the sidecar after changing `src/tts_mcp/desktop.py` or its packaged
+dependencies, then build the app.
 
 ```sh
 npm --prefix apps/desktop run build

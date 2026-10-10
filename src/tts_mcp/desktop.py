@@ -10,6 +10,7 @@ import queue
 import sys
 import threading
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, TextIO
 
@@ -206,6 +207,99 @@ def _provider_id(request: dict[str, Any]) -> str:
     return provider
 
 
+def _history_voice_name(request: dict[str, Any]) -> str:
+    voice = request.get("voice", "auto")
+    if voice in {"profile", "preset"}:
+        field = "voice_name" if voice == "profile" else "preset_id"
+        value = request.get(field)
+        return value.strip() if isinstance(value, str) and value.strip() else voice
+    return voice if isinstance(voice, str) and voice in {"auto", "design", "file"} else "auto"
+
+
+def _record_audio_history(
+    request: dict[str, Any], provider: str, result: dict[str, Any]
+) -> None:
+    try:
+        audio_path = Path(result["audio_path"]).resolve()
+        output_dir = OUTPUT_DIR.resolve()
+        output_format = result["format"]
+        if audio_path.parent != output_dir or not audio_path.is_file():
+            return
+        if (
+            not isinstance(output_format, str)
+            or output_format not in ALLOWED_FORMATS
+            or audio_path.suffix.lower() != f".{output_format}"
+        ):
+            raise ValueError("Generated audio is not a supported file in the output directory")
+        Engine.record_audio_history(
+            file_name=audio_path.name,
+            provider=provider,
+            voice_name=_history_voice_name(request),
+            format=output_format,
+            text=request["text"],
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+    except Exception as exc:
+        print(f"[tts-mcp] audio history metadata write failed: {exc}", file=sys.stderr)
+
+
+def _list_audio_history() -> list[dict[str, Any]]:
+    metadata = {item["file_name"]: item for item in Engine.list_audio_history()}
+    output_dir = OUTPUT_DIR.resolve()
+    if not output_dir.exists():
+        return []
+
+    items = []
+    for path in output_dir.iterdir():
+        if path.is_symlink() or path.suffix.lower() not in {".wav", ".mp3"}:
+            continue
+        try:
+            if not path.is_file():
+                continue
+            stat = path.stat()
+        except FileNotFoundError:
+            continue
+        record = metadata.get(path.name)
+        items.append(
+            {
+                "id": path.name,
+                "audio_path": str(path.resolve()),
+                "format": path.suffix.lower().lstrip("."),
+                "created_at": record["created_at"]
+                if record
+                else datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+                "provider": record["provider"] if record else None,
+                "voice_name": record["voice_name"] if record else None,
+                "text": record["text"] if record else None,
+                "metadata_available": record is not None,
+            }
+        )
+    return sorted(items, key=lambda item: item["created_at"], reverse=True)
+
+
+def _delete_audio_history(file_name: Any) -> bool:
+    if (
+        not isinstance(file_name, str)
+        or not file_name
+        or Path(file_name).name != file_name
+        or "/" in file_name
+        or "\\" in file_name
+        or Path(file_name).suffix.lower() not in {".wav", ".mp3"}
+        or Path(file_name).stem in {"", ".", ".."}
+    ):
+        raise ValueError("Audio history ID must be a WAV or MP3 basename")
+    output_dir = OUTPUT_DIR.resolve()
+    path = OUTPUT_DIR / file_name
+    if path.is_symlink():
+        raise ValueError("Audio history cannot delete a symbolic link")
+    resolved = path.resolve(strict=True)
+    if resolved.parent != output_dir or not resolved.is_file():
+        raise ValueError("Audio history file must be directly inside the output directory")
+    resolved.unlink()
+    Engine.delete_audio_history(file_name)
+    return True
+
+
 def dispatch_request(
     request: dict[str, Any],
     engine: Engine,
@@ -267,6 +361,7 @@ def dispatch_request(
             else:
                 provider = vieneu_provider or VieNeuProvider(DATA_DIR)
                 result = provider.synthesize(request, Engine.list_voices(), OUTPUT_DIR)
+            _record_audio_history(request, provider_id, result)
             return _ok(request_id, result)
         if operation == "save_voice":
             name = request["name"]
@@ -286,6 +381,14 @@ def dispatch_request(
             return _ok(request_id, engine.import_seed_voices(seed_dir))
         if operation == "list_voices":
             return _ok(request_id, {"voices": Engine.list_voices()})
+        if operation == "list_audio_history":
+            return _ok(request_id, {"items": _list_audio_history()})
+        if operation == "delete_audio_history":
+            if "file_name" not in request:
+                raise KeyError("file_name")
+            return _ok(
+                request_id, {"deleted": _delete_audio_history(request["file_name"])}
+            )
         if operation == "delete_voice":
             return _ok(
                 request_id,
