@@ -1,0 +1,100 @@
+.agents/skills/migrate-radix-to-base/SKILL.md
+  h_611058a46223af 1-173
+.agents/skills/migrate-radix-to-base/class-mapping.md
+  h_611058a46223af 1-62
+.agents/skills/migrate-radix-to-base/consumer-props.md
+  h_611058a46223af 1-58
+.agents/skills/migrate-radix-to-base/disclosure.md
+  h_611058a46223af 1-353
+.agents/skills/migrate-radix-to-base/display-misc.md
+  h_611058a46223af 1-410
+.agents/skills/migrate-radix-to-base/form-controls.md
+  h_611058a46223af 1-390
+.agents/skills/migrate-radix-to-base/menus.md
+  h_611058a46223af 1-409
+.agents/skills/migrate-radix-to-base/overlays.md
+  h_611058a46223af 1-459
+.agents/skills/migrate-radix-to-base/universal-patterns.md
+  h_611058a46223af 1-286
+.agents/skills/migrate-radix-to-base/wrapper-shapes.md
+  h_611058a46223af 1-110
+.agents/skills/shadcn/SKILL.md
+  h_611058a46223af 1-295
+.agents/skills/shadcn/agents/openai.yml
+  h_611058a46223af 1-5
+.agents/skills/shadcn/assets/showcase/color-pair.tsx
+  h_611058a46223af 1-126
+.agents/skills/shadcn/assets/showcase/preview-states.css
+  h_611058a46223af 1-14
+.agents/skills/shadcn/assets/showcase/state-matrix.tsx
+  h_611058a46223af 1-72
+.agents/skills/shadcn/cli.md
+  h_611058a46223af 1-290
+.agents/skills/shadcn/customization.md
+  h_611058a46223af 1-211
+.agents/skills/shadcn/design-system-page.md
+  h_611058a46223af 1-268
+.agents/skills/shadcn/design-system.md
+  h_611058a46223af 1-386
+.agents/skills/shadcn/evals/evals.json
+  h_611058a46223af 1-126
+.agents/skills/shadcn/mcp.md
+  h_611058a46223af 1-105
+.agents/skills/shadcn/registry.md
+  h_611058a46223af 1-277
+.agents/skills/shadcn/rules/base-vs-radix.md
+  h_611058a46223af 1-306
+.agents/skills/shadcn/rules/chat.md
+  h_611058a46223af 1-250
+.agents/skills/shadcn/rules/composition.md
+  h_611058a46223af 1-213
+.agents/skills/shadcn/rules/forms.md
+  h_611058a46223af 1-192
+.agents/skills/shadcn/rules/icons.md
+  h_611058a46223af 1-101
+.agents/skills/shadcn/rules/styling.md
+  h_611058a46223af 1-185
+.agents/skills/shadcn/scripts/showcase-coverage.mjs
+  h_611058a46223af 1-53
+.claude/skills/brainstorm-feature
+  h_611058a46223af 1
+.claude/skills/context-handoff
+  h_611058a46223af 1
+.claude/skills/document-wiki
+  h_611058a46223af 1
+.claude/skills/estimate-feature
+  h_611058a46223af 1
+.claude/skills/implement-task
+  h_611058a46223af 1
+.claude/skills/lean-audit
+  h_611058a46223af 1
+.claude/skills/migrate-radix-to-base
+  h_611058a46223af 1
+.claude/skills/plan-feature
+  h_611058a46223af 1
+.claude/skills/read-codebase-context
+  h_611058a46223af 1
+.claude/skills/review-and-verify
+  h_611058a46223af 1
+.claude/skills/setup-codebase
+  h_611058a46223af 1
+.claude/skills/setup-openez
+  h_611058a46223af 1
+.claude/skills/shadcn
+  h_611058a46223af 1
+.claude/skills/systematic-debugging
+  h_611058a46223af 1
+.claude/skills/using-devkit
+  h_611058a46223af 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fee54e8a5e63e57388ccd0aa959c8e764c030cf4",
+  "prompts": {},
+  "humans": {
+    "h_611058a46223af": {
+      "author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
