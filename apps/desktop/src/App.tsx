@@ -41,7 +41,9 @@ import {
 } from "lucide-react";
 import {
   SidecarClient,
+  type AudioHistoryCursor,
   type AudioHistoryItem,
+  type AudioHistoryPage,
   type AudioFormat,
   type GenerationConfig,
   type Language,
@@ -49,6 +51,7 @@ import {
   type ProviderStatus,
   type ProgressEvent,
   type RequestLog,
+  type SeedVieNeuResult,
   type StatusResult,
   type SynthesisResult,
   type VoiceKind,
@@ -284,8 +287,10 @@ function voiceNameFromFile(path: string): string {
 
 function preferredVoiceForLanguage(voices: VoiceProfile[], language: Language): string {
   return (
-    voices.find((voice) => voice.language === language && voice.is_default)?.name ??
-    voices.find((voice) => voice.language === language)?.name ??
+    voices.find(
+      (voice) => voice.kind !== "vieneu_preset" && voice.language === language && voice.is_default,
+    )?.name ??
+    voices.find((voice) => voice.kind !== "vieneu_preset" && voice.language === language)?.name ??
     "auto"
   );
 }
@@ -352,6 +357,7 @@ function SetupScreen({
   onPrepare,
   onCancel,
   onProviderChange,
+  onOpenProfiles,
   onOpenHistory,
   onOpenSettings,
 }: {
@@ -365,6 +371,7 @@ function SetupScreen({
   onPrepare: () => void;
   onCancel: () => void;
   onProviderChange: (provider: ProviderId) => void;
+  onOpenProfiles: () => void;
   onOpenHistory: () => void;
   onOpenSettings: () => void;
 }) {
@@ -488,6 +495,10 @@ function SetupScreen({
                     {isCancelling ? copy.cancelling : copy.cancelDownload}
                   </Button>
                 )}
+                <Button variant="ghost" onClick={onOpenProfiles}>
+                  <Library className="size-4" />
+                  {copy.voiceProfiles}
+                </Button>
                 <Button variant="ghost" onClick={onOpenHistory}>
                   <History className="size-4" />
                   {copy.audioHistory}
@@ -710,17 +721,24 @@ function LogsView({
 
 function VoiceProfilesView({
   voices,
+  presetVoices,
   isLoading,
   listError,
   formError,
   profileName,
   profileKind,
+  profilePresetId,
   refAudio,
   refText,
   designInstruction,
   isSaving,
   isImporting,
   isImportingSeed,
+  isSeedingVieNeu,
+  isCancellingSeed,
+  seedProgress,
+  seedResult,
+  seedError,
   importStatus,
   seedImportStatus,
   deletingVoice,
@@ -728,7 +746,10 @@ function VoiceProfilesView({
   onChooseReference,
   onImportVoiceFile,
   onImportSeedFolder,
+  onSeedVieNeuVoices,
+  onCancelSeed,
   onProfileNameChange,
+  onProfilePresetIdChange,
   onRefTextChange,
   onProfileKindChange,
   onDesignInstructionChange,
@@ -738,17 +759,24 @@ function VoiceProfilesView({
   onDelete,
 }: {
   voices: VoiceProfile[];
+  presetVoices: Array<{ id: string; name: string; label: string }>;
   isLoading: boolean;
   listError: string | null;
   formError: string | null;
   profileName: string;
   profileKind: VoiceKind;
+  profilePresetId: string;
   refAudio: string | null;
   refText: string;
   designInstruction: string;
   isSaving: boolean;
   isImporting: boolean;
   isImportingSeed: boolean;
+  isSeedingVieNeu: boolean;
+  isCancellingSeed: boolean;
+  seedProgress: ProgressEvent | null;
+  seedResult: SeedVieNeuResult | null;
+  seedError: string | null;
   importStatus: ImportStatus | null;
   seedImportStatus: ImportStatus | null;
   deletingVoice: string | null;
@@ -756,7 +784,10 @@ function VoiceProfilesView({
   onChooseReference: () => void;
   onImportVoiceFile: () => void;
   onImportSeedFolder: () => void;
+  onSeedVieNeuVoices: () => void;
+  onCancelSeed: () => void;
   onProfileNameChange: (value: string) => void;
+  onProfilePresetIdChange: (value: string) => void;
   onRefTextChange: (value: string) => void;
   onProfileKindChange: (value: VoiceKind) => void;
   onDesignInstructionChange: (value: string) => void;
@@ -776,6 +807,19 @@ function VoiceProfilesView({
         action={
           <div className="flex flex-wrap items-center justify-end gap-3">
             <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onSeedVieNeuVoices}
+                disabled={isSeedingVieNeu}
+              >
+                {isSeedingVieNeu ? (
+                  <LoaderCircle className="size-4 animate-spin" />
+                ) : (
+                  <AudioLines className="size-4 text-(--accent)" />
+                )}
+                {isSeedingVieNeu ? copy.seedingVieNeuVoices : copy.seedVieNeuVoices}
+              </Button>
               <Button
                 variant="secondary"
                 size="sm"
@@ -826,6 +870,57 @@ function VoiceProfilesView({
           {activeImportStatus.message}
         </div>
       )}
+      {(isSeedingVieNeu || seedResult || seedError) && (
+        <div
+          className={`mb-5 rounded-xl border px-4 py-3 text-sm ${seedError || seedResult?.failed.length || seedResult?.unfinished.length ? "border-(--destructive-border) bg-(--destructive-surface) text-(--destructive)" : "border-(--accent-border) bg-(--accent-soft) text-(--foreground)"}`}
+          role={seedError || seedResult?.failed.length || seedResult?.unfinished.length ? "alert" : "status"}
+        >
+          {seedError ? (
+            <p>{seedError}</p>
+          ) : (
+            <div className="space-y-2">
+              {isSeedingVieNeu && (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="flex min-w-0 items-center gap-2">
+                    <LoaderCircle className="size-4 shrink-0 animate-spin" />
+                    <span className="truncate">
+                      {seedProgress?.message ?? copy.seedingVieNeuVoices}
+                      {seedProgress?.preset_id ? ` · ${seedProgress.preset_id}` : ""}
+                      {seedProgress?.current && seedProgress.total
+                        ? ` · ${seedProgress.current}/${seedProgress.total}`
+                        : ""}
+                    </span>
+                  </p>
+                  <Button variant="ghost" size="sm" onClick={onCancelSeed} disabled={isCancellingSeed}>
+                    {isCancellingSeed ? copy.cancellingSeed : copy.cancelSeed}
+                  </Button>
+                </div>
+              )}
+              {seedResult && (
+                <>
+                  <p>
+                    {seedResult.cancelled ? copy.seedVieNeuCancelled : copy.seedVieNeuCompleted}
+                    {" · "}
+                    {seedResult.profiles.filter((item) => item.status === "created").length} {copy.seedCreated}
+                    {" · "}
+                    {seedResult.profiles.filter((item) => item.status === "updated").length} {copy.seedUpdated}
+                    {" · "}
+                    {seedResult.profiles.filter((item) => item.status === "reused").length} {copy.seedReused}
+                  </p>
+                  {seedResult.failed.length > 0 && (
+                    <p>
+                      {copy.seedFailed}: {seedResult.failed.map((item) => `${item.preset_id} (${item.message})`).join(", ")}
+                    </p>
+                  )}
+                  {seedResult.unfinished.length > 0 && (
+                    <p>{copy.seedUnfinished}: {seedResult.unfinished.join(", ")}</p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <Card>
           <CardHeader>
@@ -874,7 +969,12 @@ function VoiceProfilesView({
             {!isLoading && !listError && voices.length > 0 && (
               <div className="space-y-3">
                 <AnimatePresence initial={false}>
-                  {voices.map((voice) => (
+                  {voices.map((voice) => {
+                    const manifestPreset =
+                      voice.kind === "vieneu_preset"
+                        ? presetVoices.find((item) => item.id === voice.preset_id)
+                        : undefined;
+                    return (
                     <motion.article
                       layout
                       initial={{ opacity: 0, y: 8 }}
@@ -893,7 +993,11 @@ function VoiceProfilesView({
                               <h3 className="truncate font-semibold">{voice.name}</h3>
                               <Badge>{copy.profileReady}</Badge>
                               <Badge className="border-(--border) bg-(--surface) text-(--muted-foreground)">
-                                {voice.kind === "design" ? copy.designVoice : copy.cloneVoice}
+                                {voice.kind === "design"
+                                  ? copy.designVoice
+                                  : voice.kind === "vieneu_preset"
+                                    ? copy.vieneuPresetProfile
+                                    : copy.cloneVoice}
                               </Badge>
                               {voice.is_default && (
                                 <Badge className="border-(--accent-border) bg-(--accent-soft) text-(--accent)">
@@ -907,10 +1011,13 @@ function VoiceProfilesView({
                               ) : (
                                 <FileAudio className="size-3" />
                               )}
-                              {voice.language} ·
-                              {voice.kind === "design"
-                                ? copy.designProfileSummary
-                                : fileName(voice.ref_audio)}
+                              {voice.kind === "vieneu_preset"
+                                ? `${copy.presetIdLabel}: ${voice.preset_id ?? ""}${manifestPreset ? ` · ${manifestPreset.name} · ${manifestPreset.label}` : ""}`
+                                : `${voice.language?.toUpperCase()} · ${
+                                    voice.kind === "design"
+                                      ? copy.designProfileSummary
+                                      : fileName(voice.ref_audio ?? undefined)
+                                  }`}
                             </p>
                           </div>
                         </div>
@@ -930,6 +1037,12 @@ function VoiceProfilesView({
                           {voice.kind === "design" ? (
                             <span className="line-clamp-2">
                               {voice.design_instruction ?? copy.designProfileSummary}
+                            </span>
+                          ) : voice.kind === "vieneu_preset" ? (
+                            <span>
+                              {copy.providerVieNeu}
+                              {voice.ref_audio ? " · OmniVoice WAV" : ""}
+                              {manifestPreset ? ` · ${manifestPreset.name} · ${manifestPreset.label}` : ""}
                             </span>
                           ) : (
                             <span className="flex gap-3">
@@ -958,7 +1071,8 @@ function VoiceProfilesView({
                         </div>
                       </div>
                     </motion.article>
-                  ))}
+                    );
+                  })}
                 </AnimatePresence>
               </div>
             )}
@@ -976,7 +1090,9 @@ function VoiceProfilesView({
             <CardDescription>
               {profileKind === "design"
                 ? copy.createDesignProfileDescription
-                : copy.createProfileDescription}
+                : profileKind === "vieneu_preset"
+                  ? copy.createVieNeuPresetProfileDescription
+                  : copy.createProfileDescription}
             </CardDescription>
             {formError && (
               <div className="mt-4">
@@ -991,11 +1107,11 @@ function VoiceProfilesView({
               }}
             >
               <div
-                className="grid grid-cols-2 gap-1 rounded-xl border border-(--border) bg-(--surface-muted) p-1"
+                className="grid grid-cols-3 gap-1 rounded-xl border border-(--border) bg-(--surface-muted) p-1"
                 role="group"
                 aria-label={copy.createProfile}
               >
-                {(["clone", "design"] as VoiceKind[]).map((kind) => (
+                {(["clone", "design", "vieneu_preset"] as VoiceKind[]).map((kind) => (
                   <button
                     type="button"
                     key={kind}
@@ -1003,7 +1119,11 @@ function VoiceProfilesView({
                     onClick={() => onProfileKindChange(kind)}
                     className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${profileKind === kind ? "bg-(--surface) text-(--foreground) shadow-sm" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
                   >
-                    {kind === "design" ? copy.designVoice : copy.cloneVoice}
+                    {kind === "design"
+                      ? copy.designVoice
+                      : kind === "vieneu_preset"
+                        ? copy.vieneuPresetProfile
+                        : copy.cloneVoice}
                   </button>
                 ))}
               </div>
@@ -1057,7 +1177,7 @@ function VoiceProfilesView({
                     />
                   </div>
                 </>
-              ) : (
+              ) : profileKind === "design" ? (
                 <div className="space-y-2">
                   <Label htmlFor="profile-design-instruction">{copy.voiceDesignInstruction}</Label>
                   <Textarea
@@ -1071,8 +1191,34 @@ function VoiceProfilesView({
                     {copy.voiceDesignExample}
                   </p>
                 </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="profile-vieneu-preset">{copy.vieneuPresetSelector}</Label>
+                  {presetVoices.length > 0 ? (
+                    <Select
+                      value={profilePresetId}
+                      onValueChange={onProfilePresetIdChange}
+                      disabled={isSaving}
+                      aria-label={copy.vieneuPresetSelector}
+                    >
+                      {presetVoices.map((voice) => (
+                        <SelectItem key={voice.id} value={voice.id}>
+                          {voice.name} · {voice.label}
+                        </SelectItem>
+                      ))}
+                    </Select>
+                  ) : (
+                    <p className="rounded-xl border border-(--border) bg-(--surface-muted) p-3 text-xs leading-5 text-(--muted-foreground)">
+                      {copy.vieneuPresetCatalogUnavailable}
+                    </p>
+                  )}
+                </div>
               )}
-              <Button type="submit" className="w-full" disabled={isSaving}>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={isSaving || (profileKind === "vieneu_preset" && presetVoices.length === 0)}
+              >
                 <Plus className="size-4" />
                 {isSaving ? copy.savingProfile : copy.createProfileButton}
               </Button>
@@ -1581,19 +1727,27 @@ function AudioHistoryView({
   copy,
   appLanguage,
   items,
+  total,
+  nextCursor,
   isLoading,
+  isLoadingMore,
   error,
   deletingFileName,
   onRetry,
+  onLoadMore,
   onDelete,
 }: {
   copy: UiCopy;
   appLanguage: AppLanguage;
   items: AudioHistoryItem[];
+  total: number;
+  nextCursor: AudioHistoryCursor | null;
   isLoading: boolean;
+  isLoadingMore: boolean;
   error: string | null;
   deletingFileName: string | null;
   onRetry: () => void;
+  onLoadMore: () => void;
   onDelete: (fileName: string) => void;
 }) {
   const [confirmDeleteFileName, setConfirmDeleteFileName] = useState<string | null>(null);
@@ -1609,10 +1763,14 @@ function AudioHistoryView({
         action={
           <div className="flex items-center gap-3">
             <span className="hidden text-xs text-(--muted-foreground) sm:inline">
-              {items.length} {copy.audioHistoryCount}
+              {items.length} / {total} {copy.audioHistoryCount}
             </span>
-            <Button variant="secondary" onClick={onRetry} disabled={isLoading}>
-              {isLoading ? (
+            <Button
+              variant="secondary"
+              onClick={onRetry}
+              disabled={isLoading || isLoadingMore}
+            >
+              {isLoading || isLoadingMore ? (
                 <LoaderCircle className="size-4 animate-spin" />
               ) : (
                 <RotateCcw className="size-4" />
@@ -1622,6 +1780,9 @@ function AudioHistoryView({
           </div>
         }
       />
+      <p className="mb-4 text-xs text-(--muted-foreground) sm:hidden">
+        {items.length} / {total} {copy.audioHistoryCount}
+      </p>
 
       {error && (
         <div className="mb-5">
@@ -1719,6 +1880,19 @@ function AudioHistoryView({
         </div>
       )}
 
+      {nextCursor && (
+        <div className="mt-4 flex justify-center">
+          <Button
+            variant="secondary"
+            onClick={onLoadMore}
+            disabled={isLoading || isLoadingMore}
+          >
+            {isLoadingMore && <LoaderCircle className="size-4 animate-spin" />}
+            <span>{isLoadingMore ? copy.audioHistoryLoadingMore : copy.audioHistoryLoadMore}</span>
+          </Button>
+        </div>
+      )}
+
       <ConfirmDialog
         open={Boolean(confirmDeleteFileName)}
         title={copy.audioHistoryDelete}
@@ -1804,7 +1978,9 @@ function WorkspaceView({
   onExport: () => void;
 }) {
   const isOmniVoice = provider === "omnivoice";
-  const visibleVoices = isOmniVoice ? voices : voices.filter((voice) => voice.kind === "clone");
+  const visibleVoices = isOmniVoice
+    ? voices.filter((voice) => voice.kind !== "vieneu_preset" || Boolean(voice.ref_audio))
+    : voices.filter((voice) => voice.kind !== "design");
   const selectedSource = isOmniVoice
     ? mode === "profile"
       ? `profile:${selectedVoice}`
@@ -2117,7 +2293,12 @@ function WorkspaceView({
                   {!isOmniVoice && <SelectItem value="file">{copy.referenceFile}</SelectItem>}
                   {visibleVoices.map((voice) => (
                     <SelectItem key={`${voice.name}-label`} value={`profile:${voice.name}`}>
-                      {voice.name} · {voice.language.toUpperCase()}
+                      {voice.name}
+                      {voice.kind === "vieneu_preset"
+                        ? isOmniVoice && voice.ref_audio
+                          ? " · OmniVoice WAV"
+                          : ` · ${copy.providerVieNeu}`
+                        : ` · ${voice.language?.toUpperCase() ?? ""}`}
                       {voice.is_default ? ` · ${copy.defaultVoice}` : ""}
                     </SelectItem>
                   ))}
@@ -2388,8 +2569,12 @@ function App() {
   const [refText, setRefText] = useState("");
   const [voices, setVoices] = useState<VoiceProfile[]>([]);
   const [audioHistory, setAudioHistory] = useState<AudioHistoryItem[]>([]);
+  const [audioHistoryTotal, setAudioHistoryTotal] = useState(0);
+  const [audioHistoryCursor, setAudioHistoryCursor] = useState<AudioHistoryCursor | null>(null);
   const [isLoadingAudioHistory, setIsLoadingAudioHistory] = useState(false);
+  const [isLoadingMoreAudioHistory, setIsLoadingMoreAudioHistory] = useState(false);
   const [audioHistoryError, setAudioHistoryError] = useState<string | null>(null);
+  const audioHistoryRequestVersion = useRef(0);
   const [deletingAudioFile, setDeletingAudioFile] = useState<string | null>(null);
   const [isLoadingVoices, setIsLoadingVoices] = useState(false);
   const [voiceListError, setVoiceListError] = useState<string | null>(null);
@@ -2397,6 +2582,11 @@ function App() {
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isImportingVoice, setIsImportingVoice] = useState(false);
   const [isImportingSeed, setIsImportingSeed] = useState(false);
+  const [isSeedingVieNeu, setIsSeedingVieNeu] = useState(false);
+  const [isCancellingSeed, setIsCancellingSeed] = useState(false);
+  const [seedProgress, setSeedProgress] = useState<ProgressEvent | null>(null);
+  const [seedResult, setSeedResult] = useState<SeedVieNeuResult | null>(null);
+  const [seedError, setSeedError] = useState<string | null>(null);
   const [voiceImportStatus, setVoiceImportStatus] = useState<ImportStatus | null>(null);
   const [seedImportStatus, setSeedImportStatus] = useState<ImportStatus | null>(null);
   const [deletingVoice, setDeletingVoice] = useState<string | null>(null);
@@ -2405,6 +2595,7 @@ function App() {
   );
   const [profileName, setProfileName] = useState("");
   const [profileKind, setProfileKind] = useState<VoiceKind>("clone");
+  const [profilePresetId, setProfilePresetId] = useState("");
   const [designInstruction, setDesignInstruction] = useState("");
   const [result, setResult] = useState<SynthesisResult | null>(null);
   const [isPreparing, setIsPreparing] = useState(false);
@@ -2446,7 +2637,10 @@ function App() {
   const audioUrl = useMemo(() => (result ? convertFileSrc(result.audio_path) : null), [result]);
 
   useEffect(() => {
-    const unsubscribe = client.onProgress(setModelProgress);
+    const unsubscribe = client.onProgress((event) => {
+      if (event.phase === "seed_vieneu") setSeedProgress(event);
+      else setModelProgress(event);
+    });
     const unsubscribeLogs = client.onLog(() => setLogs(client.getLogs()));
     let active = true;
     void (async () => {
@@ -2459,10 +2653,8 @@ function App() {
         const selectedReady = status.providers
           ? providerIsReady(status.providers[provider])
           : provider === "omnivoice" && status.model_ready;
-        if (selectedReady) {
-          if (provider === "omnivoice") await importBundledSeedVoices();
-          await refreshVoices();
-        }
+        if (selectedReady && provider === "omnivoice") await importBundledSeedVoices();
+        await refreshVoices();
       } catch (reason) {
         if (active)
           setSetupError(
@@ -2486,9 +2678,9 @@ function App() {
   }, [view]);
 
   useEffect(() => {
-    if (view !== "profiles" || !modelReady) return;
+    if (view !== "profiles" || !engineOnline) return;
     void refreshVoices();
-  }, [view, modelReady]);
+  }, [view, engineOnline]);
 
   useEffect(() => {
     if (view !== "history") return;
@@ -2500,10 +2692,25 @@ function App() {
     const defaultVoice = engineStatus.providers?.vieneu?.default_voice;
     const manifestVoices = engineStatus.providers?.vieneu?.preset_voices ?? [];
     setMode((current) => (current === "profile" || current === "file" ? current : "preset"));
-    setSelectedVoice((current) =>
-      manifestVoices.some((voice) => voice.id === current) ? current : (defaultVoice ?? ""),
+    setSelectedVoice((current) => {
+      const savedPreset = voices.find((voice) => voice.name === current);
+      return savedPreset?.kind === "vieneu_preset" ||
+        manifestVoices.some((voice) => voice.id === current)
+        ? current
+        : (defaultVoice ?? "");
+    });
+  }, [provider, engineStatus, voices]);
+
+  useEffect(() => {
+    const manifestVoices = engineStatus?.providers?.vieneu?.preset_voices ?? [];
+    if (manifestVoices.some((voice) => voice.id === profilePresetId)) return;
+    const defaultVoice = engineStatus?.providers?.vieneu?.default_voice;
+    setProfilePresetId(
+      manifestVoices.some((voice) => voice.id === defaultVoice)
+        ? defaultVoice!
+        : (manifestVoices[0]?.id ?? ""),
     );
-  }, [provider, engineStatus]);
+  }, [engineStatus, profilePresetId]);
 
   async function prepareModel(target: ProviderId = provider) {
     setSetupError(null);
@@ -2567,6 +2774,7 @@ function App() {
       setSelectedVoice((current) => {
         if (mode !== "profile") return current;
         const selected = response.voices.find((voice) => voice.name === current);
+        if (selected?.kind === "vieneu_preset") return current;
         return selected?.language === language
           ? current
           : preferredVoiceForLanguage(response.voices, language);
@@ -2579,21 +2787,63 @@ function App() {
   }
 
   async function refreshAudioHistory() {
+    const requestVersion = ++audioHistoryRequestVersion.current;
     setIsLoadingAudioHistory(true);
+    setIsLoadingMoreAudioHistory(false);
     setAudioHistoryError(null);
     try {
-      const response = await client.request<{ items: AudioHistoryItem[] }>({
+      const response = await client.request<AudioHistoryPage>({
         type: "list_audio_history",
+        paginated: true,
       });
+      if (requestVersion !== audioHistoryRequestVersion.current) return;
       setAudioHistory(response.items);
+      setAudioHistoryTotal(response.total);
+      setAudioHistoryCursor(response.next_cursor);
     } catch (reason) {
+      if (requestVersion !== audioHistoryRequestVersion.current) return;
       setAudioHistoryError(
         reason instanceof Error
           ? `${copy.audioHistoryLoadFailed}: ${reason.message}`
           : copy.audioHistoryLoadFailed,
       );
     } finally {
-      setIsLoadingAudioHistory(false);
+      if (requestVersion === audioHistoryRequestVersion.current) {
+        setIsLoadingAudioHistory(false);
+      }
+    }
+  }
+
+  async function loadMoreAudioHistory() {
+    const cursor = audioHistoryCursor;
+    if (!cursor || isLoadingAudioHistory || isLoadingMoreAudioHistory) return;
+    const requestVersion = audioHistoryRequestVersion.current;
+    setIsLoadingMoreAudioHistory(true);
+    setAudioHistoryError(null);
+    try {
+      const response = await client.request<AudioHistoryPage>({
+        type: "list_audio_history",
+        paginated: true,
+        cursor,
+      });
+      if (requestVersion !== audioHistoryRequestVersion.current) return;
+      setAudioHistory((current) => {
+        const existing = new Set(current.map((item) => item.id));
+        return [...current, ...response.items.filter((item) => !existing.has(item.id))];
+      });
+      setAudioHistoryTotal(response.total);
+      setAudioHistoryCursor(response.next_cursor);
+    } catch (reason) {
+      if (requestVersion !== audioHistoryRequestVersion.current) return;
+      setAudioHistoryError(
+        reason instanceof Error
+          ? `${copy.audioHistoryLoadFailed}: ${reason.message}`
+          : copy.audioHistoryLoadFailed,
+      );
+    } finally {
+      if (requestVersion === audioHistoryRequestVersion.current) {
+        setIsLoadingMoreAudioHistory(false);
+      }
     }
   }
 
@@ -2626,6 +2876,7 @@ function App() {
     if (mode === "profile") {
       setSelectedVoice((current) => {
         const selected = voices.find((voice) => voice.name === current);
+        if (selected?.kind === "vieneu_preset") return current;
         return selected?.language === next ? current : preferredVoiceForLanguage(voices, next);
       });
     }
@@ -2752,6 +3003,36 @@ function App() {
       });
     } finally {
       setIsImportingSeed(false);
+    }
+  }
+
+  async function seedVieNeuVoices() {
+    setIsSeedingVieNeu(true);
+    setIsCancellingSeed(false);
+    setSeedProgress(null);
+    setSeedResult(null);
+    setSeedError(null);
+    setVoiceImportStatus(null);
+    setSeedImportStatus(null);
+    try {
+      const result = await client.request<SeedVieNeuResult>({ type: "seed_vieneu_voices" });
+      setSeedResult(result);
+    } catch (reason) {
+      setSeedError(reason instanceof Error ? reason.message : copy.seedVieNeuFailed);
+    } finally {
+      await refreshVoices();
+      setIsSeedingVieNeu(false);
+      setIsCancellingSeed(false);
+    }
+  }
+
+  async function cancelSeedVieNeuVoices() {
+    setIsCancellingSeed(true);
+    try {
+      await client.cancelSeed();
+    } catch (reason) {
+      setSeedError(reason instanceof Error ? reason.message : copy.seedVieNeuFailed);
+      setIsCancellingSeed(false);
     }
   }
 
@@ -2883,7 +3164,7 @@ function App() {
   }
 
   async function saveProfile() {
-    if (!omniVoiceReady) {
+    if (profileKind !== "vieneu_preset" && !omniVoiceReady) {
       const message = copy.omnivoiceProfileRequired;
       setError(message);
       setProfileError(message);
@@ -2907,10 +3188,25 @@ function App() {
       setProfileError(message);
       return;
     }
+    if (
+      profileKind === "vieneu_preset" &&
+      !presetVoices.some((voice) => voice.id === profilePresetId)
+    ) {
+      const message = copy.vieneuPresetCatalogUnavailable;
+      setError(message);
+      setProfileError(message);
+      return;
+    }
     setIsSavingProfile(true);
     setProfileError(null);
     try {
-      if (profileKind === "design") {
+      if (profileKind === "vieneu_preset") {
+        await client.request({
+          type: "save_vieneu_preset",
+          name: profileName.trim(),
+          preset_id: profilePresetId,
+        });
+      } else if (profileKind === "design") {
         await client.saveDesignVoice(profileName.trim(), designInstruction.trim(), language);
       } else {
         await client.request({
@@ -2942,7 +3238,14 @@ function App() {
     try {
       const response = await client.request<{ deleted: boolean }>({ type: "delete_voice", name });
       if (!response.deleted) throw new Error(copy.couldNotDeleteVoice);
-      if (selectedVoice === name) setSelectedVoice("auto");
+      if (selectedVoice === name) {
+        setMode(provider === "vieneu" ? "preset" : "auto");
+        setSelectedVoice(
+          provider === "vieneu"
+            ? (engineStatus?.providers?.vieneu?.default_voice ?? "")
+            : "auto",
+        );
+      }
       await refreshVoices();
       setError(null);
       setProfileError(null);
@@ -2968,6 +3271,7 @@ function App() {
         return;
       }
       setAudioHistory((current) => current.filter((entry) => entry.id !== audioId));
+      setAudioHistoryTotal((current) => Math.max(0, current - 1));
       setTakes((current) => current.filter((take) => fileName(take.audioPath) !== audioId));
       if (result && fileName(result.audio_path) === audioId) {
         setResult(null);
@@ -2985,9 +3289,18 @@ function App() {
   }
 
   function useProfile(name: string) {
-    if (provider === "vieneu" && voices.find((voice) => voice.name === name)?.kind === "design") {
+    const profile = voices.find((voice) => voice.name === name);
+    if (provider === "vieneu" && profile?.kind === "design") {
       setError(copy.vieneuDesignUnsupported);
       return;
+    }
+    if (profile?.kind === "vieneu_preset" && !profile.ref_audio && provider !== "vieneu") {
+      setProvider("vieneu");
+      localStorage.setItem("volo-ai.provider", "vieneu");
+      setError(null);
+      setResult(null);
+      setRefAudio(null);
+      void refreshVoices();
     }
     setSelectedVoice(name);
     setMode("profile");
@@ -3011,7 +3324,7 @@ function App() {
     }
   }
 
-  if (!modelReady && view !== "history" && view !== "settings")
+  if (!modelReady && view !== "profiles" && view !== "history" && view !== "settings")
     return (
       <SetupScreen
         copy={copy}
@@ -3024,6 +3337,7 @@ function App() {
         onPrepare={() => void prepareModel()}
         onCancel={() => void cancelModelPreparation()}
         onProviderChange={changeProvider}
+        onOpenProfiles={() => setView("profiles")}
         onOpenHistory={() => setView("history")}
         onOpenSettings={() => setView("settings")}
       />
@@ -3152,26 +3466,37 @@ function App() {
                     copy={copy}
                     appLanguage={appLanguage}
                     items={audioHistory}
+                    total={audioHistoryTotal}
+                    nextCursor={audioHistoryCursor}
                     isLoading={isLoadingAudioHistory}
+                    isLoadingMore={isLoadingMoreAudioHistory}
                     error={audioHistoryError}
                     deletingFileName={deletingAudioFile}
                     onRetry={() => void refreshAudioHistory()}
+                    onLoadMore={() => void loadMoreAudioHistory()}
                     onDelete={(fileName) => void deleteAudioHistory(fileName)}
                   />
                 ) : view === "profiles" ? (
                   <VoiceProfilesView
                     voices={voices}
+                    presetVoices={presetVoices}
                     isLoading={isLoadingVoices}
                     listError={voiceListError}
                     formError={profileError}
                     profileName={profileName}
                     profileKind={profileKind}
+                    profilePresetId={profilePresetId}
                     refAudio={refAudio}
                     refText={refText}
                     designInstruction={designInstruction}
                     isSaving={isSavingProfile}
                     isImporting={isImportingVoice}
                     isImportingSeed={isImportingSeed}
+                    isSeedingVieNeu={isSeedingVieNeu}
+                    isCancellingSeed={isCancellingSeed}
+                    seedProgress={seedProgress}
+                    seedResult={seedResult}
+                    seedError={seedError}
                     importStatus={voiceImportStatus}
                     seedImportStatus={seedImportStatus}
                     deletingVoice={deletingVoice}
@@ -3179,7 +3504,10 @@ function App() {
                     onChooseReference={() => void chooseReference()}
                     onImportVoiceFile={() => void importVoiceFile()}
                     onImportSeedFolder={() => void importSeedFolder()}
+                    onSeedVieNeuVoices={() => void seedVieNeuVoices()}
+                    onCancelSeed={() => void cancelSeedVieNeuVoices()}
                     onProfileNameChange={setProfileName}
+                    onProfilePresetIdChange={setProfilePresetId}
                     onRefTextChange={setRefText}
                     onProfileKindChange={(kind) => {
                       setProfileKind(kind);

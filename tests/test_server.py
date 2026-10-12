@@ -149,6 +149,48 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(file_request["ref_audio"], "/tmp/reference.wav")
         self.assertEqual(file_request["language"], "en")
 
+    def test_clone_routes_saved_vieneu_preset_and_rejects_omnivoice(self):
+        vieneu = Mock()
+        vieneu.synthesize.return_value = {"audio_path": "/tmp/preset.wav", "format": "wav"}
+        voices = [
+            {
+                "name": "My-Preset",
+                "kind": "vieneu_preset",
+                "language": None,
+                "preset_id": "truc_ly",
+                "is_default": False,
+            }
+        ]
+        engine = Mock()
+        engine.load_voice_profile.return_value = {
+            "kind": "vieneu_preset",
+            "preset_id": "truc_ly",
+        }
+        with (
+            patch("tts_mcp.server.get_vieneu_provider", return_value=vieneu),
+            patch("tts_mcp.server.Engine.list_voices", return_value=voices),
+        ):
+            result = clone(
+                "Xin chào",
+                "/tmp/preset.wav",
+                voice="My-Preset",
+                provider="vieneu",
+                language="vi",
+            )
+
+        self.assertEqual(result, "VieNeu preset audio saved to: /tmp/preset.wav")
+        request = vieneu.synthesize.call_args.args[0]
+        self.assertEqual(request["voice"], "preset")
+        self.assertEqual(request["preset_id"], "truc_ly")
+        self.assertNotIn("voice_name", request)
+        with (
+            patch("tts_mcp.server.get_engine", return_value=engine),
+            patch("tts_mcp.server.get_vieneu_provider") as vieneu_provider,
+        ):
+            with self.assertRaisesRegex(ValueError, "provider='vieneu'"):
+                clone("Xin chào", "/tmp/preset.wav", voice="My-Preset")
+        vieneu_provider.assert_not_called()
+
     def test_vieneu_rejects_unsupported_options_without_provider_fallback(self):
         with (
             patch("tts_mcp.server.get_engine") as engine,
@@ -307,6 +349,88 @@ class ServerTests(unittest.TestCase):
         self.assertIn("Warm-Voice (design, en)", result)
         self.assertIn("design_instruction: female, warm tone", result)
         self.assertNotIn("ref: None", result)
+
+    def test_list_voices_formats_vieneu_preset_id_without_language_or_audio(self):
+        voices = [
+            {
+                "name": "My-Preset",
+                "kind": "vieneu_preset",
+                "language": None,
+                "preset_id": "truc_ly",
+                "ref_audio": None,
+                "design_instruction": None,
+            }
+        ]
+        with patch("tts_mcp.server.Engine.list_voices", return_value=voices):
+            result = list_voices()
+
+        self.assertIn("My-Preset (vieneu_preset); preset_id: truc_ly", result)
+        self.assertNotIn("None", result)
+        self.assertNotIn("ref_audio", result)
+
+    def test_mcp_clone_routes_seeded_profile_for_both_providers(self):
+        engine = Mock()
+        engine.load_voice_profile.return_value = {
+            "kind": "vieneu_preset",
+            "preset_id": "minh_quan_pro",
+            "ref_audio": "/voices/minh_quan_pro/reference.wav",
+            "ref_text": "Xin chào",
+        }
+        engine.generate.return_value = object()
+        with (
+            patch("tts_mcp.server.get_engine", return_value=engine),
+            patch("tts_mcp.server.save_audio", return_value="speech.wav"),
+        ):
+            result = clone("hello", "speech.wav", voice="minh_quan_pro")
+
+        self.assertIn("Cloned audio saved", result)
+        engine.generate.assert_called_once_with(
+            text="hello",
+            speed=1.0,
+            num_step=32,
+            normalize_text=False,
+            ref_audio="/voices/minh_quan_pro/reference.wav",
+            ref_text="Xin chào",
+        )
+
+        vieneu = Mock()
+        vieneu.synthesize.return_value = {"audio_path": "speech.wav", "format": "wav"}
+        voice_row = {
+            "name": "minh_quan_pro",
+            "kind": "vieneu_preset",
+            "preset_id": "minh_quan_pro",
+            "ref_audio": "/voices/minh_quan_pro/reference.wav",
+            "ref_text": "Xin chào",
+        }
+        with (
+            patch("tts_mcp.server.get_vieneu_provider", return_value=vieneu),
+            patch("tts_mcp.server.Engine.list_voices", return_value=[voice_row]),
+        ):
+            clone(
+                "hello",
+                "speech.wav",
+                voice="minh_quan_pro",
+                provider="vieneu",
+            )
+
+        routed = vieneu.synthesize.call_args.args[0]
+        self.assertEqual(routed["voice"], "preset")
+        self.assertEqual(routed["preset_id"], "minh_quan_pro")
+
+    def test_mcp_list_voices_includes_seeded_reference_details(self):
+        voice = {
+            "name": "minh_quan_pro",
+            "kind": "vieneu_preset",
+            "preset_id": "minh_quan_pro",
+            "ref_audio": "/voices/minh_quan_pro/reference.wav",
+            "ref_text": "Xin chào",
+        }
+        with patch("tts_mcp.server.Engine.list_voices", return_value=[voice]):
+            result = list_voices()
+
+        self.assertIn("preset_id: minh_quan_pro", result)
+        self.assertIn("ref_audio: /voices/minh_quan_pro/reference.wav", result)
+        self.assertIn("ref_text: Xin chào", result)
 
 
 class MCPProtocolTests(unittest.IsolatedAsyncioTestCase):

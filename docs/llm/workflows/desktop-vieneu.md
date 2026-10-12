@@ -1,100 +1,266 @@
 # Desktop speech providers
 
-## Business rules
+## Requirements
 
-- The desktop sidecar and MCP server support OmniVoice and VieNeu-TTS. The CLI
-  remains OmniVoice-only; MCP provider setup and tool behavior are documented
-  in the [MCP voice library workflow](mcp-voice-library.md).
-- `prepare_model` and `synthesize` require `provider: "omnivoice"` or
-  `provider: "vieneu"`; the sidecar does not silently switch providers.
-- `status` reports model-asset readiness separately from runtime and
-  preprocessing availability. VieNeu presets and the default voice are read
-  from its valid local manifest.
-- The UI stores the selected provider in `localStorage`, defaults to
-  OmniVoice, and downloads model assets only after an explicit prepare action.
-- VieNeu accepts a manifest preset, a saved Clone profile, or one-off reference
-  audio. It rejects saved Design profiles. Its synthesis request does not use
-  OmniVoice speed or generation settings and applies no speed post-processing.
+### DVP-profile-availability
+
+The desktop UI SHALL expose the shared voice library while the sidecar is
+online, even when the selected provider is not ready.
+
+#### Scenario: open saved profiles before model preparation
+
+- GIVEN the sidecar reports status and the selected provider is not ready
+- WHEN the user opens Voice Profiles from the setup screen
+- THEN the app loads saved profiles so they can be inspected or deleted
+
+Evidence: `apps/desktop/src/App.tsx`, `apps/desktop/src/lib/sidecar.ts`, `src/tts_mcp/desktop.py`
+
+### DVP-provider-preparation
+
+The desktop UI SHALL persist the selected provider and download model assets
+only after the user explicitly starts preparation.
+
+#### Scenario: select a provider without preparing it
+
+- GIVEN the user selects VieNeu in the desktop app
+- WHEN the user has not started preparation
+- THEN the app stores the selection and does not download model assets
+
+Evidence: `apps/desktop/src/App.tsx`, `tests/test_desktop_vieneu.py`
+
+### DVP-provider-selection
+
+The desktop sidecar SHALL accept only `omnivoice` or `vieneu` for
+`prepare_model` and `synthesize` requests and reject unknown or missing IDs
+before provider work.
+
+#### Scenario: unknown provider rejected
+
+- GIVEN a sidecar request has an unknown or missing provider
+- WHEN it requests preparation or synthesis
+- THEN the sidecar returns `invalid_input` without invoking either provider
+
+Evidence: `src/tts_mcp/desktop.py`, `tests/test_desktop.py`
+
+### DVP-provider-status
+
+The desktop sidecar SHALL report model readiness separately from runtime and
+preprocessing availability and include VieNeu presets and its default voice
+from a valid local manifest.
+
+#### Scenario: inspect provider status
+
+- GIVEN VieNeu has a valid local manifest
+- WHEN the UI requests `status`
+- THEN the response includes VieNeu preset entries and the default preset,
+  independently of runtime and model readiness
+
+Evidence: `src/tts_mcp/desktop.py`, `src/tts_mcp/desktop_vieneu.py`, `tests/test_desktop.py`, `tests/test_desktop_vieneu.py`
+
+### DVP-provider-surface
+
+The desktop and terminal interfaces SHALL keep their provider support split:
+the desktop offers OmniVoice and VieNeu, while standalone CLI generation uses
+OmniVoice only.
+
+#### Scenario: choose a desktop provider
+
+- GIVEN the user opens the desktop workspace
+- WHEN the provider selector is displayed
+- THEN it offers OmniVoice and VieNeu with OmniVoice selected by default
+
+#### Scenario: generate through the standalone CLI
+
+- GIVEN the user invokes a terminal generation command
+- WHEN the command runs
+- THEN it uses OmniVoice without a provider selector
+
+Evidence: `apps/desktop/src/App.tsx`, `src/tts_mcp/cli.py`, `tests/test_cli.py`, `tests/test_desktop.py`
+
+### DVP-saved-preset-routing
+
+The desktop sidecar SHALL route a saved VieNeu preset profile to its stored
+preset ID for VieNeu and use its saved reference WAV and transcript for
+OmniVoice when present.
+
+#### Scenario: synthesize a seeded profile with VieNeu
+
+- GIVEN a saved VieNeu profile has a preset ID and generated reference audio
+- WHEN the desktop selects the VieNeu provider
+- THEN the sidecar invokes the existing manifest-preset path with its stored ID
+
+#### Scenario: synthesize a seeded profile with OmniVoice
+
+- GIVEN a saved VieNeu profile has reference audio and its transcript
+- WHEN the desktop selects OmniVoice
+- THEN the sidecar generates from that audio and transcript
+
+#### Scenario: use a preset-only profile with OmniVoice
+
+- GIVEN a saved VieNeu profile has no reference audio
+- WHEN the desktop selects OmniVoice
+- THEN the sidecar returns guidance to use VieNeu or seed the profile
+
+Evidence: `src/tts_mcp/desktop.py`, `src/tts_mcp/engine.py`, `tests/test_desktop.py`
+
+### DVP-vieneu-output-contract
+
+VieNeu synthesis SHALL accept only WAV or MP3 output and save converted audio
+from a readable 48 kHz WAV produced by `audiocpp_cli`.
+
+#### Scenario: export VieNeu audio
+
+- GIVEN VieNeu produces a readable 48 kHz WAV and the requested output is WAV
+  or MP3
+- WHEN synthesis completes
+- THEN the sidecar saves the selected format and returns its path and format
+
+Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/convert.py`, `tests/test_desktop_vieneu.py`
+
+### DVP-vieneu-seed-pack
+
+Volo AI SHALL let the user seed every preset in the validated local VieNeu manifest as one saved profile containing its preset ID and a generated Clone reference WAV with its transcript, and show the preset's human-readable manifest name in Voice Profiles.
+
+#### Scenario: seed the VieNeu catalog
+
+- GIVEN VieNeu's model, preprocessing, runtime, and manifest are ready and no preset ID or generated profile name is ambiguous
+- WHEN the user starts Seed VieNeu voices
+- THEN the app saves one provider-capable profile per manifest preset, reports per-preset progress, and stores generated WAVs outside Audio History
+
+#### Scenario: repeat or resume a seed run
+
+- GIVEN a previous run already saved valid profiles for some preset IDs
+- WHEN the user starts Seed VieNeu voices again
+- THEN the app reuses those profiles and WAVs, creates no duplicate profile or WAV, and retries only missing or invalid entries
+
+#### Scenario: concurrent seed requests for one preset
+
+- GIVEN no saved profile exists for a manifest preset
+- WHEN two Seed VieNeu voices requests process that preset concurrently
+- THEN both requests resolve to the same profile identity and only one profile and one valid WAV are persisted
+
+#### Scenario: continue after a preset failure
+
+- GIVEN generating one preset's reference WAV fails or the batch is cancelled
+- WHEN the seed operation returns
+- THEN successful profiles remain saved and the result identifies failed or unfinished preset IDs for a later retry
+
+#### Scenario: preserve a conflicting profile
+
+- GIVEN a Clone or Design profile already uses the stable name for a preset
+- WHEN the user seeds the catalog
+- THEN the existing profile remains unchanged and the preset is reported as unresolved without adding a duplicate profile
+
+Evidence: `apps/desktop/src/App.tsx`, `apps/desktop/src/lib/sidecar.ts`, `src/tts_mcp/desktop.py`, `src/tts_mcp/desktop_vieneu.py`, `tests/test_desktop.py`, `tests/test_desktop_vieneu.py`
+
+### DVP-vieneu-voice-modes
+
+VieNeu synthesis SHALL accept a validated manifest preset, a saved Clone
+profile, or one-off reference audio, and reject saved Design profiles and
+OmniVoice-only generation controls.
+
+#### Scenario: use a saved Clone profile
+
+- GIVEN the voice library contains a Clone profile with reference audio
+- WHEN VieNeu synthesizes from that profile
+- THEN it uses the profile audio without a transcript
+
+Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test_desktop.py`, `tests/test_desktop_vieneu.py`
 
 ## Flow
 
-1. The UI asks the sidecar for `status` and shows both provider records. The
-   selected provider is persisted as `volo-ai.provider`.
-2. An explicit setup action sends `prepare_model` with the selected provider.
-   OmniVoice uses `Engine.ensure_model`; VieNeu downloads its pinned GGUF,
-   manifest, every manifest-listed preset asset, and CAM++ speaker encoder.
-   Progress is emitted on the JSONL stream and cancellation raises a
-   `cancelled` response.
-3. Synthesis sends the selected provider with the request. For VieNeu presets,
-   the sidecar validates `preset_id`, phonemizes text, and passes the preset's
-   reference-code and speaker-embedding files to `audiocpp_cli` with the `tts`
-   task. For a saved Clone, it resolves the profile's reference audio from the
-   existing voice library; for a one-off file, it normalizes the selected
-   recording. Both clone paths compute or reuse a CAM++ speaker embedding and
-   invoke the VieNeu `tts` task with `--voice-ref`.
-4. The sidecar requires a readable 48 kHz WAV from audio.cpp, then writes WAV
-   or MP3 through the existing `save_audio` conversion path and returns the
-   existing `{audio_path, format}` result.
+1. The UI asks the sidecar for `status`, displays both providers, and persists
+   the selected provider as `volo-ai.provider`. The default selection is
+   OmniVoice. MCP provider behavior is documented in the
+   [MCP voice library](mcp-voice-library.md).
+2. VieNeu status reads the validated local manifest for `preset_voices` and
+   `default_voice`. The UI sends `prepare_model` only after the user chooses to
+   prepare. VieNeu then downloads its pinned GGUF, manifest, listed preset
+   assets, and CAM++ speaker encoder; progress and cancellation use the JSONL
+   stream.
+3. For synthesis, the sidecar validates the requested provider and voice mode.
+   Direct presets and seeded VieNeu profiles use their manifest ID. When
+   OmniVoice is selected, a seeded profile uses its stored reference WAV and
+   transcript; a preset-only profile returns guidance to select VieNeu or seed
+   the voice. Clone profiles without a VieNeu preset ID use their reference
+   audio with VieNeu. One-off references are normalized before VieNeu calls
+   `audiocpp_cli`. Design profiles are not supported by VieNeu.
+4. The provider phonemizes text and invokes `audiocpp_cli` with its `tts` task.
+   It requires a readable 48 kHz WAV, then writes WAV or MP3 through
+   `save_audio` and returns `{audio_path, format}`.
 
 ## State changes
 
-- Provider preference is stored in the desktop browser's local storage.
-- VieNeu model assets are stored below `models/vieneu`; derived speaker
-  embeddings are cached below `models/vieneu/speaker-embeddings` by source
-  audio content hash.
+- The selected provider is stored in browser local storage. Profile data stays
+  in the shared SQLite voice library. A preset-only profile stores its name and
+  manifest ID; a seeded profile also owns its generated reference WAV and
+  transcript. Seeding does not copy or change VieNeu model assets.
+- VieNeu assets are stored below `models/vieneu`. Derived speaker embeddings
+  for reference cloning are cached below `models/vieneu/speaker-embeddings` by
+  source audio content hash.
 - Generated files are stored below the configured data directory's `outputs`.
-- Saved profiles remain in the existing SQLite-backed voice library. Selecting
-  a one-off reference does not add a profile.
+  Selecting one-off reference audio does not add a profile.
 
 ## Side effects
 
-- VieNeu preparation downloads from the pinned Hugging Face repository and
-  revision declared in `desktop_vieneu.py`.
+- VieNeu preparation downloads the pinned repository assets declared by
+  `src/tts_mcp/desktop_vieneu.py`.
 - Reference files are normalized by FFmpeg to mono, 48 kHz PCM WAV in a
-  temporary directory. The temporary normalized file is removed after the CLI
-  call.
-- Each VieNeu synthesis starts the bundled or configured native CPU
-  `audiocpp_cli`. The desktop release packages it beside the Python sidecar.
-- Synthesis writes a new output file. MP3 conversion uses the existing FFmpeg
-  and pydub path and keeps the 48 kHz source rate.
+  temporary directory. The temporary file is removed after the CLI call.
+- Each VieNeu synthesis starts the bundled or configured CPU `audiocpp_cli`.
+  The desktop release stages the native binary beside the Python sidecar.
+- Voice Profiles seeding runs locally after readiness checks, stores WAVs with
+  profile assets, and does not add them to Audio History.
+- Synthesis writes an output file. MP3 conversion uses the existing FFmpeg and
+  pydub path.
 
 ## Authorization & constraints
 
-- The desktop sidecar is a local JSONL process; it has no account or remote
+- The desktop sidecar is a local JSONL process and has no account or remote
   authorization layer.
-- The supported languages are English and Vietnamese. Outputs are WAV or MP3;
-  reference files may be WAV, MP3, FLAC, or OGG.
-- VieNeu readiness requires a valid GGUF, valid local manifest, all listed
-  preset reference-code and speaker-embedding files, and the CAM++ encoder.
-  Runtime and preprocessing availability are reported separately.
-- Preset IDs are validated against the manifest. Saved voice synthesis accepts
-  Clone profiles only; the shared library schema is unchanged.
-- VieNeu output is 48 kHz. The UI hides OmniVoice speed and advanced settings
-  for that provider; OmniVoice retains its existing controls.
+- Supported synthesis languages are English and Vietnamese. VieNeu outputs
+  WAV or MP3; reference files may be WAV, MP3, FLAC, or OGG.
+- VieNeu readiness requires a valid GGUF, local manifest, every listed preset
+  reference-code and speaker-embedding file, the CAM++ encoder, an available
+  audio.cpp runtime, and preprocessing support. Status reports these aspects
+  separately.
+- VieNeu preset IDs are validated against the manifest at save and synthesis
+  boundaries. Clone profiles work with either provider; Design profiles work
+  with OmniVoice only. Seeded VieNeu profiles route to the preset ID with
+  VieNeu and to their WAV/transcript with OmniVoice; preset-only profiles need
+  VieNeu.
+- VieNeu does not consume OmniVoice speed or generation settings and does not
+  apply speed post-processing. The standalone CLI remains OmniVoice-only.
 
 ## Error paths
 
 - Missing or unknown provider IDs return `invalid_input` before provider work.
-- Invalid manifests expose no preset list. Invalid or incomplete assets remain
-  not-ready and can be retried; cancellation leaves valid partial files for
-  reuse on retry.
-- Missing audio.cpp runtime or VieNeu preprocessing is reported in provider
-  status. A missing audio.cpp output or non-48 kHz WAV fails synthesis, and an
+- An invalid manifest exposes no preset list. Invalid or incomplete assets
+  remain not-ready and can be retried; cancellation leaves valid partial files
+  available for retry.
+- Missing audio.cpp runtime or VieNeu preprocessing is reported in status. A
+  missing CLI output or unreadable/non-48 kHz WAV fails synthesis, and an
   incomplete final output is removed.
-- Unknown presets, missing references, unsupported Design profiles, and
-  invalid language or format return structured input or operation errors.
+- Seeding requires the manifest, model, preprocessing, and runtime to be ready;
+  it does not download assets. Per-preset errors and unfinished IDs remain
+  visible so the user can retry.
+- Unknown presets, missing references, unsupported Design profiles, invalid
+  language or format, and incompatible generation settings return structured
+  errors.
 
 ## Tests
 
-- `tests/test_desktop.py` checks provider status, required provider IDs,
-  OmniVoice routing, VieNeu routing and Design-profile rejection, and
-  preparation cancellation over JSONL.
-- `tests/test_desktop_vieneu.py` checks pinned asset validation, manifest
-  presets/default, cancellation and retry, runtime reporting, preset and Clone
-  synthesis, one-off reference normalization, output cleanup, and 48 kHz WAV
-  and MP3 paths.
-- `tests/test_build_sidecar.py` checks target-named Python and audio.cpp binary
-  staging and PyInstaller collection of the optional VieNeu packages.
+- `tests/test_desktop.py` checks provider status, provider-ID validation,
+  provider routing, seeded-profile asset selection, pure-preset OmniVoice
+  guidance, Design rejection, seed retries/cancellation, and preparation
+  behavior.
+- `tests/test_desktop_vieneu.py` checks asset and manifest validation,
+  cancellation and retry, runtime reporting, preset and Clone synthesis,
+  reference normalization, output cleanup, and 48 kHz WAV/MP3 paths.
+- `tests/test_build_sidecar.py` checks target-named sidecar and audio.cpp
+  staging and collection of the optional VieNeu packages.
+- `tests/test_cli.py` covers terminal command behavior and VieNeu preset
+  profile labels.
 
 ## Related
 
@@ -105,9 +271,9 @@
 
 - `src/tts_mcp/desktop.py`
 - `src/tts_mcp/desktop_vieneu.py`
-- `src/tts_mcp/server.py`
 - `src/tts_mcp/engine.py`
 - `src/tts_mcp/convert.py`
+- `src/tts_mcp/cli.py`
 - `apps/desktop/src/App.tsx`
 - `apps/desktop/src/lib/i18n.ts`
 - `apps/desktop/src/lib/sidecar.ts`
@@ -116,6 +282,5 @@
 - `pyproject.toml`
 - `tests/test_desktop.py`
 - `tests/test_desktop_vieneu.py`
-- `tests/test_server.py`
 - `tests/test_build_sidecar.py`
-- `docs/desktop-development.md`
+- `tests/test_cli.py`

@@ -46,7 +46,7 @@ class SidecarBuildTests(unittest.TestCase):
             ]
             self.assertEqual(
                 collected,
-                ["omnivoice", "vieneu", "vieneu_utils", "onnxruntime"],
+                ["omnivoice", "vieneu", "vieneu_utils", "sea_g2p", "onnxruntime"],
             )
             self.assertIn("--add-binary", command)
             self.assertIn(f"{ffmpeg.resolve()}:.", command)

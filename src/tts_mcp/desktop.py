@@ -8,6 +8,7 @@ import math
 import os
 import queue
 import sys
+import tempfile
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -27,10 +28,14 @@ from tts_mcp.engine import (
 from tts_mcp.desktop_vieneu import VieNeuProvider
 
 OUTPUT_DIR = DATA_DIR / "outputs"
+AUDIO_HISTORY_PAGE_SIZE = 50
 ALLOWED_FORMATS = {"wav", "mp3"}
 ALLOWED_REFERENCE_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg"}
 GENERATION_BOOLEAN_KEYS = {"denoise", "preprocess_prompt", "postprocess_output"}
 GENERATION_POSITIVE_KEYS = {"audio_chunk_duration", "audio_chunk_threshold"}
+VIENEU_SEED_REFERENCE_TEXT = (
+    "Xin chào. Đây là mẫu giọng được tạo để lưu vào thư viện giọng nói của bạn."
+)
 
 
 def _ok(request_id: str, result: Any) -> dict[str, Any]:
@@ -166,7 +171,17 @@ def _synthesize(request: dict[str, Any], engine: Engine) -> dict[str, Any]:
         if not isinstance(voice_name, str) or not voice_name.strip():
             raise ValueError("Voice profile name must be a non-empty string")
         profile = engine.load_voice_profile(voice_name)
-        if profile["kind"] == "design":
+        if profile["kind"] == "vieneu_preset":
+            ref_audio = profile.get("ref_audio")
+            ref_text = profile.get("ref_text")
+            if not isinstance(ref_audio, str) or not isinstance(ref_text, str):
+                raise ValueError(
+                    f"VieNeu preset profile '{voice_name}' has no saved Clone reference; "
+                    "select provider='vieneu' or seed the VieNeu voices first"
+                )
+            kwargs["ref_audio"] = _validate_reference_audio(ref_audio)
+            kwargs["ref_text"] = ref_text
+        elif profile["kind"] == "design":
             kwargs["instruct"] = profile["instruct"]
         else:
             kwargs["voice_clone_prompt"] = profile["prompt"]
@@ -274,7 +289,43 @@ def _list_audio_history() -> list[dict[str, Any]]:
                 "metadata_available": record is not None,
             }
         )
-    return sorted(items, key=lambda item: item["created_at"], reverse=True)
+    items.sort(key=lambda item: item["id"])
+    items.sort(key=lambda item: item["created_at"], reverse=True)
+    return items
+
+
+def _list_audio_history_page(cursor: Any) -> dict[str, Any]:
+    if cursor is not None and (
+        not isinstance(cursor, dict)
+        or set(cursor) != {"created_at", "id"}
+        or not isinstance(cursor["created_at"], str)
+        or not cursor["created_at"].strip()
+        or not isinstance(cursor["id"], str)
+        or not cursor["id"].strip()
+    ):
+        raise ValueError("Audio history cursor must contain created_at and id strings")
+
+    items = _list_audio_history()
+    total = len(items)
+    if cursor is not None:
+        items = [
+            item
+            for item in items
+            if item["created_at"] < cursor["created_at"]
+            or (item["created_at"] == cursor["created_at"] and item["id"] > cursor["id"])
+        ]
+    page = items[:AUDIO_HISTORY_PAGE_SIZE]
+    has_more = len(items) > AUDIO_HISTORY_PAGE_SIZE
+    last_item = page[-1] if has_more else None
+    return {
+        "items": page,
+        "total": total,
+        "next_cursor": (
+            {"created_at": last_item["created_at"], "id": last_item["id"]}
+            if last_item
+            else None
+        ),
+    }
 
 
 def _delete_audio_history(file_name: Any) -> bool:
@@ -298,6 +349,157 @@ def _delete_audio_history(file_name: Any) -> bool:
     resolved.unlink()
     Engine.delete_audio_history(file_name)
     return True
+
+
+def _readable_seed_reference(profile: dict[str, Any]) -> Path | None:
+    value = profile.get("ref_audio")
+    if (
+        profile.get("ref_text") != VIENEU_SEED_REFERENCE_TEXT
+        or not isinstance(value, str)
+        or Path(value).suffix.lower() != ".wav"
+    ):
+        return None
+    try:
+        return Path(_validate_reference_audio(value))
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def _seed_vieneu_voices(
+    request_id: str,
+    engine: Engine,
+    provider: VieNeuProvider,
+    emit: Callable[[dict[str, Any]], None] | None,
+    should_cancel: Callable[[], bool] | None,
+) -> dict[str, Any]:
+    status = provider.status()
+    presets = status.get("preset_voices") if isinstance(status, dict) else None
+    if not isinstance(presets, list) or not presets:
+        raise RuntimeError(
+            "VieNeu preset manifest is unavailable or invalid; check the local preset manifest."
+        )
+    preset_ids = [
+        voice.get("id") if isinstance(voice, dict) else None for voice in presets
+    ]
+    if (
+        any(not isinstance(preset_id, str) or not preset_id for preset_id in preset_ids)
+        or len(set(preset_ids)) != len(preset_ids)
+    ):
+        raise RuntimeError("VieNeu preset manifest contains invalid or duplicate IDs.")
+    if not status.get("runtime_available"):
+        raise RuntimeError(
+            status.get("unavailable_reason")
+            or "audio.cpp CLI is unavailable; install the desktop runtime first."
+        )
+    if not status.get("preprocessing_available"):
+        raise RuntimeError(
+            status.get("unavailable_reason")
+            or "VieNeu preprocessing is unavailable; install tts-mcp[desktop-vieneu]."
+        )
+    if not status.get("model_ready"):
+        raise RuntimeError(
+            status.get("unavailable_reason")
+            or "VieNeu model assets are not ready; prepare VieNeu before seeding voices."
+        )
+
+    outcomes: list[dict[str, str]] = []
+    failed: list[dict[str, str]] = []
+    unfinished: list[str] = []
+    cancelled = False
+    for current, preset in enumerate(presets, start=1):
+        preset_id = preset["id"]
+        if should_cancel and should_cancel():
+            unfinished.extend(voice["id"] for voice in presets[current - 1 :])
+            cancelled = True
+            break
+        if emit:
+            emit(
+                {
+                    "id": request_id,
+                    "event": "progress",
+                    "phase": "seed_vieneu",
+                    "preset_id": preset_id,
+                    "current": current,
+                    "total": len(presets),
+                    "message": preset.get("name") or preset_id,
+                }
+            )
+        try:
+            voices = Engine.list_voices()
+            matches = [
+                voice
+                for voice in voices
+                if voice.get("kind") == "vieneu_preset"
+                and voice.get("preset_id") == preset_id
+            ]
+            if len(matches) > 1:
+                raise ValueError(f"Multiple voice profiles use VieNeu preset ID '{preset_id}'")
+            if matches:
+                profile_name = matches[0]["name"]
+                reference = _readable_seed_reference(matches[0])
+                item_status = "reused" if reference else "updated"
+            else:
+                profile_name = preset_id
+                collision = next(
+                    (voice for voice in voices if voice.get("name") == profile_name), None
+                )
+                if collision:
+                    raise ValueError(
+                        f"A {collision.get('kind', 'voice')} voice profile named "
+                        f"'{profile_name}' already exists"
+                    )
+                reference = None
+                item_status = "created"
+
+            if reference is None:
+                with tempfile.TemporaryDirectory(prefix="vieneu-seed-") as temporary:
+                    temporary_dir = Path(temporary)
+                    output_path = temporary_dir / "reference.wav"
+                    provider.synthesize(
+                        {
+                            "text": VIENEU_SEED_REFERENCE_TEXT,
+                            "language": "vi",
+                            "format": "wav",
+                            "voice": "preset",
+                            "preset_id": preset_id,
+                        },
+                        voices,
+                        temporary_dir,
+                        output_path=output_path,
+                    )
+                    if not output_path.is_file():
+                        raise RuntimeError("VieNeu did not produce a reference WAV")
+                    _validate_reference_audio(str(output_path))
+                    reference = output_path
+                    engine.save_vieneu_seed_reference(
+                        preset_id,
+                        profile_name,
+                        str(reference),
+                        VIENEU_SEED_REFERENCE_TEXT,
+                    )
+            else:
+                engine.save_vieneu_seed_reference(
+                    preset_id,
+                    profile_name,
+                    str(reference),
+                    VIENEU_SEED_REFERENCE_TEXT,
+                )
+            outcomes.append(
+                {
+                    "preset_id": preset_id,
+                    "name": profile_name,
+                    "status": item_status,
+                }
+            )
+        except Exception as exc:
+            failed.append({"preset_id": preset_id, "message": str(exc)})
+
+    return {
+        "profiles": outcomes,
+        "failed": failed,
+        "unfinished": unfinished,
+        "cancelled": cancelled,
+    }
 
 
 def dispatch_request(
@@ -360,7 +562,26 @@ def dispatch_request(
                 result = _synthesize(request, engine)
             else:
                 provider = vieneu_provider or VieNeuProvider(DATA_DIR)
-                result = provider.synthesize(request, Engine.list_voices(), OUTPUT_DIR)
+                voices = Engine.list_voices()
+                provider_request = request
+                if request.get("voice") == "profile":
+                    voice_name = request.get("voice_name")
+                    profile = next(
+                        (
+                            voice
+                            for voice in voices
+                            if isinstance(voice_name, str) and voice.get("name") == voice_name
+                        ),
+                        None,
+                    )
+                    if profile and profile.get("kind") == "vieneu_preset":
+                        provider_request = {
+                            **request,
+                            "voice": "preset",
+                            "preset_id": profile["preset_id"],
+                        }
+                        provider_request.pop("voice_name", None)
+                result = provider.synthesize(provider_request, voices, OUTPUT_DIR)
             _record_audio_history(request, provider_id, result)
             return _ok(request_id, result)
         if operation == "save_voice":
@@ -374,14 +595,47 @@ def dispatch_request(
             language = validate_language(request.get("language", "en"))
             engine.save_design_voice(name, request["design_instruction"], language)
             return _ok(request_id, {"name": name, "kind": "design"})
+        if operation == "save_vieneu_preset":
+            name = request["name"]
+            preset_id = request["preset_id"]
+            provider = vieneu_provider or VieNeuProvider(DATA_DIR)
+            preset_voices = provider.status().get("preset_voices", [])
+            if not isinstance(preset_voices, list) or not preset_voices:
+                raise ValueError(
+                    "VieNeu preset list is unavailable; prepare VieNeu to load its local manifest"
+                )
+            if not any(
+                isinstance(voice, dict) and voice.get("id") == preset_id
+                for voice in preset_voices
+            ):
+                raise ValueError(f"Unknown VieNeu preset ID: {preset_id}")
+            saved_name = engine.save_vieneu_preset(name, preset_id)
+            return _ok(
+                request_id,
+                {"name": saved_name, "kind": "vieneu_preset", "preset_id": preset_id},
+            )
         if operation == "import_seed_voices":
             seed_dir = request["seed_dir"]
             if not isinstance(seed_dir, str) or not seed_dir.strip():
                 raise ValueError("Seed directory must be a non-empty string")
             return _ok(request_id, engine.import_seed_voices(seed_dir))
+        if operation == "seed_vieneu_voices":
+            provider = vieneu_provider or VieNeuProvider(DATA_DIR)
+            return _ok(
+                request_id,
+                _seed_vieneu_voices(request_id, engine, provider, emit, should_cancel),
+            )
         if operation == "list_voices":
             return _ok(request_id, {"voices": Engine.list_voices()})
         if operation == "list_audio_history":
+            paginated = request.get("paginated", False)
+            if not isinstance(paginated, bool):
+                raise ValueError("paginated must be a boolean")
+            cursor = request.get("cursor")
+            if paginated:
+                return _ok(request_id, _list_audio_history_page(cursor))
+            if cursor is not None:
+                raise ValueError("cursor requires paginated audio history")
             return _ok(request_id, {"items": _list_audio_history()})
         if operation == "delete_audio_history":
             if "file_name" not in request:
@@ -426,7 +680,7 @@ def run_protocol(
     engine: Engine,
     vieneu_provider: VieNeuProvider | None = None,
 ) -> None:
-    """Run the sidecar protocol, allowing cancel during model preparation."""
+    """Run the sidecar protocol, allowing cancellation of long operations."""
     requests: queue.Queue[dict[str, Any] | None] = queue.Queue()
     active: dict[str, threading.Event] = {}
     workers: set[threading.Thread] = set()
@@ -464,16 +718,16 @@ def run_protocol(
                 event.set()
                 write(_ok(request_id, {"cancelled": target_id}))
             else:
-                write(_error(request_id, "not_found", "No active download for request"))
+                write(_error(request_id, "not_found", "No active operation for request"))
             continue
-        if operation == "prepare_model":
-            if active:
+        if operation in {"prepare_model", "seed_vieneu_voices"}:
+            if operation == "prepare_model" and active:
                 write(_error(request_id, "busy", "A model download is already running"))
                 continue
             cancel_event = threading.Event()
             active[request_id] = cancel_event
 
-            def prepare(
+            def run_long_operation(
                 request=request,
                 request_id=request_id,
                 cancel_event=cancel_event,
@@ -492,7 +746,7 @@ def run_protocol(
                     active.pop(request_id, None)
                     workers.discard(threading.current_thread())
 
-            worker = threading.Thread(target=prepare, daemon=True)
+            worker = threading.Thread(target=run_long_operation, daemon=True)
             workers.add(worker)
             worker.start()
             continue

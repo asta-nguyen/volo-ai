@@ -81,7 +81,11 @@ TTS_MCP_FFMPEG_PATH = "/absolute/path/to/ffmpeg"
 
 Without this setting, the server keeps using `~/.tts-mcp` as a separate store.
 When the shared path is set, `save_voice` and `delete_voice` change the app's
-voice library too; saving a profile with an existing name replaces it.
+voice library too. Clone and Design saves replace an existing same-named
+Clone/Design profile; they cannot replace a VieNeu preset profile.
+The SQLite schema upgrade is forward-only, so update every desktop and MCP
+installation that shares this directory before opening the upgraded library;
+older binaries reject newer schema versions.
 
 `TTS_MCP_AUDIOCPP_PATH` points the MCP process to the CPU `audiocpp_cli`
 executable required by VieNeu. Set `TTS_MCP_FFMPEG_PATH` when FFmpeg is not on
@@ -175,6 +179,26 @@ For a one-off reference file, omit `voice` and pass `ref_audio_path`:
 VieNeu does not consume `ref_text` and cannot use Design profiles. Omitting
 `provider` keeps existing OmniVoice behavior. VieNeu does not download assets
 automatically and never falls back to OmniVoice; run `prepare_model` first.
+
+To reuse a named VieNeu preset profile, first save it in Volo AI under
+**Voice Profiles** after the local preset catalog is available. This stores
+the profile name and preset ID; it does not copy or download audio or model
+files. `list_voices` shows the saved name. Then pass that name to `clone` with
+`provider: "vieneu"`:
+
+```json
+{
+  "text": "Xin chào.",
+  "output_path": "/tmp/vieneu-saved-preset.wav",
+  "provider": "vieneu",
+  "voice": "My-VieNeu-Voice",
+  "language": "vi"
+}
+```
+
+The shared `TTS_MCP_DATA_DIR` must point to Volo AI's storage directory for MCP
+to see the profile. A saved VieNeu preset is VieNeu-only; the same profile name
+cannot be overwritten by a Clone or Design save.
 
 For Claude Code:
 

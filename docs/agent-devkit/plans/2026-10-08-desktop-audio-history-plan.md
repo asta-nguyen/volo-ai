@@ -139,6 +139,51 @@ Verify: `rtk npm --prefix apps/desktop run build`.
   history metadata are removed. A failed delete → row remains with a visible
   error.
 
+### Task 4 — Paginate Audio History in the sidecar and desktop
+
+Files:
+
+- `src/tts_mcp/desktop.py::_list_audio_history`, `dispatch_request`
+- `tests/test_desktop.py::DesktopWorkerTests`
+- `apps/desktop/src/lib/sidecar.ts::AudioHistoryItem`
+- `apps/desktop/src/App.tsx::AudioHistoryView`, `refreshAudioHistory`
+- `apps/desktop/src/lib/i18n.ts::createUiCopy`
+
+Interfaces: Keep the existing full-list request for older callers. A paginated
+request sends `paginated: true` and an optional cursor
+`{created_at, id}`; both cursor fields must be non-empty strings. It returns
+`{items, total, next_cursor}`, with 50 items per page and
+`next_cursor: null` on the last page. Order items by creation time descending,
+then ID ascending; the cursor resumes strictly after that pair. Reject an
+invalid cursor with a structured sidecar error.
+
+Change: Reconcile metadata and legacy files as today, then return one page.
+Preserve legacy file names, modification dates, null synthesis metadata, and
+newest-first ordering. The History view loads the first page on entry/retry and
+appends later pages with a localized Load more control; a failed later page
+keeps already loaded rows. Show the loaded count alongside the total. Refresh
+starts at the first page. Deletion removes the item from the loaded list and
+adjusts the displayed total. No audio files are pruned and no schema migration
+is added. The current legacy-file discovery still scans `outputs` for each
+page; this bounds responses and rendered cards, not directory-scan cost.
+
+Verify:
+
+- `test_list_audio_history_pages_legacy_and_recorded_files` — a mixed set of
+  more than 50 outputs is returned in stable order with total count, no gaps or
+  duplicates across cursors, and legacy metadata remains file-only.
+- An omitted `paginated` flag → the existing full-list response remains
+  available to older callers.
+- Desktop production build succeeds; manual History QA verifies first-page,
+  Load more, retry/reset, and deletion across a page boundary.
+
+Files inspected, no change:
+
+- `src/tts_mcp/engine.py::Engine.list_audio_history` — retain the current
+  metadata source and schema; pagination is applied after file reconciliation.
+- `apps/desktop/src/lib/sidecar.ts::SidecarClient.request` — existing generic
+  JSONL transport carries the additive request fields.
+
 ## Files reviewed during planning
 
 - `docs/llm/architecture/overview.md` — confirms app-data paths, SQLite, and
@@ -185,31 +230,49 @@ Tasks 1–3 are implemented. Focused verification passed:
 - The wiki architecture map and feature inventory now include Audio History;
   a dedicated workflow page was not added.
 
-The full Python suite ran 70 tests but is not green in the current working
-tree: `test_builder_stages_both_binaries_for_target` expects the staged
-packager's older package list, and `test_server` cannot import
+The full Python suite ran 70 tests and was not green at that earlier
+verification snapshot: `test_builder_stages_both_binaries_for_target` expected
+the staged packager's older package list, and `test_server` could not import
 `mcp.client.Client` from the installed MCP SDK. `tauri build --debug --bundles
-app` produced the debug `.app`; the default all-bundles command still fails
-when its `bundle_dmg.sh` step creates a `.dmg`. The six-output cross-provider
-desktop restart/playback/delete QA remains unrun.
+app` produced the debug `.app`; the default all-bundles command failed when its
+`bundle_dmg.sh` step created a `.dmg`.
+
+Follow-up verification on 2026-10-11: the full Python suite passed all 116
+tests, including the seeded-profile unlink-failure regression; Python compile,
+desktop production build, Tauri `cargo check`, and staged/unstaged diff checks
+passed. After the request-log retention change, the desktop build passed again
+with a 731.02 kB JavaScript chunk warning. The six-output cross-provider desktop
+restart/playback/delete QA remains unrun.
+
+Pagination review verification on 2026-10-11: focused desktop sidecar tests
+passed all 42 tests; Python compile, desktop production build, Tauri `cargo check`,
+and staged/unstaged diff checks passed. The build reports a 732.54 kB
+JavaScript chunk warning. The fresh full Python suite stopped with one import
+error because the installed `mcp.client` package does not export `Client` from
+`tests/test_server.py`; all loaded tests passed. Manual pagination QA remains
+unverified: the open desktop app has fewer than 50 outputs, and CUA clicks
+failed with `noWindowsAvailable`, so Load more and deletion across a page
+boundary were not exercised in the UI.
 
 ## Approval Gate
 
 Required: yes
-Reason: Adds a SQLite schema migration, two sidecar operations, and changes
-across the engine, sidecar, and desktop UI.
+Reason: Adds a paginated sidecar contract and changes the sidecar and desktop
+UI across multiple files.
 Status: approved
+Execution: open
 
 ## Decision Log
 
-None.
+2026-10-11: The user approved the 50-item cursor pagination proposal by
+requesting implementation after reviewing the plan summary.
 
 ## Impact map
 
-Entry: `src/tts_mcp/desktop.py::dispatch_request`; `apps/desktop/src/App.tsx::synthesize` and desktop view routing
-Flow: React `synthesize` → `SidecarClient.request` → desktop JSONL `dispatch_request` → OmniVoice `_synthesize` or `VieNeuProvider.synthesize` → `OUTPUT_DIR`; `list_audio_history`/`delete_audio_history` sidecar operations → React Audio History view
-State changes: SQLite `volo.db` schema v3 adds synthesis metadata; audio remains in the existing app-data `outputs` directory; no automatic audio deletion
-External effects: local SQLite writes; local file discovery, playback, and confirmed deletion; no network effect
-Change candidates: `src/tts_mcp/engine.py`, `src/tts_mcp/desktop.py`, `tests/test_engine.py`, `tests/test_desktop.py`, `apps/desktop/src/lib/sidecar.ts`, `apps/desktop/src/App.tsx`, `apps/desktop/src/lib/i18n.ts`
-Verification: focused engine and desktop sidecar tests; full Python unit suite; Python compile check; desktop UI build; manual local generation/history/delete check
-Verified at: `8a4205feba8f656ee61b6a3d8921c78e86406037`
+Entry: `src/tts_mcp/desktop.py::dispatch_request`; `apps/desktop/src/App.tsx::refreshAudioHistory`, `AudioHistoryView`
+Flow: React Audio History view → paginated JSONL `list_audio_history` → sidecar metadata/file reconciliation
+State changes: Existing SQLite schema v3 and local audio files remain unchanged; History responses and rendered rows are paged
+External effects: local file discovery and playback; no network effect or audio pruning
+Change candidates: `src/tts_mcp/desktop.py`, `tests/test_desktop.py`, `apps/desktop/src/lib/sidecar.ts`, `apps/desktop/src/App.tsx`, `apps/desktop/src/lib/i18n.ts`
+Verification: focused sidecar tests; desktop UI build; manual paginated History checks
+Verified at: `abc7680fefb68828aebb017bc1dcd8b05ab06f06`

@@ -51,9 +51,21 @@ def cmd_clone(args: argparse.Namespace) -> None:
         "normalize_text": args.normalize,
     }
     if args.voice:
-        # Use saved voice profile instead of raw ref audio
-        prompt = engine.load_voice(args.voice)
-        gen_kwargs["voice_clone_prompt"] = prompt
+        profile = engine.load_voice_profile(args.voice)
+        if profile["kind"] == "clone":
+            gen_kwargs["voice_clone_prompt"] = profile["prompt"]
+        elif profile["kind"] == "vieneu_preset":
+            ref_audio = profile.get("ref_audio")
+            ref_text = profile.get("ref_text")
+            if not isinstance(ref_audio, str) or not isinstance(ref_text, str):
+                raise ValueError(
+                    f"VieNeu preset profile '{args.voice}' has no saved Clone reference; "
+                    "seed the VieNeu voices before using it with the OmniVoice CLI"
+                )
+            gen_kwargs["ref_audio"] = ref_audio
+            gen_kwargs["ref_text"] = ref_text
+        else:
+            raise ValueError(f"Voice profile '{args.voice}' is a Design profile")
     else:
         gen_kwargs["ref_audio"] = args.ref
         if args.ref_text:
@@ -86,10 +98,17 @@ def cmd_voices(args: argparse.Namespace) -> None:
         return
     print(f"Saved voices ({len(voices)}):")
     for v in voices:
-        ref_text = v.get("ref_text") or "(auto-transcribed)"
         print(f"  • {v['name']}")
+        if v["kind"] == "vieneu_preset":
+            print("      provider: VieNeu")
+            print(f"      preset ID: {v['preset_id']}")
+            if v.get("ref_audio"):
+                print(f"      ref: {v['ref_audio']}")
+                print(f"      text: {v.get('ref_text') or '(auto-transcribed)'}")
+            continue
         print(f"      language: {v.get('language', 'en')}")
         print(f"      ref: {v.get('ref_audio', '?')}")
+        ref_text = v.get("ref_text") or "(auto-transcribed)"
         print(f"      text: {ref_text}")
 
 

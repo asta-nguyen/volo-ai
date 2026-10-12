@@ -35,7 +35,8 @@ SUPPORTED_LANGUAGES = ("en", "vi")
 REFERENCE_AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg"}
 VOICE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 SEED_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
-DB_SCHEMA_VERSION = 3
+PRESET_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+DB_SCHEMA_VERSION = 5
 _STORAGE_LOCK = threading.RLock()
 _MIGRATED_STORAGES: set[tuple[Path, Path]] = set()
 GENERATION_CONFIG_KEYS = frozenset(
@@ -243,6 +244,127 @@ def _open_database() -> sqlite3.Connection:
             """
         )
         connection.commit()
+        current_version = 3
+    if current_version < 4:
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """
+                CREATE TABLE voice_profiles_v4 (
+                    name TEXT PRIMARY KEY,
+                    language TEXT CHECK (language IN ('en', 'vi') OR language IS NULL),
+                    kind TEXT NOT NULL DEFAULT 'clone'
+                        CHECK (kind IN ('clone', 'design', 'vieneu_preset')),
+                    preset_id TEXT,
+                    ref_audio_path TEXT,
+                    prompt_path TEXT,
+                    design_instruction TEXT,
+                    ref_text TEXT,
+                    is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+                    seed_key TEXT,
+                    seed_version INTEGER,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    CHECK (
+                        (kind = 'clone' AND language IS NOT NULL AND preset_id IS NULL
+                            AND prompt_path IS NOT NULL AND design_instruction IS NULL)
+                        OR (kind = 'design' AND language IS NOT NULL AND preset_id IS NULL
+                            AND prompt_path IS NULL AND design_instruction IS NOT NULL)
+                        OR (kind = 'vieneu_preset' AND language IS NULL AND preset_id IS NOT NULL
+                            AND ref_audio_path IS NULL AND prompt_path IS NULL
+                            AND design_instruction IS NULL AND ref_text IS NULL
+                            AND is_default = 0 AND seed_key IS NULL AND seed_version IS NULL)
+                    )
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO voice_profiles_v4
+                    (name, language, kind, preset_id, ref_audio_path, prompt_path,
+                     design_instruction, ref_text, is_default, seed_key, seed_version,
+                     created_at, updated_at)
+                SELECT name, language, kind, NULL, ref_audio_path, prompt_path,
+                       design_instruction, ref_text, is_default, seed_key, seed_version,
+                       created_at, updated_at
+                FROM voice_profiles
+                """
+            )
+            connection.execute("DROP TABLE voice_profiles")
+            connection.execute("ALTER TABLE voice_profiles_v4 RENAME TO voice_profiles")
+            connection.execute(
+                """
+                CREATE UNIQUE INDEX idx_voice_profiles_default_language
+                    ON voice_profiles(language) WHERE is_default = 1
+                """
+            )
+            connection.execute("PRAGMA user_version = 4")
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            connection.close()
+            raise
+        current_version = 4
+    if current_version < 5:
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """
+                CREATE TABLE voice_profiles_v5 (
+                    name TEXT PRIMARY KEY,
+                    language TEXT CHECK (language IN ('en', 'vi') OR language IS NULL),
+                    kind TEXT NOT NULL DEFAULT 'clone'
+                        CHECK (kind IN ('clone', 'design', 'vieneu_preset')),
+                    preset_id TEXT,
+                    ref_audio_path TEXT,
+                    prompt_path TEXT,
+                    design_instruction TEXT,
+                    ref_text TEXT,
+                    is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+                    seed_key TEXT,
+                    seed_version INTEGER,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    CHECK (
+                        (kind = 'clone' AND language IS NOT NULL AND preset_id IS NULL
+                            AND prompt_path IS NOT NULL AND design_instruction IS NULL)
+                        OR (kind = 'design' AND language IS NOT NULL AND preset_id IS NULL
+                            AND prompt_path IS NULL AND design_instruction IS NOT NULL)
+                        OR (kind = 'vieneu_preset' AND language IS NULL AND preset_id IS NOT NULL
+                            AND prompt_path IS NULL AND design_instruction IS NULL
+                            AND ((ref_audio_path IS NULL AND ref_text IS NULL)
+                                OR (ref_audio_path IS NOT NULL AND ref_text IS NOT NULL))
+                            AND is_default = 0 AND seed_key IS NULL AND seed_version IS NULL)
+                    )
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO voice_profiles_v5
+                    (name, language, kind, preset_id, ref_audio_path, prompt_path,
+                     design_instruction, ref_text, is_default, seed_key, seed_version,
+                     created_at, updated_at)
+                SELECT name, language, kind, preset_id, ref_audio_path, prompt_path,
+                       design_instruction, ref_text, is_default, seed_key, seed_version,
+                       created_at, updated_at
+                FROM voice_profiles
+                """
+            )
+            connection.execute("DROP TABLE voice_profiles")
+            connection.execute("ALTER TABLE voice_profiles_v5 RENAME TO voice_profiles")
+            connection.execute(
+                """
+                CREATE UNIQUE INDEX idx_voice_profiles_default_language
+                    ON voice_profiles(language) WHERE is_default = 1
+                """
+            )
+            connection.execute("PRAGMA user_version = 5")
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            connection.close()
+            raise
     return connection
 
 
@@ -629,6 +751,11 @@ class Engine:
             current = connection.execute(
                 "SELECT * FROM voice_profiles WHERE name = ?", (name,)
             ).fetchone()
+            if current and current["kind"] == "vieneu_preset":
+                connection.close()
+                raise ValueError(
+                    f"Voice profile '{name}' is a VieNeu preset and cannot be replaced by a Clone"
+                )
             try:
                 reference_path = staging_dir / f"reference{source.suffix.lower()}"
                 prompt_path = staging_dir / "prompt.pt"
@@ -732,6 +859,11 @@ class Engine:
             current = connection.execute(
                 "SELECT * FROM voice_profiles WHERE name = ?", (name,)
             ).fetchone()
+            if current and current["kind"] == "vieneu_preset":
+                connection.close()
+                raise ValueError(
+                    f"Voice profile '{name}' is a VieNeu preset and cannot be replaced by a Design profile"
+                )
             try:
                 if profile_dir.exists():
                     profile_dir.rename(backup_dir)
@@ -791,6 +923,121 @@ class Engine:
             if backup_dir.exists():
                 shutil.rmtree(backup_dir, ignore_errors=True)
             return name
+
+    def save_vieneu_preset(self, name: str, preset_id: str) -> str:
+        """Save a named reference to a validated local VieNeu preset."""
+        name = self.validate_voice_name(name)
+        if not isinstance(preset_id, str) or not PRESET_ID_RE.fullmatch(preset_id):
+            raise ValueError("Invalid VieNeu preset ID")
+
+        with _STORAGE_LOCK, closing(self._open_storage()) as connection:
+            with connection:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO voice_profiles
+                        (name, language, kind, preset_id, ref_audio_path, prompt_path,
+                         design_instruction, ref_text, is_default, seed_key, seed_version,
+                         created_at, updated_at)
+                    VALUES (?, NULL, 'vieneu_preset', ?, NULL, NULL, NULL, NULL, 0,
+                            NULL, NULL, ?, ?)
+                    ON CONFLICT(name) DO NOTHING
+                    """,
+                    (name, preset_id, _utc_now(), _utc_now()),
+                )
+                if cursor.rowcount == 0:
+                    raise ValueError(f"A voice profile named '{name}' already exists")
+        return name
+
+    def save_vieneu_seed_reference(
+        self, preset_id: str, stable_name: str, wav_path: str, ref_text: str
+    ) -> str:
+        """Persist clone audio on the single profile that represents a preset."""
+        if not isinstance(preset_id, str) or not PRESET_ID_RE.fullmatch(preset_id):
+            raise ValueError("Invalid VieNeu preset ID")
+        stable_name = self.validate_voice_name(stable_name)
+        if not isinstance(ref_text, str) or not ref_text.strip():
+            raise ValueError("Reference transcript must be a non-empty string")
+        if not isinstance(wav_path, str) or not wav_path.strip():
+            raise ValueError("VieNeu seed reference path must be a non-empty string")
+        source = _validate_reference_audio_path(wav_path)
+        if source.suffix.lower() != ".wav":
+            raise ValueError("VieNeu seed reference must be a WAV file")
+
+        with _STORAGE_LOCK:
+            connection = self._open_storage()
+            target: Path | None = None
+            backup: Path | None = None
+            published = False
+            committed = False
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                matches = connection.execute(
+                    "SELECT name FROM voice_profiles WHERE kind = 'vieneu_preset' AND preset_id = ?",
+                    (preset_id,),
+                ).fetchall()
+                if len(matches) > 1:
+                    raise ValueError(f"Multiple voice profiles use VieNeu preset ID '{preset_id}'")
+                if matches:
+                    name = matches[0]["name"]
+                else:
+                    collision = connection.execute(
+                        "SELECT kind FROM voice_profiles WHERE name = ?", (stable_name,)
+                    ).fetchone()
+                    if collision:
+                        raise ValueError(
+                            f"A {collision['kind']} voice profile named '{stable_name}' already exists"
+                        )
+                    name = stable_name
+
+                voices_root = VOICES_DIR.resolve()
+                profile_dir = (VOICES_DIR / name).resolve()
+                if profile_dir != voices_root / name:
+                    raise RuntimeError("Voice profile directory escaped the voice library")
+                target = profile_dir / "reference.wav"
+                if source.resolve() != target.resolve():
+                    if target.exists():
+                        backup = profile_dir / f".reference.wav.backup-{uuid.uuid4().hex}"
+                        _copy_file_atomic(target, backup)
+                    _copy_file_atomic(source, target)
+                    published = True
+
+                now = _utc_now()
+                relative_path = _relative_data_path(target)
+                if matches:
+                    connection.execute(
+                        """
+                        UPDATE voice_profiles
+                        SET ref_audio_path = ?, ref_text = ?, updated_at = ?
+                        WHERE name = ?
+                        """,
+                        (relative_path, ref_text, now, name),
+                    )
+                else:
+                    connection.execute(
+                        """
+                        INSERT INTO voice_profiles
+                            (name, language, kind, preset_id, ref_audio_path, prompt_path,
+                             design_instruction, ref_text, is_default, seed_key, seed_version,
+                             created_at, updated_at)
+                        VALUES (?, NULL, 'vieneu_preset', ?, ?, NULL, NULL, ?, 0,
+                                NULL, NULL, ?, ?)
+                        """,
+                        (name, preset_id, relative_path, ref_text, now, now),
+                    )
+                connection.commit()
+                committed = True
+                return name
+            except Exception:
+                connection.rollback()
+                if published and target is not None:
+                    target.unlink(missing_ok=True)
+                    if backup and backup.exists():
+                        os.replace(backup, target)
+                raise
+            finally:
+                connection.close()
+                if backup and (committed or backup.exists()):
+                    backup.unlink(missing_ok=True)
 
     @staticmethod
     def _read_seed_manifest(seed_folder: Path) -> tuple[dict[str, Any], Path]:
@@ -928,11 +1175,18 @@ class Engine:
             with closing(self._open_storage()) as connection:
                 row = connection.execute(
                     """
-                    SELECT kind, prompt_path, design_instruction
+                    SELECT kind, prompt_path, design_instruction, preset_id,
+                           ref_audio_path, ref_text
                     FROM voice_profiles WHERE name = ?
                     """,
                     (name,),
                 ).fetchone()
+        if row and row["kind"] == "vieneu_preset":
+            profile = {"kind": "vieneu_preset", "preset_id": row["preset_id"]}
+            if row["ref_audio_path"]:
+                profile["ref_audio"] = str(_resolve_data_path(row["ref_audio_path"]))
+                profile["ref_text"] = row["ref_text"]
+            return profile
         if row and row["kind"] not in {"clone", "design"}:
             raise ValueError(f"Unsupported voice profile kind: {row['kind']}")
         if row and row["kind"] == "design":
@@ -952,6 +1206,8 @@ class Engine:
     def load_voice(self, name: str):
         """Load a saved voice clone prompt by name for CLI and MCP callers."""
         profile = self.load_voice_profile(name)
+        if profile["kind"] == "vieneu_preset":
+            raise ValueError(f"Voice profile '{name}' is a VieNeu preset; select provider='vieneu'")
         if profile["kind"] != "clone":
             raise ValueError(f"Voice profile '{name}' is a design profile")
         return profile["prompt"]
@@ -964,13 +1220,14 @@ class Engine:
                 rows = connection.execute(
                     """
                     SELECT name, language, kind, ref_audio_path, design_instruction,
-                           ref_text, is_default
+                           ref_text, is_default, preset_id
                     FROM voice_profiles
                     ORDER BY is_default DESC, language ASC, name ASC
                     """
                 ).fetchall()
-        return [
-            {
+        result = []
+        for row in rows:
+            profile = {
                 "name": row["name"],
                 "language": row["language"],
                 "kind": row["kind"],
@@ -981,8 +1238,10 @@ class Engine:
                 "ref_text": row["ref_text"],
                 "is_default": bool(row["is_default"]),
             }
-            for row in rows
-        ]
+            if row["kind"] == "vieneu_preset":
+                profile["preset_id"] = row["preset_id"]
+            result.append(profile)
+        return result
 
     @staticmethod
     def delete_voice(name: str) -> bool:
@@ -991,22 +1250,42 @@ class Engine:
         with _STORAGE_LOCK:
             with closing(Engine._open_storage()) as connection:
                 row = connection.execute(
-                    "SELECT 1 FROM voice_profiles WHERE name = ?", (name,)
+                    "SELECT kind, ref_audio_path FROM voice_profiles WHERE name = ?", (name,)
                 ).fetchone()
+                owned_reference = None
+                if row and row["kind"] == "vieneu_preset" and row["ref_audio_path"]:
+                    reference_path = _resolve_data_path(row["ref_audio_path"])
+                    profile_dir = VOICES_DIR.resolve() / name
+                    if (
+                        reference_path is not None
+                        and reference_path.parent == profile_dir
+                        and reference_path.name == "reference.wav"
+                    ):
+                        owned_reference = reference_path
+                if row and owned_reference:
+                    owned_reference.unlink(missing_ok=True)
                 if row:
                     with connection:
                         connection.execute("DELETE FROM voice_profiles WHERE name = ?", (name,))
-            profile_dir = VOICES_DIR / name
-            legacy_prompt = VOICES_DIR / f"{name}.pt"
-            legacy_meta = VOICES_DIR / f"{name}.json"
             deleted = bool(row)
-            if profile_dir.is_dir():
-                shutil.rmtree(profile_dir)
-                deleted = True
-            for legacy_path in (legacy_prompt, legacy_meta):
-                if legacy_path.exists():
-                    legacy_path.unlink()
+            if row and row["kind"] == "vieneu_preset":
+                if owned_reference:
                     deleted = True
+                    try:
+                        owned_reference.parent.rmdir()
+                    except OSError:
+                        pass
+            else:
+                profile_dir = VOICES_DIR / name
+                legacy_prompt = VOICES_DIR / f"{name}.pt"
+                legacy_meta = VOICES_DIR / f"{name}.json"
+                if profile_dir.is_dir():
+                    shutil.rmtree(profile_dir)
+                    deleted = True
+                for legacy_path in (legacy_prompt, legacy_meta):
+                    if legacy_path.exists():
+                        legacy_path.unlink()
+                        deleted = True
             return deleted
 
     @staticmethod

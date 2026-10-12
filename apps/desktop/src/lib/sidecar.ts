@@ -4,7 +4,7 @@ import { appDataDir } from "@tauri-apps/api/path";
 export type Language = "en" | "vi";
 export type ProviderId = "omnivoice" | "vieneu";
 export type VoiceMode = "auto" | "profile" | "preset" | "file";
-export type VoiceKind = "clone" | "design";
+export type VoiceKind = "clone" | "design" | "vieneu_preset";
 export type AudioFormat = "wav" | "mp3";
 
 export type GenerationConfig = {
@@ -24,9 +24,10 @@ export type GenerationConfig = {
 
 export type VoiceProfile = {
   name: string;
-  language: Language;
+  language: Language | null;
   kind: VoiceKind;
-  ref_audio?: string;
+  preset_id?: string | null;
+  ref_audio?: string | null;
   design_instruction?: string | null;
   ref_text?: string | null;
   is_default: boolean;
@@ -48,6 +49,8 @@ type Response<T> = Success<T> | Failure;
 
 const REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
 const PREPARATION_TIMEOUT_MS = 60 * 60 * 1000;
+const SEED_TIMEOUT_MS = 60 * 60 * 1000;
+const MAX_REQUEST_LOGS = 500;
 
 export type ProgressEvent = {
   id: string;
@@ -56,6 +59,20 @@ export type ProgressEvent = {
   asset?: string;
   progress?: number | null;
   message?: string;
+  preset_id?: string;
+  current?: number;
+  total?: number;
+};
+
+export type SeedVieNeuResult = {
+  profiles: Array<{
+    preset_id: string;
+    name: string;
+    status: "created" | "updated" | "reused";
+  }>;
+  failed: Array<{ preset_id: string; message: string }>;
+  unfinished: string[];
+  cancelled: boolean;
 };
 
 export type StatusResult = {
@@ -93,6 +110,14 @@ export type AudioHistoryItem = {
   metadata_available: boolean;
 };
 
+export type AudioHistoryCursor = { created_at: string; id: string };
+
+export type AudioHistoryPage = {
+  items: AudioHistoryItem[];
+  total: number;
+  next_cursor: AudioHistoryCursor | null;
+};
+
 export class SidecarError extends Error {
   constructor(
     public code: string,
@@ -124,6 +149,7 @@ export class SidecarClient {
   private command: Command<string> | null = null;
   private startPromise: Promise<void> | null = null;
   private activePreparationId: string | null = null;
+  private activeSeedId: string | null = null;
   private nextId = 1;
   private pending = new Map<
     string,
@@ -229,6 +255,11 @@ export class SidecarClient {
     await this.request({ type: "cancel", request_id: this.activePreparationId });
   }
 
+  async cancelSeed(): Promise<void> {
+    if (!this.activeSeedId) return;
+    await this.request({ type: "cancel", request_id: this.activeSeedId });
+  }
+
   async saveDesignVoice(
     name: string,
     designInstruction: string,
@@ -245,7 +276,9 @@ export class SidecarClient {
   async request<T>(payload: Omit<Request, "id">): Promise<T> {
     const id = String(this.nextId++);
     const isPreparation = payload.type === "prepare_model";
+    const isSeed = payload.type === "seed_vieneu_voices";
     if (isPreparation) this.activePreparationId = id;
+    if (isSeed) this.activeSeedId = id;
     this.addLog({
       id,
       operation: String(payload.type ?? "unknown"),
@@ -281,6 +314,7 @@ export class SidecarClient {
       throw reason;
     } finally {
       if (isPreparation && this.activePreparationId === id) this.activePreparationId = null;
+      if (isSeed && this.activeSeedId === id) this.activeSeedId = null;
     }
   }
 
@@ -290,7 +324,11 @@ export class SidecarClient {
     if (!child) throw new Error("The local TTS engine is unavailable");
     const request = JSON.stringify({ ...payload, id }) + "\n";
     const timeoutMs =
-      payload.type === "prepare_model" ? PREPARATION_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+      payload.type === "prepare_model"
+        ? PREPARATION_TIMEOUT_MS
+        : payload.type === "seed_vieneu_voices"
+          ? SEED_TIMEOUT_MS
+          : REQUEST_TIMEOUT_MS;
     let timeout: ReturnType<typeof setTimeout>;
     const response = new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
@@ -325,7 +363,7 @@ export class SidecarClient {
   }
 
   private addLog(entry: RequestLog): void {
-    this.logs = [...this.logs, entry];
+    this.logs = [...this.logs, entry].slice(-MAX_REQUEST_LOGS);
     this.logListeners.forEach((listener) => listener(entry));
   }
 

@@ -1,5 +1,13 @@
 # Agent Devkit Artifacts
 
+## Changes
+
+- [VieNeu preset seed pack](changes/2026-10-10-vieneu-seed-voice-pack/design.md) — [wiki delta](changes/2026-10-10-vieneu-seed-voice-pack/delta.md)
+
+## Archived changes
+
+- [Saved VieNeu preset profiles](changes/archive/2026-10-10-vieneu-preset-voice-profiles/design.md) — [plan](changes/archive/2026-10-10-vieneu-preset-voice-profiles/tasks.md), [wiki delta](changes/archive/2026-10-10-vieneu-preset-voice-profiles/delta.md)
+
 ## Designs
 
 - [Local TTS Desktop App](specs/2026-09-12-local-tts-desktop-app-design.md)

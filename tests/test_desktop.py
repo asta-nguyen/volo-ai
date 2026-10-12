@@ -1,9 +1,13 @@
 import io
 import json
+import os
+import queue
 import tempfile
+import threading
 import time
 import unittest
 import wave
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -24,6 +28,16 @@ class DesktopWorkerTests(unittest.TestCase):
             audio.setsampwidth(2)
             audio.setframerate(24000)
             audio.writeframes(b"\x00\x00")
+
+    @staticmethod
+    def ready_vieneu_status(presets):
+        return {
+            "model_ready": True,
+            "runtime_available": True,
+            "preprocessing_available": True,
+            "preset_voices": presets,
+            "unavailable_reason": None,
+        }
 
     def test_status_returns_supported_languages(self):
         engine = Mock()
@@ -104,6 +118,341 @@ class DesktopWorkerTests(unittest.TestCase):
         self.assertTrue(response["ok"])
         vieneu_provider.synthesize.assert_called_once()
         engine.generate.assert_not_called()
+
+    def test_save_vieneu_preset_uses_manifest_catalog_without_downloading(self):
+        engine = Mock()
+        engine.save_vieneu_preset.return_value = "My-VieNeu"
+        vieneu_provider = Mock()
+        vieneu_provider.status.return_value = {
+            "preset_voices": [{"id": "minh_quan_pro", "name": "Minh Quân Pro"}]
+        }
+
+        response = dispatch_request(
+            {
+                "id": "save-preset",
+                "type": "save_vieneu_preset",
+                "name": "My-VieNeu",
+                "preset_id": "minh_quan_pro",
+            },
+            engine,
+            vieneu_provider=vieneu_provider,
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(
+            response["result"],
+            {"name": "My-VieNeu", "kind": "vieneu_preset", "preset_id": "minh_quan_pro"},
+        )
+        engine.save_vieneu_preset.assert_called_once_with("My-VieNeu", "minh_quan_pro")
+        vieneu_provider.ensure_model.assert_not_called()
+
+    def test_save_vieneu_preset_rejects_missing_catalog_or_unknown_id(self):
+        for catalog, preset_id, expected in (
+            ([], "minh_quan_pro", "list is unavailable"),
+            ([{"id": "other"}], "minh_quan_pro", "Unknown VieNeu preset ID"),
+        ):
+            with self.subTest(catalog=catalog):
+                engine = Mock()
+                provider = Mock()
+                provider.status.return_value = {"preset_voices": catalog}
+                response = dispatch_request(
+                    {
+                        "id": "save-preset",
+                        "type": "save_vieneu_preset",
+                        "name": "My-VieNeu",
+                        "preset_id": preset_id,
+                    },
+                    engine,
+                    vieneu_provider=provider,
+                )
+                self.assertFalse(response["ok"])
+                self.assertEqual(response["error"]["code"], "invalid_input")
+                self.assertIn(expected, response["error"]["message"])
+                engine.save_vieneu_preset.assert_not_called()
+                provider.ensure_model.assert_not_called()
+
+    def test_vieneu_saved_preset_profile_routes_to_preset_request(self):
+        engine = Mock()
+        provider = Mock()
+        provider.synthesize.return_value = {"audio_path": "/tmp/preset.wav", "format": "wav"}
+        voices = [
+            {
+                "name": "My-VieNeu",
+                "language": None,
+                "kind": "vieneu_preset",
+                "preset_id": "minh_quan_pro",
+                "is_default": False,
+            }
+        ]
+        request = {
+            "id": "saved-preset",
+            "type": "synthesize",
+            "provider": "vieneu",
+            "text": "Xin chào",
+            "language": "vi",
+            "voice": "profile",
+            "voice_name": "My-VieNeu",
+            "format": "wav",
+        }
+        with patch.object(Engine, "list_voices", return_value=voices):
+            response = dispatch_request(request, engine, vieneu_provider=provider)
+
+        self.assertTrue(response["ok"])
+        routed = provider.synthesize.call_args.args[0]
+        self.assertEqual(routed["voice"], "preset")
+        self.assertEqual(routed["preset_id"], "minh_quan_pro")
+        self.assertNotIn("voice_name", routed)
+        self.assertEqual(provider.synthesize.call_args.args[1], voices)
+        engine.generate.assert_not_called()
+
+    def test_omnivoice_rejects_vieneu_preset_profile_with_provider_guidance(self):
+        engine = Mock()
+        engine.load_voice_profile.return_value = {
+            "kind": "vieneu_preset",
+            "preset_id": "minh_quan_pro",
+        }
+
+        response = dispatch_request(
+            {
+                "id": "wrong-provider",
+                "type": "synthesize",
+                "provider": "omnivoice",
+                "text": "hello",
+                "voice": "profile",
+                "voice_name": "My-VieNeu",
+                "format": "wav",
+            },
+            engine,
+        )
+
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "invalid_input")
+        self.assertIn("provider='vieneu'", response["error"]["message"])
+        engine.generate.assert_not_called()
+
+    def test_omnivoice_seeded_preset_uses_reference_and_pure_preset_fails(self):
+        engine = Mock()
+        engine.generate.return_value = object()
+        with tempfile.TemporaryDirectory() as tmp:
+            reference = Path(tmp) / "reference.wav"
+            output = Path(tmp) / "output.wav"
+            self.write_wav(reference)
+            engine.load_voice_profile.return_value = {
+                "kind": "vieneu_preset",
+                "preset_id": "minh_quan_pro",
+                "ref_audio": str(reference),
+                "ref_text": "Xin chào",
+            }
+            with patch("tts_mcp.desktop.OUTPUT_DIR", Path(tmp)), patch(
+                "tts_mcp.desktop.save_audio", return_value=str(output)
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "seeded-preset",
+                        "type": "synthesize",
+                        "provider": "omnivoice",
+                        "text": "hello",
+                        "voice": "profile",
+                        "voice_name": "minh_quan_pro",
+                        "format": "wav",
+                    },
+                    engine,
+                )
+
+            self.assertTrue(response["ok"])
+            self.assertEqual(engine.generate.call_args.kwargs["ref_audio"], str(reference))
+            self.assertEqual(engine.generate.call_args.kwargs["ref_text"], "Xin chào")
+
+            engine.load_voice_profile.return_value = {
+                "kind": "vieneu_preset",
+                "preset_id": "minh_quan_pro",
+            }
+            pure_response = dispatch_request(
+                {
+                    "id": "pure-preset",
+                    "type": "synthesize",
+                    "provider": "omnivoice",
+                    "text": "hello",
+                    "voice": "profile",
+                    "voice_name": "minh_quan_pro",
+                    "format": "wav",
+                },
+                engine,
+            )
+            self.assertFalse(pure_response["ok"])
+            self.assertIn("seed the VieNeu voices", pure_response["error"]["message"])
+
+    def test_seed_vieneu_voices_requires_ready_manifest_and_runtime(self):
+        presets = [{"id": "minh_quan_pro", "name": "Minh Quân Pro", "label": "Default"}]
+        for status, message in (
+            ({**self.ready_vieneu_status(presets), "model_ready": False,
+              "unavailable_reason": "VieNeu model assets are not ready; prepare VieNeu first"},
+             "prepare VieNeu"),
+            ({**self.ready_vieneu_status(presets), "runtime_available": False,
+              "unavailable_reason": "audio.cpp CLI is missing"}, "audio.cpp CLI"),
+            ({**self.ready_vieneu_status(presets), "preprocessing_available": False,
+              "unavailable_reason": "VieNeu preprocessing is unavailable"}, "preprocessing"),
+            ({**self.ready_vieneu_status([])}, "manifest"),
+        ):
+            with self.subTest(status=status):
+                engine = Mock()
+                provider = Mock()
+                provider.status.return_value = status
+                with patch.object(Engine, "list_voices", return_value=[]):
+                    response = dispatch_request(
+                        {"id": "seed", "type": "seed_vieneu_voices"},
+                        engine,
+                        vieneu_provider=provider,
+                    )
+                self.assertFalse(response["ok"])
+                self.assertIn(message.lower(), response["error"]["message"].lower())
+                engine.save_vieneu_seed_reference.assert_not_called()
+                provider.synthesize.assert_not_called()
+                provider.ensure_model.assert_not_called()
+
+    def test_seed_vieneu_voices_synthesizes_every_manifest_preset(self):
+        presets = [
+            {"id": "first_voice", "name": "First Voice", "label": "First"},
+            {"id": "second_voice", "name": "Second Voice", "label": "Second"},
+        ]
+        engine = Mock()
+        provider = Mock()
+        provider.status.return_value = self.ready_vieneu_status(presets)
+        calls = []
+
+        def synthesize(request, _voices, _output_dir, output_path=None):
+            calls.append((request, Path(output_path)))
+            self.write_wav(Path(output_path))
+            return {"audio_path": str(output_path), "format": "wav"}
+
+        provider.synthesize.side_effect = synthesize
+        events = []
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            Engine, "list_voices", return_value=[]
+        ), patch("tts_mcp.desktop.OUTPUT_DIR", Path(tmp) / "outputs"):
+            response = dispatch_request(
+                {"id": "seed", "type": "seed_vieneu_voices"},
+                engine,
+                emit=events.append,
+                vieneu_provider=provider,
+            )
+
+        self.assertTrue(response["ok"])
+        result = response["result"]
+        self.assertEqual([item["preset_id"] for item in result["profiles"]],
+                         ["first_voice", "second_voice"])
+        self.assertEqual([item["status"] for item in result["profiles"]], ["created", "created"])
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(all(call[0]["language"] == "vi" for call in calls))
+        self.assertTrue(all(call[0]["text"] ==
+                            "Xin chào. Đây là mẫu giọng được tạo để lưu vào thư viện giọng nói của bạn."
+                            for call in calls))
+        self.assertTrue(all(call[0]["voice"] == "preset" for call in calls))
+        self.assertTrue(all(call[1].parent.name.startswith("vieneu-seed-") for call in calls))
+        self.assertEqual([event["preset_id"] for event in events], ["first_voice", "second_voice"])
+        self.assertEqual([event["phase"] for event in events], ["seed_vieneu", "seed_vieneu"])
+        engine.save_vieneu_seed_reference.assert_any_call(
+            "first_voice",
+            "first_voice",
+            str(calls[0][1]),
+            "Xin chào. Đây là mẫu giọng được tạo để lưu vào thư viện giọng nói của bạn.",
+        )
+        self.history_writer.assert_not_called()
+        self.assertFalse((Path(tmp) / "outputs").exists())
+
+    def test_seed_vieneu_voices_reuses_valid_and_regenerates_missing_audio(self):
+        presets = [
+            {"id": "existing_voice", "name": "Existing", "label": "Ready"},
+            {"id": "missing_voice", "name": "Missing", "label": "New"},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            reference = Path(tmp) / "saved.wav"
+            self.write_wav(reference)
+            engine = Mock()
+            provider = Mock()
+            provider.status.return_value = self.ready_vieneu_status(presets)
+            provider.synthesize.side_effect = lambda request, _voices, _output_dir, output_path=None: (
+                self.write_wav(Path(output_path)) or {"audio_path": str(output_path), "format": "wav"}
+            )
+            voices = [
+                {
+                    "name": "Existing-Profile",
+                    "kind": "vieneu_preset",
+                    "preset_id": "existing_voice",
+                    "ref_audio": str(reference),
+                    "ref_text": "Xin chào. Đây là mẫu giọng được tạo để lưu vào thư viện giọng nói của bạn.",
+                }
+            ]
+            with patch.object(Engine, "list_voices", return_value=voices):
+                response = dispatch_request(
+                    {"id": "seed", "type": "seed_vieneu_voices"},
+                    engine,
+                    vieneu_provider=provider,
+                )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(
+            [item["status"] for item in response["result"]["profiles"]],
+            ["reused", "created"],
+        )
+        self.assertEqual(provider.synthesize.call_count, 1)
+        self.assertEqual(
+            engine.save_vieneu_seed_reference.call_args_list[0].args[:2],
+            ("existing_voice", "Existing-Profile"),
+        )
+
+    def test_seed_vieneu_voices_continues_after_item_failure(self):
+        presets = [
+            {"id": "conflict", "name": "Conflict", "label": "Existing"},
+            {"id": "good_voice", "name": "Good Voice", "label": "Good"},
+        ]
+        engine = Mock()
+        provider = Mock()
+        provider.status.return_value = self.ready_vieneu_status(presets)
+        provider.synthesize.side_effect = lambda _request, _voices, _output_dir, output_path=None: (
+            self.write_wav(Path(output_path)) or {"audio_path": str(output_path), "format": "wav"}
+        )
+        voices = [{"name": "conflict", "kind": "clone"}]
+        with patch.object(Engine, "list_voices", return_value=voices):
+            response = dispatch_request(
+                {"id": "seed", "type": "seed_vieneu_voices"},
+                engine,
+                vieneu_provider=provider,
+            )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["result"]["failed"][0]["preset_id"], "conflict")
+        self.assertIn("clone voice profile", response["result"]["failed"][0]["message"])
+        self.assertEqual(response["result"]["profiles"][0]["preset_id"], "good_voice")
+        engine.save_vieneu_seed_reference.assert_called_once()
+
+    def test_seed_vieneu_voices_cancellation_keeps_completed_and_reports_unfinished(self):
+        presets = [
+            {"id": "first_voice", "name": "First", "label": "First"},
+            {"id": "second_voice", "name": "Second", "label": "Second"},
+        ]
+        engine = Mock()
+        provider = Mock()
+        provider.status.return_value = self.ready_vieneu_status(presets)
+        cancelled = threading.Event()
+        provider.synthesize.side_effect = lambda _request, _voices, _output_dir, output_path=None: (
+            self.write_wav(Path(output_path)) or {"audio_path": str(output_path), "format": "wav"}
+        )
+        engine.save_vieneu_seed_reference.side_effect = lambda *_args: cancelled.set()
+        with patch.object(Engine, "list_voices", return_value=[]):
+            response = dispatch_request(
+                {"id": "seed", "type": "seed_vieneu_voices"},
+                engine,
+                should_cancel=cancelled.is_set,
+                vieneu_provider=provider,
+            )
+
+        self.assertTrue(response["ok"])
+        self.assertTrue(response["result"]["cancelled"])
+        self.assertEqual([item["preset_id"] for item in response["result"]["profiles"]],
+                         ["first_voice"])
+        self.assertEqual(response["result"]["unfinished"], ["second_voice"])
+        self.assertEqual(provider.synthesize.call_count, 1)
 
     def test_synthesis_records_history_for_both_providers(self):
         engine = Mock()
@@ -196,11 +545,88 @@ class DesktopWorkerTests(unittest.TestCase):
 
         items = response["result"]["items"]
         self.assertTrue(response["ok"])
+        self.assertEqual(set(response["result"]), {"items"})
         self.assertEqual([item["id"] for item in items], ["legacy.mp3", "recorded.wav"])
         self.assertFalse(items[0]["metadata_available"])
         self.assertIsNone(items[0]["text"])
         self.assertTrue(items[1]["metadata_available"])
         self.assertEqual(items[1]["text"], "Xin chào")
+
+    def test_list_audio_history_pages_legacy_and_recorded_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            metadata = []
+            expected = []
+            base_timestamp = 1_700_000_000
+            for index in range(55):
+                file_name = f"{'recorded' if index % 2 == 0 else 'legacy'}_{index:02}.wav"
+                output = output_dir / file_name
+                output.write_bytes(b"audio")
+                timestamp = base_timestamp + index // 2
+                os.utime(output, (timestamp, timestamp))
+                created_at = datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
+                expected.append((created_at, file_name))
+                if index % 2 == 0:
+                    metadata.append(
+                        {
+                            "file_name": file_name,
+                            "provider": "vieneu",
+                            "voice_name": "minh_quan_pro",
+                            "format": "wav",
+                            "text": file_name,
+                            "created_at": created_at,
+                        }
+                    )
+
+            expected.sort(key=lambda item: item[1])
+            expected.sort(key=lambda item: item[0], reverse=True)
+            expected_ids = [file_name for _, file_name in expected]
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(Engine, "list_audio_history", return_value=metadata),
+            ):
+                first = dispatch_request(
+                    {"id": "history-1", "type": "list_audio_history", "paginated": True},
+                    Mock(),
+                )
+                second = dispatch_request(
+                    {
+                        "id": "history-2",
+                        "type": "list_audio_history",
+                        "paginated": True,
+                        "cursor": first["result"]["next_cursor"],
+                    },
+                    Mock(),
+                )
+
+        self.assertTrue(first["ok"])
+        self.assertTrue(second["ok"])
+        self.assertEqual(first["result"]["total"], 55)
+        self.assertEqual(len(first["result"]["items"]), 50)
+        self.assertEqual(len(second["result"]["items"]), 5)
+        self.assertIsNone(second["result"]["next_cursor"])
+        items = first["result"]["items"] + second["result"]["items"]
+        item_ids = [item["id"] for item in items]
+        self.assertEqual(item_ids, expected_ids)
+        self.assertEqual(len(item_ids), len(set(item_ids)))
+        legacy_item = next(item for item in items if item["id"] == "legacy_01.wav")
+        self.assertFalse(legacy_item["metadata_available"])
+        self.assertIsNone(legacy_item["text"])
+
+    def test_list_audio_history_rejects_invalid_cursor(self):
+        response = dispatch_request(
+            {
+                "id": "history",
+                "type": "list_audio_history",
+                "paginated": True,
+                "cursor": {"created_at": "", "id": "take.wav"},
+            },
+            Mock(),
+        )
+
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "invalid_input")
 
     def test_delete_audio_history_removes_only_output_file_and_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -720,6 +1146,116 @@ class DesktopWorkerTests(unittest.TestCase):
         self.assertFalse(response["ok"])
         self.assertEqual(response["error"]["code"], "invalid_input")
         engine.import_seed_voices.assert_not_called()
+
+    def test_protocol_cancels_seed_request(self):
+        class QueueLines:
+            def __init__(self):
+                self.lines = queue.Queue()
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                line = self.lines.get()
+                if line is None:
+                    raise StopIteration
+                return line
+
+        source = QueueLines()
+        target = io.StringIO()
+        started = threading.Event()
+        release = threading.Event()
+        provider = Mock()
+        provider.status.return_value = self.ready_vieneu_status(
+            [
+                {"id": "first_voice", "name": "First", "label": "First"},
+                {"id": "second_voice", "name": "Second", "label": "Second"},
+            ]
+        )
+
+        def synthesize(_request, _voices, _output_dir, output_path=None):
+            started.set()
+            if not release.wait(timeout=3):
+                raise RuntimeError("test synth timed out")
+            self.write_wav(Path(output_path))
+            return {"audio_path": str(output_path), "format": "wav"}
+
+        provider.synthesize.side_effect = synthesize
+        with patch.object(Engine, "list_voices", return_value=[]):
+            worker = threading.Thread(
+                target=run_protocol, args=(source, target, Mock(), provider), daemon=True
+            )
+            worker.start()
+            source.lines.put(json.dumps({"id": "seed", "type": "seed_vieneu_voices"}) + "\n")
+            self.assertTrue(started.wait(timeout=3))
+            source.lines.put(
+                json.dumps({"id": "cancel", "type": "cancel", "request_id": "seed"}) + "\n"
+            )
+            source.lines.put(None)
+            deadline = time.time() + 3
+            while '"id": "cancel"' not in target.getvalue() and time.time() < deadline:
+                time.sleep(0.005)
+            self.assertIn('"id": "cancel"', target.getvalue())
+            release.set()
+            worker.join(timeout=5)
+
+        self.assertFalse(worker.is_alive())
+        messages = [json.loads(line) for line in target.getvalue().splitlines()]
+        result = next(
+            message["result"]
+            for message in messages
+            if message.get("id") == "seed" and message.get("ok")
+        )
+        self.assertTrue(result["cancelled"])
+        self.assertEqual([item["preset_id"] for item in result["profiles"]], ["first_voice"])
+        self.assertEqual(result["unfinished"], ["second_voice"])
+
+    def test_protocol_accepts_concurrent_seed_requests(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            provider = Mock()
+            provider.status.return_value = self.ready_vieneu_status(
+                [{"id": "minh_quan_pro", "name": "Minh Quân Pro", "label": "Default"}]
+            )
+            barrier = threading.Barrier(2)
+
+            def synthesize(_request, _voices, _output_dir, output_path=None):
+                barrier.wait(timeout=3)
+                self.write_wav(Path(output_path))
+                return {"audio_path": str(output_path), "format": "wav"}
+
+            provider.synthesize.side_effect = synthesize
+            source = io.StringIO(
+                json.dumps({"id": "seed-one", "type": "seed_vieneu_voices"})
+                + "\n"
+                + json.dumps({"id": "seed-two", "type": "seed_vieneu_voices"})
+                + "\n"
+            )
+            target = io.StringIO()
+            with (
+                patch.multiple(
+                    "tts_mcp.engine",
+                    DATA_DIR=root,
+                    DB_PATH=root / "volo.db",
+                    VOICES_DIR=root / "voices",
+                ),
+                patch("tts_mcp.desktop.DATA_DIR", root),
+                patch("tts_mcp.desktop.OUTPUT_DIR", root / "outputs"),
+            ):
+                run_protocol(source, target, Engine(), provider)
+                profiles = Engine.list_voices()
+
+            self.assertEqual(len(profiles), 1)
+            self.assertEqual(profiles[0]["preset_id"], "minh_quan_pro")
+            profile_dir = root / "voices" / "minh_quan_pro"
+            self.assertEqual([path.name for path in profile_dir.iterdir()], ["reference.wav"])
+            messages = [json.loads(line) for line in target.getvalue().splitlines()]
+            results = [message["result"] for message in messages if message.get("ok")]
+            self.assertEqual(len(results), 2)
+            self.assertTrue(
+                all(result["profiles"][0]["name"] == "minh_quan_pro" for result in results)
+            )
+        self.history_writer.assert_not_called()
 
     def test_protocol_cancels_model_preparation(self):
         class BlockingEngine:

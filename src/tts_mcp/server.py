@@ -170,15 +170,15 @@ def clone(
     """Generate speech with a saved profile or reference audio.
 
     Provide ref_audio_path and optionally ref_text.
-    Or use a saved Clone or Design profile name with the 'voice' parameter.
-    VieNeu accepts saved Clone profiles or reference audio, without ref_text.
+    Or use a saved profile name with the 'voice' parameter. VieNeu accepts
+    saved Clone or VieNeu preset profiles and reference audio, without ref_text.
 
     Args:
         text: Text to synthesize.
         output_path: Output file path (.wav, .mp3, .flac).
         ref_audio_path: Path to reference audio file (3-15 seconds recommended).
         ref_text: Transcript of reference audio (auto-transcribed if omitted).
-        voice: Name of a saved Clone or Design profile (use instead of ref_audio_path).
+        voice: Name of a saved profile (use instead of ref_audio_path).
         speed: Speech speed factor (default 1.0).
         steps: Diffusion steps (16=fast, 32=balanced, default 32).
         normalize: Normalize numbers to words (default false).
@@ -201,6 +201,7 @@ def clone(
             "language": validate_language(language if language is not None else "en"),
             "format": output_format,
         }
+        audio_label = "Cloned"
         voices = Engine.list_voices()
         if voice:
             profile = next(
@@ -208,9 +209,16 @@ def clone(
             )
             if profile is None:
                 raise FileNotFoundError(f"Voice profile '{voice}' was not found")
-            if profile.get("kind") != "clone":
+            if profile.get("kind") == "vieneu_preset":
+                preset_id = profile.get("preset_id")
+                if not isinstance(preset_id, str) or not preset_id:
+                    raise ValueError(f"VieNeu preset profile '{voice}' has no preset ID")
+                request.update({"voice": "preset", "preset_id": preset_id})
+                audio_label = "VieNeu preset"
+            elif profile.get("kind") == "clone":
+                request.update({"voice": "profile", "voice_name": voice})
+            else:
                 raise ValueError("VieNeu supports saved Clone profiles, not Design profiles")
-            request.update({"voice": "profile", "voice_name": voice})
         elif ref_audio_path:
             request.update({"voice": "file", "ref_audio": ref_audio_path})
         else:
@@ -221,7 +229,7 @@ def clone(
             OUTPUT_DIR,
             output_path=output_path,
         )
-        return f"Cloned audio saved to: {result['audio_path']}"
+        return f"{audio_label} audio saved to: {result['audio_path']}"
 
     engine = get_engine()
     gen_kwargs: dict[str, Any] = {
@@ -235,7 +243,17 @@ def clone(
     audio_label = "Cloned"
     if voice:
         profile = engine.load_voice_profile(voice)
-        if profile["kind"] == "clone":
+        if profile["kind"] == "vieneu_preset":
+            ref_audio = profile.get("ref_audio")
+            ref_text = profile.get("ref_text")
+            if not isinstance(ref_audio, str) or not isinstance(ref_text, str):
+                raise ValueError(
+                    f"VieNeu preset profile '{voice}' has no saved Clone reference; "
+                    "use provider='vieneu' or seed the VieNeu voices first"
+                )
+            gen_kwargs["ref_audio"] = ref_audio
+            gen_kwargs["ref_text"] = ref_text
+        elif profile["kind"] == "clone":
             gen_kwargs["voice_clone_prompt"] = profile["prompt"]
         else:
             audio_label = "Designed"
@@ -301,6 +319,12 @@ def list_voices() -> str:
         return "No saved voices. Use save_voice to create one."
     lines = [f"Saved voices ({len(voices)}):"]
     for v in voices:
+        if v["kind"] == "vieneu_preset":
+            line = f"  - {v['name']} (vieneu_preset); preset_id: {v.get('preset_id', '?')}"
+            if v.get("ref_audio"):
+                line += f"; ref_audio: {v['ref_audio']}; ref_text: {v.get('ref_text', '')}"
+            lines.append(line)
+            continue
         line = f"  - {v['name']} ({v['kind']}, {v['language']})"
         if v["kind"] == "clone":
             line += f"; ref_audio: {v['ref_audio']}"
