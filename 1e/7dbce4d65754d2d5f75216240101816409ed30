@@ -1,0 +1,43 @@
+AGENTS.md
+  s_e5d47b64f7f39b::t_7070455361bb6a 22
+docs/agent-devkit/INDEX.md
+  s_e5d47b64f7f39b::t_f5c0181e6023b2 10
+  s_e5d47b64f7f39b::t_c66236e0a56660 8
+docs/desktop-development.md
+  s_e5d47b64f7f39b::t_7070455361bb6a 5
+README.md
+  s_e5d47b64f7f39b::t_2f4ee284c6465f 25
+docs/agent-devkit/specs/2026-09-12-local-tts-desktop-app-design.md
+  s_e5d47b64f7f39b::t_2f4ee284c6465f 21-22,144,172
+  s_e5d47b64f7f39b::t_f5c0181e6023b2 23
+docs/agent-devkit/plans/2026-09-12-local-tts-desktop-app-plan.md
+  s_e5d47b64f7f39b::t_2f4ee284c6465f 25,229
+  s_e5d47b64f7f39b::t_f5c0181e6023b2 26
+src/tts_mcp/engine.py
+  s_e5d47b64f7f39b::t_37ff093a21a645 1265,1267-1282,1284-1286
+  s_e5d47b64f7f39b::t_51eda319e15b5c 1283
+tests/test_engine.py
+  s_e5d47b64f7f39b::t_b32447d386da2f 703-732
+apps/desktop/src/components/ui/toggle-group.tsx
+  s_e5d47b64f7f39b::t_c022af60aa8fb3 6,9-30
+apps/desktop/package.json
+  s_e5d47b64f7f39b::t_7070455361bb6a 7
+apps/desktop/package-lock.json
+  s_e5d47b64f7f39b::t_baacf9269f30ad 39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1e7dbce4d65754d2d5f75216240101816409ed30",
+  "prompts": {},
+  "sessions": {
+    "s_e5d47b64f7f39b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a134ba-2212-7a23-8dab-15376b4580d8",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
