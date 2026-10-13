@@ -700,6 +700,36 @@ class EngineTests(unittest.TestCase):
                 )
                 self.assertTrue(reference.is_file())
 
+    def test_delete_seeded_vieneu_profile_restores_wav_when_database_delete_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "generated.wav"
+            self.write_wav(source)
+            with self.storage_patches(root):
+                Engine().save_vieneu_seed_reference(
+                    "minh_quan_pro", "minh_quan_pro", str(source), "Xin chào"
+                )
+                reference = root / "voices" / "minh_quan_pro" / "reference.wav"
+                with sqlite3.connect(root / "volo.db") as connection:
+                    connection.execute(
+                        """
+                        CREATE TRIGGER reject_profile_delete
+                        BEFORE DELETE ON voice_profiles
+                        WHEN OLD.name = 'minh_quan_pro'
+                        BEGIN
+                            SELECT RAISE(ABORT, 'database error');
+                        END
+                        """
+                    )
+
+                with self.assertRaisesRegex(sqlite3.IntegrityError, "database error"):
+                    Engine.delete_voice("minh_quan_pro")
+
+                self.assertEqual(
+                    [voice["name"] for voice in Engine.list_voices()], ["minh_quan_pro"]
+                )
+                self.assertTrue(reference.is_file())
+
     def test_audio_history_round_trip_and_delete(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

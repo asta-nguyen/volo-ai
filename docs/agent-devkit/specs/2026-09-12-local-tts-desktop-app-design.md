@@ -18,7 +18,9 @@ the desktop UI is the primary product surface.
 ## Decisions
 
 - Framework: Tauri 2 with React, TypeScript, and Vite.
-- Developer runtime: Node.js 20 or newer and Python 3.10 or newer.
+- Developer runtime: Node.js 22 or newer and Python 3.10 or newer. The
+  desktop minimum was raised from 20 by the later
+  [runtime decision](../changes/archive/2026-10-12-shadcn-tanstack-desktop/decisions.md).
 - Packaged users do not install Node.js or Python; the application bundles a
   Python backend as a platform-specific Tauri sidecar.
 - OmniVoice model weights are downloaded on first launch, with visible
@@ -139,7 +141,7 @@ must not include the full user text or audio contents.
 
 ## Compatibility and packaging
 
-Development uses npm with Node.js 20+ for the Tauri frontend and Python 3.10+
+Development uses npm with Node.js 22+ for the Tauri frontend and Python 3.10+
 for the existing backend. The current `pyproject.toml` declaration of Python
 3.11+ must be aligned to the agreed 3.10+ minimum after dependency
 compatibility is checked.
@@ -167,7 +169,7 @@ FFmpeg helper; the model remains a first-run download.
 
 The implementation is complete when all of the following are demonstrated:
 
-1. Development setup works with Node.js 20+ and Python 3.10+.
+1. Development setup works with Node.js 22+ and Python 3.10+.
 2. A clean first launch shows model download progress and reaches a verified
    ready state; retry/resume works after interruption.
 3. With network disabled after setup, automatic speech generation, playback,

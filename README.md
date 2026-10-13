@@ -22,7 +22,7 @@ current release scope.
 
 ## Requirements
 
-- Node.js 20+
+- Node.js 22+
 - Python 3.10+
 - Rust toolchain
 - FFmpeg for MP3 export during source development

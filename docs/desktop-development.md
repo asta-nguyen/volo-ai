@@ -2,7 +2,7 @@
 
 ## Development requirements
 
-- Node.js 20 or newer
+- Node.js 22 or newer
 - Python 3.10 or newer
 - Rust toolchain required by Tauri
 - A native FFmpeg executable for MP3 export during development

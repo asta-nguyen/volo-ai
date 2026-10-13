@@ -2,12 +2,12 @@
 
 ## Changes
 
-- [Desktop shadcn and TanStack Query adoption](changes/2026-10-12-shadcn-tanstack-desktop/design.md) — [tasks](changes/2026-10-12-shadcn-tanstack-desktop/tasks.md), [decisions](changes/2026-10-12-shadcn-tanstack-desktop/decisions.md)
-- [VieNeu preset seed pack](changes/2026-10-10-vieneu-seed-voice-pack/design.md) — [wiki delta](changes/2026-10-10-vieneu-seed-voice-pack/delta.md)
 
 ## Archived changes
 
+- [VieNeu preset seed pack](changes/archive/2026-10-10-vieneu-seed-voice-pack/design.md) — [tasks](changes/archive/2026-10-10-vieneu-seed-voice-pack/tasks.md), [wiki delta](changes/archive/2026-10-10-vieneu-seed-voice-pack/delta.md)
 - [VieNeu generation controls](changes/archive/2026-10-13-vieneu-generation-controls/delta.md)
+- [Desktop shadcn and TanStack Query adoption](changes/archive/2026-10-12-shadcn-tanstack-desktop/design.md) — [tasks](changes/archive/2026-10-12-shadcn-tanstack-desktop/tasks.md), [decisions](changes/archive/2026-10-12-shadcn-tanstack-desktop/decisions.md)
 - [Saved VieNeu preset profiles](changes/archive/2026-10-10-vieneu-preset-voice-profiles/design.md) — [plan](changes/archive/2026-10-10-vieneu-preset-voice-profiles/tasks.md), [wiki delta](changes/archive/2026-10-10-vieneu-preset-voice-profiles/delta.md)
 
 ## Designs

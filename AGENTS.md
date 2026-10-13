@@ -19,7 +19,7 @@ terminal CLI, an MCP server, and a Volo AI Tauri desktop app.
 ## Runtime requirements
 
 - Python 3.10 or newer.
-- Node.js 20 or newer.
+- Node.js 22 or newer.
 - Rust toolchain for Tauri.
 - FFmpeg for MP3 export during source development; release sidecars bundle it.
 

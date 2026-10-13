@@ -22,7 +22,8 @@ plugins with least-privilege permissions.
 Change: create a buildable desktop shell with an accessible empty app surface,
 an `externalBin` entry for `binaries/tts-sidecar`, and no network service.
 Use npm scripts `dev`, `build`, and `tauri` and pin the frontend engine to
-Node.js 20+ through the package `engines` field.
+Node.js 22+ through the package `engines` field, following the later
+[runtime decision](../changes/archive/2026-10-12-shadcn-tanstack-desktop/decisions.md).
 
 Verify: run `node --version`, `npm install --prefix apps/desktop`,
 `npm --prefix apps/desktop run build`, and
@@ -225,7 +226,7 @@ external-binary configuration for these target triples:
 - `x86_64-pc-windows-msvc`
 - `x86_64-unknown-linux-gnu`
 
-Document source development with Node.js 20+, Python 3.10+, a Python virtual
+Document source development with Node.js 22+, Python 3.10+, a Python virtual
 environment, `pip install -e '.[mp3]'`, `npm install`, and
 `npm --prefix apps/desktop run tauri dev`. Document native builds with
 `python scripts/build_sidecar.py --ffmpeg /path/to/ffmpeg` followed by

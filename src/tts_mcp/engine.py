@@ -1262,9 +1262,28 @@ class Engine:
                         and reference_path.name == "reference.wav"
                     ):
                         owned_reference = reference_path
+                backup = None
                 if row and owned_reference:
-                    owned_reference.unlink(missing_ok=True)
-                if row:
+                    if owned_reference.is_file():
+                        backup = owned_reference.with_name(
+                            f".{owned_reference.name}.backup-{uuid.uuid4().hex}"
+                        )
+                        _copy_file_atomic(owned_reference, backup)
+                    try:
+                        owned_reference.unlink(missing_ok=True)
+                        with connection:
+                            connection.execute(
+                                "DELETE FROM voice_profiles WHERE name = ?", (name,)
+                            )
+                    except Exception:
+                        if backup and backup.is_file():
+                            os.replace(backup, owned_reference)
+                            backup = None
+                        raise
+                    else:
+                        if backup and backup.exists():
+                            backup.unlink(missing_ok=True)
+                elif row:
                     with connection:
                         connection.execute("DELETE FROM voice_profiles WHERE name = ?", (name,))
             deleted = bool(row)
