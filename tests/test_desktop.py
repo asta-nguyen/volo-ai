@@ -111,12 +111,17 @@ class DesktopWorkerTests(unittest.TestCase):
             "provider": "vieneu",
             "voice": "preset",
             "preset_id": "minh_quan_pro",
+            "vieneu_config": {"temperature": 0.5, "do_sample": False},
         }
         with patch.object(Engine, "list_voices", return_value=[]):
             response = dispatch_request(request, engine, vieneu_provider=vieneu_provider)
 
         self.assertTrue(response["ok"])
         vieneu_provider.synthesize.assert_called_once()
+        self.assertEqual(
+            vieneu_provider.synthesize.call_args.args[0]["vieneu_config"],
+            {"temperature": 0.5, "do_sample": False},
+        )
         engine.generate.assert_not_called()
 
     def test_save_vieneu_preset_uses_manifest_catalog_without_downloading(self):
@@ -993,6 +998,7 @@ class DesktopWorkerTests(unittest.TestCase):
             {"generation_config": {"audio_chunk_threshold": 0}},
             {"generation_config": {"denoise": 1}},
             {"generation_config": {"unknown": 1}},
+            {"vieneu_config": {"temperature": 0.5}},
             {"voice": ["auto"]},
         ]
         engine = Mock()

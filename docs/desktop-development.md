@@ -39,7 +39,7 @@ workspace also offers saved Clone profiles and one-off reference files.
 The React UI uses `i18next` and `react-i18next` for its English/Vietnamese
 interface locale. Tailwind CSS v4 is loaded from `src/styles.css` through the
 Vite plugin, while source-owned shadcn-style primitives backed by Base UI live
-in `src/components/ui.tsx`. The app uses `lucide-react` for icons and Motion
+in `src/components/ui/`. The app uses `lucide-react` for icons and Motion
 for reduced-motion-aware route and state transitions. The
 Settings language is separate from the synthesis language selected in the
 workspace. Settings includes General, Model, Storage, and MCP tabs. The MCP

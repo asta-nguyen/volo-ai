@@ -189,6 +189,7 @@ class VieNeuSynthesisTests(VieNeuAssetFixture, unittest.TestCase):
         self.reference = self.root / "reference.wav"
         sf.write(self.reference, np.zeros(480, dtype=np.float32), 48000)
         self.outputs = self.root / "outputs"
+        self.audio_cpp_commands = []
         self.phonemizer_modules()
 
     def phonemizer_modules(self):
@@ -205,6 +206,7 @@ class VieNeuSynthesisTests(VieNeuAssetFixture, unittest.TestCase):
         self.addCleanup(self.modules_patch.stop)
 
     def run_audio_cpp(self, args, **kwargs):
+        self.audio_cpp_commands.append(list(args))
         if args[0].endswith("ffmpeg") or args[0].endswith("ffmpeg.exe"):
             sf.write(args[-1], np.zeros(480, dtype=np.float32), 48000)
         elif "--out" in args:
@@ -230,9 +232,58 @@ class VieNeuSynthesisTests(VieNeuAssetFixture, unittest.TestCase):
     def test_preset_uses_manifest_assets_and_writes_48khz(self):
         result = self.invoke()
         info = sf.info(result["audio_path"])
+        command = self.audio_cpp_commands[-1]
 
         self.assertEqual(info.samplerate, 48000)
         self.assertTrue(Path(result["audio_path"]).is_file())
+        self.assertTrue(any(argument.startswith("reference_codes_file=") for argument in command))
+        self.assertTrue(any(argument.startswith("speaker_embedding_file=") for argument in command))
+        self.assertFalse(any(argument.startswith("temperature=") for argument in command))
+
+    def test_sampler_config_maps_to_vieneu_request_options(self):
+        self.invoke(
+            vieneu_config={
+                "temperature": 0.5,
+                "top_k": 10,
+                "top_p": 0.7,
+                "repetition_penalty": 1.15,
+                "repetition_window": 0,
+                "do_sample": False,
+                "seed": 42,
+            }
+        )
+
+        command = self.audio_cpp_commands[-1]
+        for option in (
+            "temperature=0.5",
+            "top_k=10",
+            "top_p=0.7",
+            "repetition_penalty=1.15",
+            "repetition_window=0",
+            "do_sample=false",
+            "seed=42",
+        ):
+            self.assertIn(option, command)
+
+    def test_invalid_sampler_config_is_rejected_before_cli(self):
+        for config in (
+            [],
+            {"unknown": 1},
+            {"temperature": True},
+            {"temperature": float("inf")},
+            {"top_k": 0},
+            {"top_p": 1.1},
+            {"repetition_penalty": 0},
+            {"repetition_window": -1},
+            {"do_sample": "false"},
+            {"seed": 1.5},
+            {"top_k": 2**53},
+            {"seed": 2**53},
+        ):
+            with self.subTest(config=config):
+                with self.assertRaises(ValueError):
+                    self.invoke(vieneu_config=config)
+                self.assertEqual(self.audio_cpp_commands, [])
 
     def test_synthesize_respects_explicit_output_path(self):
         expected = self.root / "requested.wav"

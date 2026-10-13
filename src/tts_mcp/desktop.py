@@ -130,6 +130,8 @@ def _reject_voice_payload(request: dict[str, Any], fields: tuple[str, ...]) -> N
 
 
 def _synthesize(request: dict[str, Any], engine: Engine) -> dict[str, Any]:
+    if "vieneu_config" in request:
+        raise ValueError("vieneu_config is only valid for the VieNeu provider")
     text = request.get("text")
     if not isinstance(text, str) or not text.strip():
         raise ValueError("Text must not be empty")

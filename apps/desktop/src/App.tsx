@@ -1,10 +1,47 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+} from "@tanstack/react-query";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { appDataDir, resolveResource } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { copyFile } from "@tauri-apps/plugin-fs";
 import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "motion/react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Field, FieldGroup, FieldLabel, FieldSet, FieldLegend } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   AlertCircle,
   AudioLines,
@@ -54,30 +91,13 @@ import {
   type SeedVieNeuResult,
   type StatusResult,
   type SynthesisResult,
+  type VieNeuConfig,
   type VoiceKind,
   type VoiceMode,
   type VoiceProfile,
 } from "./lib/sidecar";
 import { createUiCopy, setAppLanguage, type AppLanguage, type UiCopy } from "./lib/i18n";
 import { cn } from "./lib/utils";
-import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  ConfirmDialog,
-  Input,
-  Label,
-  Progress,
-  Select,
-  SelectItem,
-  Separator,
-  Skeleton,
-  Textarea,
-} from "./components/ui";
 import { AudioPlayer, InlineAudioPreview } from "./components/AudioPlayer";
 
 export type ThemeMode = "light" | "dark" | "system";
@@ -144,6 +164,9 @@ const SAMPLE_SCRIPTS = {
 };
 
 const client = new SidecarClient();
+const STATUS_QUERY_KEY = ["sidecar", "status"] as const;
+const VOICES_QUERY_KEY = ["sidecar", "voices"] as const;
+const AUDIO_HISTORY_QUERY_KEY = ["sidecar", "audio-history"] as const;
 type AppView = "workspace" | "profiles" | "history" | "settings" | "logs";
 type SettingsTab = "general" | "model" | "storage" | "mcp";
 type McpClientId = "codex" | "claude-code" | "claude-desktop" | "cursor" | "vscode" | "zed";
@@ -180,21 +203,6 @@ type SeedImportResult = {
 };
 type ImportStatus = { message: string; tone: "success" | "error" };
 
-async function importBundledSeedVoices(): Promise<void> {
-  try {
-    const seedDirectory = await resolveResource(BUNDLED_SEED_DIRECTORY);
-    const result = await client.request<SeedImportResult>({
-      type: "import_seed_voices",
-      seed_dir: seedDirectory,
-    });
-    if (result.errors.length) {
-      console.warn("[volo-ai] Some bundled voice seeds could not be imported", result.errors);
-    }
-  } catch (reason) {
-    console.warn("[volo-ai] Could not import bundled voice seeds", reason);
-  }
-}
-
 type AdvancedDraft = {
   duration: string;
   steps: string;
@@ -211,6 +219,16 @@ type AdvancedDraft = {
   pad_duration: string;
   fade_duration: string;
   normalize_text: boolean;
+};
+
+type VieNeuDraft = {
+  temperature: string;
+  top_k: string;
+  top_p: string;
+  repetition_penalty: string;
+  repetition_window: string;
+  do_sample: boolean;
+  seed: string;
 };
 
 const DEFAULT_ADVANCED: AdvancedDraft = {
@@ -231,6 +249,25 @@ const DEFAULT_ADVANCED: AdvancedDraft = {
   normalize_text: false,
 };
 
+const DEFAULT_VIENEU: VieNeuDraft = {
+  temperature: "0.8",
+  top_k: "25",
+  top_p: "0.95",
+  repetition_penalty: "1.2",
+  repetition_window: "64",
+  do_sample: true,
+  seed: "",
+};
+
+const DEFAULT_VIENEU_CONFIG: VieNeuConfig = {
+  temperature: 0.8,
+  top_k: 25,
+  top_p: 0.95,
+  repetition_penalty: 1.2,
+  repetition_window: 64,
+  do_sample: true,
+};
+
 function readAdvancedNumber(
   value: string,
   label: string,
@@ -245,6 +282,47 @@ function readAdvancedNumber(
   )
     throw new Error(`${label}: invalid value`);
   return number;
+}
+
+function readVieNeuConfig(draft: VieNeuDraft, invalidMessage: string): VieNeuConfig {
+  const readRequired = (
+    value: string,
+    label: string,
+    options: { integer?: boolean; positive?: boolean } = {},
+  ) => {
+    const number = readAdvancedNumber(value, label, options);
+    if (number === undefined || (options.integer && !Number.isSafeInteger(number))) {
+      throw new Error(invalidMessage);
+    }
+    return number;
+  };
+  const temperature = readRequired(draft.temperature, "temperature");
+  const topK = readRequired(draft.top_k, "top_k", { integer: true, positive: true });
+  const topP = readRequired(draft.top_p, "top_p", { positive: true });
+  const repetitionPenalty = readRequired(draft.repetition_penalty, "repetition_penalty", {
+    positive: true,
+  });
+  const repetitionWindow = readRequired(draft.repetition_window, "repetition_window", {
+    integer: true,
+  });
+  const seed = draft.seed.trim()
+    ? readRequired(draft.seed, "seed", { integer: true })
+    : undefined;
+  if (topP > 1) throw new Error(invalidMessage);
+
+  const config: VieNeuConfig = {};
+  if (temperature !== DEFAULT_VIENEU_CONFIG.temperature) config.temperature = temperature;
+  if (topK !== DEFAULT_VIENEU_CONFIG.top_k) config.top_k = topK;
+  if (topP !== DEFAULT_VIENEU_CONFIG.top_p) config.top_p = topP;
+  if (repetitionPenalty !== DEFAULT_VIENEU_CONFIG.repetition_penalty) {
+    config.repetition_penalty = repetitionPenalty;
+  }
+  if (repetitionWindow !== DEFAULT_VIENEU_CONFIG.repetition_window) {
+    config.repetition_window = repetitionWindow;
+  }
+  if (draft.do_sample !== DEFAULT_VIENEU_CONFIG.do_sample) config.do_sample = draft.do_sample;
+  if (seed !== undefined) config.seed = seed;
+  return config;
 }
 
 function readSynthesisLanguage(): Language {
@@ -421,18 +499,25 @@ function SetupScreen({
                 <p className="mt-2 text-sm text-(--muted-foreground)">
                   {copy.selectProviderDescription}
                 </p>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <ToggleGroup
+                  multiple={false}
+                  value={[provider]}
+                  onValueChange={(value) => {
+                    if (value[0]) onProviderChange(value[0] as ProviderId);
+                  }}
+                  className="mt-3 grid w-full gap-2 sm:grid-cols-2"
+                  aria-label={copy.chooseProvider}
+                >
                   {providerChoices.map(([id, label]) => (
-                    <button
-                      type="button"
+                    <ToggleGroupItem
                       key={id}
-                      aria-pressed={provider === id}
-                      onClick={() => onProviderChange(id)}
-                      className={`rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${provider === id ? "border-(--accent) bg-(--accent-soft)" : "border-(--border) bg-(--surface-muted) hover:border-(--border-strong)"}`}
+                      value={id}
+                      variant="card"
+                      size="lg"
                     >
                       <span className="flex items-center justify-between gap-2">
                         <span className="text-sm font-semibold">{label}</span>
-                        <Badge>
+                        <Badge variant={providerIsReady(providers?.[id]) ? "success" : "destructive"}>
                           {providerIsReady(providers?.[id]) ? copy.ready : copy.unavailable}
                         </Badge>
                       </span>
@@ -441,9 +526,9 @@ function SetupScreen({
                           {providers[id].unavailable_reason}
                         </span>
                       )}
-                    </button>
+                    </ToggleGroupItem>
                   ))}
-                </div>
+                </ToggleGroup>
               </section>
               <div className="rounded-2xl border border-(--border) bg-(--surface-muted) p-5">
                 <div className="flex items-center justify-between gap-4">
@@ -599,23 +684,28 @@ function LogsView({
         description={copy.logsDescription}
         action={
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex rounded-xl border border-(--border) bg-(--surface) p-1">
-              {(
-                [
-                  ["all", copy.filterAll],
-                  ["success", copy.filterSuccess],
-                  ["error", copy.filterError],
-                ] as const
-              ).map(([f, label]) => (
-                <button
-                  type="button"
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${filter === f ? "bg-(--accent-soft) text-(--accent)" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
-                >
-                  {label}
-                </button>
-              ))}
+            <div className="rounded-xl border border-(--border) bg-(--surface) p-1">
+              <ToggleGroup
+                multiple={false}
+                value={[filter]}
+                onValueChange={(value) => {
+                  if (value[0]) setFilter(value[0] as "all" | "success" | "error");
+                }}
+                spacing={0}
+                aria-label={copy.logsDescription}
+              >
+                {(
+                  [
+                    ["all", copy.filterAll],
+                    ["success", copy.filterSuccess],
+                    ["error", copy.filterError],
+                  ] as const
+                ).map(([f, label]) => (
+                  <ToggleGroupItem key={f} value={f} size="sm">
+                    {label}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
             </div>
             {logs.length > 0 && (
               <Button variant="ghost" size="sm" onClick={onClearLogs} title={copy.clearLogs}>
@@ -623,7 +713,7 @@ function LogsView({
                 <span className="text-xs text-(--destructive)">{copy.clearLogs}</span>
               </Button>
             )}
-            <Badge className="border-(--border) bg-(--surface-muted) text-(--muted-foreground)">
+            <Badge variant="secondary">
               <span className="mr-2 size-1.5 rounded-full bg-(--success)" />
               {copy.sessionOnly}
             </Badge>
@@ -675,12 +765,12 @@ function LogsView({
                         entry.operation}
                     </p>
                     <Badge
-                      className={
+                      variant={
                         entry.status === "error"
-                          ? "border-(--destructive-border) bg-(--destructive-surface) text-(--destructive)"
-                          : entry.status === "pending"
-                            ? "border-(--accent-border) bg-(--accent-soft) text-(--accent)"
-                            : undefined
+                          ? "destructive"
+                          : entry.status === "success"
+                            ? "success"
+                            : "default"
                       }
                     >
                       {entry.status === "pending" ? copy.running : entry.status.toUpperCase()}
@@ -991,8 +1081,8 @@ function VoiceProfilesView({
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                               <h3 className="truncate font-semibold">{voice.name}</h3>
-                              <Badge>{copy.profileReady}</Badge>
-                              <Badge className="border-(--border) bg-(--surface) text-(--muted-foreground)">
+                              <Badge variant="success">{copy.profileReady}</Badge>
+                              <Badge variant="outline">
                                 {voice.kind === "design"
                                   ? copy.designVoice
                                   : voice.kind === "vieneu_preset"
@@ -1000,7 +1090,7 @@ function VoiceProfilesView({
                                     : copy.cloneVoice}
                               </Badge>
                               {voice.is_default && (
-                                <Badge className="border-(--accent-border) bg-(--accent-soft) text-(--accent)">
+                                <Badge>
                                   {copy.defaultVoice}
                                 </Badge>
                               )}
@@ -1022,9 +1112,8 @@ function VoiceProfilesView({
                           </div>
                         </div>
                         <Button
-                          variant="icon"
+                          variant="destructive"
                           size="icon"
-                          className="text-(--destructive) hover:border-(--destructive) hover:text-(--destructive)"
                           aria-label={`${copy.deleteProfile}: ${voice.name}`}
                           onClick={() => onDelete(voice.name)}
                           disabled={deletingVoice === voice.name}
@@ -1106,29 +1195,31 @@ function VoiceProfilesView({
                 void onSave();
               }}
             >
-              <div
-                className="grid grid-cols-3 gap-1 rounded-xl border border-(--border) bg-(--surface-muted) p-1"
-                role="group"
-                aria-label={copy.createProfile}
-              >
-                {(["clone", "design", "vieneu_preset"] as VoiceKind[]).map((kind) => (
-                  <button
-                    type="button"
-                    key={kind}
-                    aria-pressed={profileKind === kind}
-                    onClick={() => onProfileKindChange(kind)}
-                    className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${profileKind === kind ? "bg-(--surface) text-(--foreground) shadow-sm" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
-                  >
+              <div className="rounded-xl border border-(--border) bg-(--surface-muted) p-1">
+                <ToggleGroup
+                  multiple={false}
+                  value={[profileKind]}
+                  onValueChange={(value) => {
+                    if (value[0]) onProfileKindChange(value[0] as VoiceKind);
+                  }}
+                  spacing={0}
+                  className="grid w-full grid-cols-3"
+                  aria-label={copy.createProfile}
+                >
+                  {(["clone", "design", "vieneu_preset"] as VoiceKind[]).map((kind) => (
+                    <ToggleGroupItem key={kind} value={kind} className="px-3 py-2 text-sm">
                     {kind === "design"
                       ? copy.designVoice
                       : kind === "vieneu_preset"
                         ? copy.vieneuPresetProfile
                         : copy.cloneVoice}
-                  </button>
-                ))}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="profile-name">{copy.profileName}</Label>
+              <FieldGroup className="gap-4">
+              <Field>
+                <FieldLabel htmlFor="profile-name">{copy.profileName}</FieldLabel>
                 <Input
                   ref={nameInputRef}
                   id="profile-name"
@@ -1137,11 +1228,11 @@ function VoiceProfilesView({
                   disabled={isSaving}
                   onChange={(event) => onProfileNameChange(event.target.value)}
                 />
-              </div>
+              </Field>
               {profileKind === "clone" ? (
                 <>
-                  <div className="space-y-2">
-                    <Label>{copy.referenceAudio}</Label>
+                  <Field>
+                    <FieldLabel>{copy.referenceAudio}</FieldLabel>
                     <div className="flex flex-col gap-2">
                       <Button
                         type="button"
@@ -1165,9 +1256,9 @@ function VoiceProfilesView({
                         </div>
                       )}
                     </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="profile-transcript">{copy.referenceTranscript}</Label>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="profile-transcript">{copy.referenceTranscript}</FieldLabel>
                     <Textarea
                       id="profile-transcript"
                       value={refText}
@@ -1175,11 +1266,11 @@ function VoiceProfilesView({
                       disabled={isSaving}
                       onChange={(event) => onRefTextChange(event.target.value)}
                     />
-                  </div>
+                  </Field>
                 </>
               ) : profileKind === "design" ? (
-                <div className="space-y-2">
-                  <Label htmlFor="profile-design-instruction">{copy.voiceDesignInstruction}</Label>
+                <Field>
+                  <FieldLabel htmlFor="profile-design-instruction">{copy.voiceDesignInstruction}</FieldLabel>
                   <Textarea
                     id="profile-design-instruction"
                     value={designInstruction}
@@ -1190,30 +1281,41 @@ function VoiceProfilesView({
                   <p className="text-xs leading-5 text-(--muted-foreground)">
                     {copy.voiceDesignExample}
                   </p>
-                </div>
+                </Field>
               ) : (
-                <div className="space-y-2">
-                  <Label htmlFor="profile-vieneu-preset">{copy.vieneuPresetSelector}</Label>
+                <Field>
+                  <FieldLabel htmlFor="profile-vieneu-preset">{copy.vieneuPresetSelector}</FieldLabel>
                   {presetVoices.length > 0 ? (
                     <Select
-                      value={profilePresetId}
-                      onValueChange={onProfilePresetIdChange}
+                      value={profilePresetId || null}
+                      items={presetVoices.map((voice) => ({
+                        value: voice.id,
+                        label: `${voice.name} · ${voice.label}`,
+                      }))}
+                      onValueChange={(value) => {
+                        if (typeof value === "string") onProfilePresetIdChange(value);
+                      }}
                       disabled={isSaving}
-                      aria-label={copy.vieneuPresetSelector}
                     >
-                      {presetVoices.map((voice) => (
-                        <SelectItem key={voice.id} value={voice.id}>
-                          {voice.name} · {voice.label}
-                        </SelectItem>
-                      ))}
+                      <SelectTrigger id="profile-vieneu-preset" aria-label={copy.vieneuPresetSelector}>
+                        <SelectValue placeholder={copy.vieneuPresetSelector} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {presetVoices.map((voice) => (
+                          <SelectItem key={voice.id} value={voice.id}>
+                            {voice.name} · {voice.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
                     </Select>
                   ) : (
                     <p className="rounded-xl border border-(--border) bg-(--surface-muted) p-3 text-xs leading-5 text-(--muted-foreground)">
                       {copy.vieneuPresetCatalogUnavailable}
                     </p>
                   )}
-                </div>
+                </Field>
               )}
+              </FieldGroup>
               <Button
                 type="submit"
                 className="w-full"
@@ -1340,25 +1442,21 @@ function SettingsView({
           </Button>
         }
       />
-      <div
-        className="mb-5 flex w-full gap-1 overflow-x-auto rounded-xl border border-(--border) bg-(--surface-muted) p-1"
-        role="tablist"
-        aria-label={copy.studioSettings}
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => {
+          if (value) setActiveTab(value as SettingsTab);
+        }}
+        className="gap-5"
       >
-        {tabs.map(([value, label]) => (
-          <button
-            type="button"
-            key={value}
-            role="tab"
-            aria-selected={activeTab === value}
-            onClick={() => setActiveTab(value)}
-            className={`min-w-28 flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${activeTab === value ? "bg-(--surface) text-(--foreground) shadow-sm" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      <div className="grid gap-5 lg:grid-cols-2">
+        <TabsList className="mb-0 w-full overflow-x-auto" aria-label={copy.studioSettings}>
+          {tabs.map(([value, label]) => (
+            <TabsTrigger key={value} value={value}>
+              {label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <TabsContent value="general" className="grid gap-5 lg:grid-cols-2">
         {activeTab === "general" && (
           <>
             <Card>
@@ -1371,18 +1469,23 @@ function SettingsView({
               </CardHeader>
               <CardContent>
                 <CardDescription>{copy.appLanguageDescription}</CardDescription>
-                <div className="mt-5 grid grid-cols-2 gap-2 rounded-xl bg-(--surface-muted) p-1.5">
-                  {(["en", "vi"] as AppLanguage[]).map((item) => (
-                    <button
-                      type="button"
-                      key={item}
-                      onClick={() => onChangeLanguage(item)}
-                      aria-pressed={appLanguage === item}
-                      className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${appLanguage === item ? "bg-(--surface) text-(--foreground) shadow-sm" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
-                    >
-                      {item === "en" ? copy.english : copy.vietnamese}
-                    </button>
-                  ))}
+                <div className="mt-5 rounded-xl bg-(--surface-muted) p-1.5">
+                  <ToggleGroup
+                    multiple={false}
+                    value={[appLanguage]}
+                    onValueChange={(value) => {
+                      if (value[0]) onChangeLanguage(value[0] as AppLanguage);
+                    }}
+                    spacing={0}
+                    className="grid w-full grid-cols-2"
+                    aria-label={copy.appLanguage}
+                  >
+                    {(["en", "vi"] as AppLanguage[]).map((item) => (
+                      <ToggleGroupItem key={item} value={item} size="lg">
+                        {item === "en" ? copy.english : copy.vietnamese}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
                 </div>
               </CardContent>
             </Card>
@@ -1397,7 +1500,17 @@ function SettingsView({
               </CardHeader>
               <CardContent>
                 <CardDescription>{copy.themeDescription}</CardDescription>
-                <div className="mt-5 grid grid-cols-3 gap-2 rounded-xl bg-(--surface-muted) p-1.5">
+                <div className="mt-5 rounded-xl bg-(--surface-muted) p-1.5">
+                  <ToggleGroup
+                    multiple={false}
+                    value={[theme]}
+                    onValueChange={(value) => {
+                      if (value[0]) onChangeTheme(value[0] as ThemeMode);
+                    }}
+                    spacing={0}
+                    className="grid w-full grid-cols-3"
+                    aria-label={copy.theme}
+                  >
                   {(
                     [
                       ["light", copy.themeLight, Sun],
@@ -1405,22 +1518,19 @@ function SettingsView({
                       ["system", copy.themeSystem, Monitor],
                     ] as const
                   ).map(([item, label, Icon]) => (
-                    <button
-                      type="button"
-                      key={item}
-                      onClick={() => onChangeTheme(item)}
-                      aria-pressed={theme === item}
-                      className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${theme === item ? "bg-(--surface) text-(--foreground) shadow-sm" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
-                    >
-                      <Icon className="size-3.5" />
+                    <ToggleGroupItem key={item} value={item} size="lg">
+                      <Icon />
                       <span>{label}</span>
-                    </button>
+                    </ToggleGroupItem>
                   ))}
+                  </ToggleGroup>
                 </div>
               </CardContent>
             </Card>
           </>
         )}
+        </TabsContent>
+        <TabsContent value="model" className="grid gap-5 lg:grid-cols-2">
         {activeTab === "model" && (
           <Card className="lg:col-span-2">
             <CardHeader>
@@ -1430,13 +1540,7 @@ function SettingsView({
                 <CardDescription className="mt-2">{copy.modelDescription}</CardDescription>
               </div>
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <Badge
-                  className={
-                    !modelReady
-                      ? "border-(--destructive-border) bg-(--destructive-surface) text-(--destructive)"
-                      : undefined
-                  }
-                >
+                <Badge variant={modelReady ? "success" : "destructive"}>
                   {modelReady ? copy.ready : copy.unavailable}
                 </Badge>
                 <Button
@@ -1474,7 +1578,9 @@ function SettingsView({
                               {status?.unavailable_reason ?? copy.providerRuntimeReady}
                             </p>
                           </div>
-                          <Badge>{providerIsReady(status) ? copy.ready : copy.unavailable}</Badge>
+                          <Badge variant={providerIsReady(status) ? "success" : "destructive"}>
+                            {providerIsReady(status) ? copy.ready : copy.unavailable}
+                          </Badge>
                         </div>
                         <div className="mt-4 flex flex-wrap gap-2">
                           <Button
@@ -1571,6 +1677,8 @@ function SettingsView({
             </CardContent>
           </Card>
         )}
+        </TabsContent>
+        <TabsContent value="storage" className="grid gap-5 lg:grid-cols-2">
         {activeTab === "storage" && (
           <Card className="lg:col-span-2">
             <CardHeader>
@@ -1612,6 +1720,8 @@ function SettingsView({
             </CardContent>
           </Card>
         )}
+        </TabsContent>
+        <TabsContent value="mcp" className="grid gap-5 lg:grid-cols-2">
         {activeTab === "mcp" && (
           <Card className="lg:col-span-2">
             <CardHeader>
@@ -1627,15 +1737,21 @@ function SettingsView({
                 <SectionLabel>{copy.mcpClientLabel}</SectionLabel>
                 <Select
                   value={mcpClient}
-                  onValueChange={(value) => setMcpClient(value as McpClientId)}
-                  aria-label={copy.mcpClientLabel}
-                  className="max-w-xs"
+                  items={mcpClients.map(([value, label]) => ({ value, label }))}
+                  onValueChange={(value) => {
+                    if (typeof value === "string") setMcpClient(value as McpClientId);
+                  }}
                 >
-                  {mcpClients.map(([id, name]) => (
-                    <SelectItem key={id} value={id}>
-                      {name}
-                    </SelectItem>
-                  ))}
+                  <SelectTrigger aria-label={copy.mcpClientLabel} className="max-w-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mcpClients.map(([id, name]) => (
+                      <SelectItem key={id} value={id}>
+                        {name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
@@ -1677,7 +1793,8 @@ function SettingsView({
             </CardContent>
           </Card>
         )}
-      </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -1697,6 +1814,7 @@ function AdvancedNumberField({
   label,
   value,
   min,
+  max,
   step,
   disabled,
   onChange,
@@ -1704,22 +1822,61 @@ function AdvancedNumberField({
   label: string;
   value: string;
   min: string;
+  max?: string;
   step: string;
   disabled: boolean;
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
+    <Field>
+      <FieldLabel>{label}</FieldLabel>
       <Input
         type="number"
         min={min}
+        max={max}
         step={step}
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
       />
-    </div>
+    </Field>
+  );
+}
+
+function ConfirmDialog({
+  open,
+  title,
+  description,
+  confirmLabel,
+  cancelLabel,
+  onOpenChange,
+  onConfirm,
+  busy,
+}: {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  busy?: boolean;
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{cancelLabel}</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" disabled={busy} onClick={onConfirm}>
+            {confirmLabel}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -1838,7 +1995,7 @@ function AudioHistoryView({
                       <h2 className="line-clamp-2 min-w-0 text-sm font-semibold leading-6">
                         {item.id}
                       </h2>
-                      <Badge className="font-mono text-[9px] uppercase tracking-wider">
+                      <Badge variant="outline">
                         {item.format}
                       </Badge>
                     </div>
@@ -1924,6 +2081,8 @@ function WorkspaceView({
   format,
   advanced,
   advancedError,
+  vieneuAdvanced,
+  vieneuAdvancedError,
   voices,
   presetVoices,
   selectedVoice,
@@ -1940,6 +2099,7 @@ function WorkspaceView({
   onSpeedChange,
   onFormatChange,
   onAdvancedChange,
+  onVieNeuAdvancedChange,
   onVoiceSelectionChange,
   onChooseReference,
   onSynthesize,
@@ -1956,6 +2116,8 @@ function WorkspaceView({
   format: AudioFormat;
   advanced: AdvancedDraft;
   advancedError: string | null;
+  vieneuAdvanced: VieNeuDraft;
+  vieneuAdvancedError: string | null;
   voices: VoiceProfile[];
   presetVoices: Array<{ id: string; name: string; label: string }>;
   selectedVoice: string;
@@ -1972,6 +2134,7 @@ function WorkspaceView({
   onSpeedChange: (speed: number) => void;
   onFormatChange: (format: AudioFormat) => void;
   onAdvancedChange: (patch: Partial<AdvancedDraft>) => void;
+  onVieNeuAdvancedChange: (patch: Partial<VieNeuDraft>) => void;
   onVoiceSelectionChange: (name: string) => void;
   onChooseReference: () => void;
   onSynthesize: () => void;
@@ -1990,6 +2153,17 @@ function WorkspaceView({
       : mode === "file"
         ? "file"
         : `preset:${selectedVoice}`;
+  const voiceItems = [
+    ...(isOmniVoice
+      ? [{ value: "auto", label: `${copy.autoVoice} · ${copy.autoVoiceDescription}` }]
+      : presetVoices.map((voice) => ({ value: `preset:${voice.id}`, label: voice.label }))),
+    ...(!isOmniVoice ? [{ value: "file", label: copy.referenceFile }] : []),
+    ...visibleVoices.map((voice) => ({
+      value: `profile:${voice.name}`,
+      label: `${voice.name}${voice.kind === "vieneu_preset" ? isOmniVoice && voice.ref_audio ? " · OmniVoice WAV" : ` · ${copy.providerVieNeu}` : ` · ${voice.language?.toUpperCase() ?? ""}`}${voice.is_default ? ` · ${copy.defaultVoice}` : ""}`,
+    })),
+  ];
+  const speedPresets = [0.8, 1.0, 1.25, 1.5];
 
   const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
   const estSeconds = Math.max(1, Math.round(wordCount / 2.5));
@@ -2024,8 +2198,8 @@ function WorkspaceView({
         description={copy.workspaceDescription}
         action={
           <div className="flex flex-wrap gap-2">
-            <Badge>{isOmniVoice ? copy.providerOmni : copy.providerVieNeu}</Badge>
-            <Badge>
+            <Badge variant="secondary">{isOmniVoice ? copy.providerOmni : copy.providerVieNeu}</Badge>
+            <Badge variant="success">
               <span className="mr-2 size-1.5 rounded-full bg-(--success)" />
               {copy.modelReady}
             </Badge>
@@ -2075,18 +2249,20 @@ function WorkspaceView({
                   {sampleMenuOpen && (
                     <div className="absolute right-0 top-10 z-30 min-w-56 overflow-hidden rounded-xl border border-(--border) bg-(--surface) p-1.5 shadow-xl">
                       {currentSamples.map((sample) => (
-                        <button
+                        <Button
                           key={sample.titleKey}
                           type="button"
+                          variant="ghost"
+                          size="sm"
                           onClick={() => {
                             onTextChange(sample.text);
                             setSampleMenuOpen(false);
                           }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-(--foreground) hover:bg-(--surface-muted)"
+                          className="w-full justify-start"
                         >
-                          <Sparkles className="size-3 text-(--accent)" />
+                          <Sparkles data-icon="inline-start" />
                           <span>{copy[sample.titleKey as keyof UiCopy] as string}</span>
-                        </button>
+                        </Button>
                       ))}
                     </div>
                   )}
@@ -2150,7 +2326,7 @@ function WorkspaceView({
                   {result ? copy.renderedTake : copy.nothingRendered}
                 </h2>
               </div>
-              {result && <Badge>{copy.ready}</Badge>}
+              {result && <Badge variant="success">{copy.ready}</Badge>}
             </div>
 
             {audioUrl && result ? (
@@ -2187,33 +2363,38 @@ function WorkspaceView({
                     {takes.length} {copy.take.toLowerCase()}(s)
                   </span>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <ToggleGroup
+                  multiple={false}
+                  value={activeTakeId ? [activeTakeId] : []}
+                  onValueChange={(value) => {
+                    const selected = takes.find((take) => take.id === value[0]);
+                    if (selected) onSelectTake(selected);
+                  }}
+                  aria-label={copy.takeHistory}
+                  className="flex flex-wrap gap-2"
+                  spacing={0}
+                >
                   {takes.map((take, index) => {
-                    const isActive = activeTakeId === take.id;
                     const takeNum = takes.length - index;
                     return (
-                      <button
-                        type="button"
+                      <ToggleGroupItem
                         key={take.id}
-                        onClick={() => onSelectTake(take)}
-                        className={cn(
-                          "flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs transition-all",
-                          isActive
-                            ? "border-(--accent) bg-(--surface) font-semibold text-(--accent) shadow-sm"
-                            : "border-(--border) bg-(--surface) text-(--muted-foreground) hover:border-(--border-strong) hover:text-(--foreground)",
-                        )}
+                        value={take.id}
+                        variant="outline"
+                        size="sm"
+                        className="h-auto gap-2 rounded-xl px-3 py-1.5"
                       >
-                        <Play className={cn("size-3", isActive ? "fill-current" : "")} />
+                        <Play data-icon="inline-start" />
                         <span>
                           {copy.take} #{takeNum}
                         </span>
                         <span className="font-mono text-[10px] uppercase opacity-75">
                           {take.voiceName} · {take.format}
                         </span>
-                      </button>
+                      </ToggleGroupItem>
                     );
                   })}
-                </div>
+                </ToggleGroup>
               </div>
             )}
           </div>
@@ -2231,44 +2412,54 @@ function WorkspaceView({
             <div>
               <div className="flex items-center justify-between mb-2">
                 <Label>{copy.chooseProvider}</Label>
-                <Badge className="text-[9px]">
+              <Badge variant={providerIsReady(providerStatuses?.[provider]) ? "success" : "destructive"}>
                   {providerIsReady(providerStatuses?.[provider]) ? copy.ready : copy.unavailable}
                 </Badge>
               </div>
-              <div className="grid grid-cols-2 gap-1 rounded-xl border border-(--border) bg-(--surface-muted) p-1">
-                {(
-                  [
-                    ["omnivoice", copy.providerOmni],
-                    ["vieneu", copy.providerVieNeu],
-                  ] as const
-                ).map(([pId, label]) => (
-                  <button
-                    type="button"
-                    key={pId}
-                    onClick={() => onProviderChange(pId)}
-                    aria-pressed={provider === pId}
-                    className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${provider === pId ? "bg-(--surface) text-(--foreground) shadow-sm" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
-                  >
-                    {label}
-                  </button>
-                ))}
+              <div className="rounded-xl border border-(--border) bg-(--surface-muted) p-1">
+                <ToggleGroup
+                  multiple={false}
+                  value={[provider]}
+                  onValueChange={(value) => {
+                    if (value[0]) onProviderChange(value[0] as ProviderId);
+                  }}
+                  spacing={0}
+                  className="grid w-full grid-cols-2"
+                  aria-label={copy.chooseProvider}
+                >
+                  {(
+                    [
+                      ["omnivoice", copy.providerOmni],
+                      ["vieneu", copy.providerVieNeu],
+                    ] as const
+                  ).map(([pId, label]) => (
+                    <ToggleGroupItem key={pId} value={pId} size="sm">
+                      {label}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
               </div>
             </div>
 
             <div>
               <Label>{copy.synthesisLanguage}</Label>
-              <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl bg-(--surface-muted) p-1.5">
-                {(["en", "vi"] as Language[]).map((item) => (
-                  <button
-                    type="button"
-                    key={item}
-                    aria-pressed={language === item}
-                    onClick={() => onLanguageChange(item)}
-                    className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${language === item ? "bg-(--surface) text-(--foreground) shadow-sm" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
-                  >
-                    {item === "en" ? copy.english : copy.vietnamese}
-                  </button>
-                ))}
+              <div className="mt-2 rounded-xl bg-(--surface-muted) p-1.5">
+                <ToggleGroup
+                  multiple={false}
+                  value={[language]}
+                  onValueChange={(value) => {
+                    if (value[0]) onLanguageChange(value[0] as Language);
+                  }}
+                  spacing={0}
+                  className="grid w-full grid-cols-2"
+                  aria-label={copy.synthesisLanguage}
+                >
+                  {(["en", "vi"] as Language[]).map((item) => (
+                    <ToggleGroupItem key={item} value={item} size="lg">
+                      {item === "en" ? copy.english : copy.vietnamese}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
               </div>
             </div>
             <div>
@@ -2276,32 +2467,21 @@ function WorkspaceView({
               <div className="mt-2 space-y-3">
                 <Select
                   value={selectedSource}
-                  onValueChange={onVoiceSelectionChange}
-                  aria-label={copy.voiceSource}
+                  items={voiceItems}
+                  onValueChange={(value) => {
+                    if (typeof value === "string") onVoiceSelectionChange(value);
+                  }}
                 >
-                  {isOmniVoice ? (
-                    <SelectItem value="auto">
-                      {copy.autoVoice} · {copy.autoVoiceDescription}
-                    </SelectItem>
-                  ) : (
-                    presetVoices.map((voice) => (
-                      <SelectItem key={voice.id} value={`preset:${voice.id}`}>
-                        {voice.label}
+                  <SelectTrigger aria-label={copy.voiceSource}>
+                    <SelectValue placeholder={copy.voiceSource} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {voiceItems.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
                       </SelectItem>
-                    ))
-                  )}
-                  {!isOmniVoice && <SelectItem value="file">{copy.referenceFile}</SelectItem>}
-                  {visibleVoices.map((voice) => (
-                    <SelectItem key={`${voice.name}-label`} value={`profile:${voice.name}`}>
-                      {voice.name}
-                      {voice.kind === "vieneu_preset"
-                        ? isOmniVoice && voice.ref_audio
-                          ? " · OmniVoice WAV"
-                          : ` · ${copy.providerVieNeu}`
-                        : ` · ${voice.language?.toUpperCase() ?? ""}`}
-                      {voice.is_default ? ` · ${copy.defaultVoice}` : ""}
-                    </SelectItem>
-                  ))}
+                    ))}
+                  </SelectContent>
                 </Select>
                 {visibleVoices.length === 0 && presetVoices.length === 0 && (
                   <p className="text-xs leading-5 text-(--muted-foreground)">{copy.noProfiles}</p>
@@ -2327,21 +2507,29 @@ function WorkspaceView({
                 <div className="flex items-center justify-between">
                   <Label htmlFor="speed">{copy.speed}</Label>
                   <div className="flex items-center gap-1.5">
-                    {[0.8, 1.0, 1.25, 1.5].map((preset) => (
-                      <button
-                        type="button"
-                        key={preset}
-                        onClick={() => onSpeedChange(preset)}
-                        className={cn(
-                          "rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-semibold transition-colors",
-                          Math.abs(speed - preset) < 0.04
-                            ? "border-(--accent) bg-(--accent-soft) text-(--accent)"
-                            : "border-(--border) bg-(--surface) text-(--muted-foreground) hover:text-(--foreground)",
-                        )}
-                      >
-                        {preset}×
-                      </button>
-                    ))}
+                    <ToggleGroup
+                      multiple={false}
+                      value={speedPresets
+                        .filter((preset) => Math.abs(speed - preset) < 0.04)
+                        .map(String)}
+                      onValueChange={(value) => {
+                        if (value[0]) onSpeedChange(Number(value[0]));
+                      }}
+                      aria-label={copy.speed}
+                      spacing={1}
+                    >
+                      {speedPresets.map((preset) => (
+                        <ToggleGroupItem
+                          key={preset}
+                          value={String(preset)}
+                          variant="outline"
+                          size="sm"
+                          className="font-mono"
+                        >
+                          {preset}×
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
                     <span className="ml-1 rounded-md bg-(--surface-muted) px-2 py-1 font-mono text-xs font-semibold">
                       {speed.toFixed(2)}×
                     </span>
@@ -2362,18 +2550,23 @@ function WorkspaceView({
             )}
             <div>
               <Label>{copy.outputFormat}</Label>
-              <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl bg-(--surface-muted) p-1.5">
-                {(["wav", "mp3"] as AudioFormat[]).map((item) => (
-                  <button
-                    type="button"
-                    key={item}
-                    aria-pressed={format === item}
-                    onClick={() => onFormatChange(item)}
-                    className={`rounded-lg px-3 py-2.5 font-mono text-xs font-bold uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${format === item ? "bg-(--surface) text-(--foreground) shadow-sm" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
-                  >
-                    {item}
-                  </button>
-                ))}
+              <div className="mt-2 rounded-xl bg-(--surface-muted) p-1.5">
+                <ToggleGroup
+                  multiple={false}
+                  value={[format]}
+                  onValueChange={(value) => {
+                    if (value[0]) onFormatChange(value[0] as AudioFormat);
+                  }}
+                  spacing={0}
+                  className="grid w-full grid-cols-2"
+                  aria-label={copy.outputFormat}
+                >
+                  {(["wav", "mp3"] as AudioFormat[]).map((item) => (
+                    <ToggleGroupItem key={item} value={item} size="lg" className="font-mono uppercase">
+                      {item}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
               </div>
             </div>
             {isOmniVoice && (
@@ -2381,18 +2574,20 @@ function WorkspaceView({
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3.5 py-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring)">
                   <span>{copy.advancedSettings}</span>
                   <div className="flex items-center gap-2">
-                    <button
+                    <Button
                       type="button"
+                      variant="outline"
+                      size="xs"
                       onClick={(e) => {
                         e.stopPropagation();
                         onAdvancedChange(DEFAULT_ADVANCED);
                       }}
-                      className="inline-flex items-center gap-1 rounded-md border border-(--border) bg-(--surface) px-2 py-0.5 text-[10px] font-medium text-(--muted-foreground) transition-colors hover:border-(--accent) hover:text-(--accent)"
+                      className="gap-1"
                       title={copy.resetDefaults}
                     >
-                      <RotateCcw className="size-2.5" />
+                      <RotateCcw data-icon="inline-start" />
                       <span>{copy.resetDefaults}</span>
-                    </button>
+                    </Button>
                     <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
                   </div>
                 </summary>
@@ -2498,7 +2693,10 @@ function WorkspaceView({
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 border-t border-(--border) pt-3">
+                  <FieldSet className="grid grid-cols-2 gap-2 border-t border-(--border) pt-3">
+                    <FieldLegend variant="label" className="sr-only">
+                      {copy.advancedSettings}
+                    </FieldLegend>
                     {(
                       [
                         ["denoise", copy.denoise],
@@ -2507,25 +2705,136 @@ function WorkspaceView({
                         ["normalize_text", copy.normalizeText],
                       ] as const
                     ).map(([key, label]) => (
-                      <label
+                      <Field
                         key={key}
-                        className="flex items-center gap-2 text-xs text-(--muted-foreground) cursor-pointer"
+                        orientation="horizontal"
+                        className="items-center gap-2"
                       >
-                        <input
-                          type="checkbox"
+                        <Checkbox
+                          id={`advanced-${key}`}
                           checked={advanced[key]}
                           disabled={isGenerating}
-                          onChange={(event) => onAdvancedChange({ [key]: event.target.checked })}
-                          className="size-4 accent-(--accent)"
+                          onCheckedChange={(checked) =>
+                            onAdvancedChange({ [key]: checked === true })
+                          }
                         />
-                        <span>{label}</span>
-                      </label>
+                        <FieldLabel
+                          htmlFor={`advanced-${key}`}
+                          className="cursor-pointer text-xs normal-case tracking-normal text-muted-foreground"
+                        >
+                          {label}
+                        </FieldLabel>
+                      </Field>
                     ))}
-                  </div>
+                  </FieldSet>
                 </div>
               </details>
             )}
-            {advancedError && <ErrorMessage>{advancedError}</ErrorMessage>}
+            {!isOmniVoice && (
+              <details className="group rounded-xl border border-(--border) bg-(--surface-muted)">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3.5 py-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring)">
+                  <span>{copy.vieneuAdvancedSettings}</span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onVieNeuAdvancedChange(DEFAULT_VIENEU);
+                      }}
+                      className="gap-1"
+                      title={copy.resetDefaults}
+                    >
+                      <RotateCcw data-icon="inline-start" />
+                      <span>{copy.resetDefaults}</span>
+                    </Button>
+                    <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
+                  </div>
+                </summary>
+                <div className="space-y-4 border-t border-(--border) px-3.5 pb-3.5 pt-3">
+                  <p className="text-xs leading-5 text-(--muted-foreground)">
+                    {copy.vieneuAdvancedSettingsDescription}
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <AdvancedNumberField
+                      label={copy.vieneuTemperature}
+                      value={vieneuAdvanced.temperature}
+                      min="0"
+                      step="0.1"
+                      disabled={isGenerating}
+                      onChange={(value) => onVieNeuAdvancedChange({ temperature: value })}
+                    />
+                    <AdvancedNumberField
+                      label={copy.vieneuTopK}
+                      value={vieneuAdvanced.top_k}
+                      min="1"
+                      step="1"
+                      disabled={isGenerating}
+                      onChange={(value) => onVieNeuAdvancedChange({ top_k: value })}
+                    />
+                    <AdvancedNumberField
+                      label={copy.vieneuTopP}
+                      value={vieneuAdvanced.top_p}
+                      min="0.01"
+                      max="1"
+                      step="0.01"
+                      disabled={isGenerating}
+                      onChange={(value) => onVieNeuAdvancedChange({ top_p: value })}
+                    />
+                    <AdvancedNumberField
+                      label={copy.vieneuRepetitionPenalty}
+                      value={vieneuAdvanced.repetition_penalty}
+                      min="0.01"
+                      step="0.05"
+                      disabled={isGenerating}
+                      onChange={(value) => onVieNeuAdvancedChange({ repetition_penalty: value })}
+                    />
+                    <AdvancedNumberField
+                      label={copy.vieneuRepetitionWindow}
+                      value={vieneuAdvanced.repetition_window}
+                      min="0"
+                      step="1"
+                      disabled={isGenerating}
+                      onChange={(value) => onVieNeuAdvancedChange({ repetition_window: value })}
+                    />
+                    <AdvancedNumberField
+                      label={copy.vieneuSeed}
+                      value={vieneuAdvanced.seed}
+                      min="0"
+                      step="1"
+                      disabled={isGenerating}
+                      onChange={(value) => onVieNeuAdvancedChange({ seed: value })}
+                    />
+                  </div>
+                  <FieldSet className="border-t border-(--border) pt-3">
+                    <FieldLegend variant="label" className="sr-only">
+                      {copy.vieneuAdvancedSettings}
+                    </FieldLegend>
+                    <Field orientation="horizontal" className="items-center gap-2">
+                      <Checkbox
+                        id="vieneu-do-sample"
+                        checked={vieneuAdvanced.do_sample}
+                        disabled={isGenerating}
+                        onCheckedChange={(checked) =>
+                          onVieNeuAdvancedChange({ do_sample: checked === true })
+                        }
+                      />
+                      <FieldLabel
+                        htmlFor="vieneu-do-sample"
+                        className="cursor-pointer text-xs normal-case tracking-normal text-muted-foreground"
+                      >
+                        {copy.vieneuSampling}
+                      </FieldLabel>
+                    </Field>
+                  </FieldSet>
+                </div>
+              </details>
+            )}
+            {isOmniVoice && advancedError && <ErrorMessage>{advancedError}</ErrorMessage>}
+            {!isOmniVoice && vieneuAdvancedError && (
+              <ErrorMessage>{vieneuAdvancedError}</ErrorMessage>
+            )}
             <div className="grid gap-2">
               <Button size="lg" onClick={onSynthesize} disabled={isGenerating}>
                 {isGenerating ? (
@@ -2565,24 +2874,12 @@ function App() {
   const [format, setFormat] = useState<AudioFormat>("wav");
   const [advanced, setAdvanced] = useState<AdvancedDraft>(DEFAULT_ADVANCED);
   const [advancedError, setAdvancedError] = useState<string | null>(null);
+  const [vieneuAdvanced, setVieNeuAdvanced] = useState<VieNeuDraft>(DEFAULT_VIENEU);
+  const [vieneuAdvancedError, setVieNeuAdvancedError] = useState<string | null>(null);
   const [refAudio, setRefAudio] = useState<string | null>(null);
   const [refText, setRefText] = useState("");
-  const [voices, setVoices] = useState<VoiceProfile[]>([]);
-  const [audioHistory, setAudioHistory] = useState<AudioHistoryItem[]>([]);
-  const [audioHistoryTotal, setAudioHistoryTotal] = useState(0);
-  const [audioHistoryCursor, setAudioHistoryCursor] = useState<AudioHistoryCursor | null>(null);
-  const [isLoadingAudioHistory, setIsLoadingAudioHistory] = useState(false);
-  const [isLoadingMoreAudioHistory, setIsLoadingMoreAudioHistory] = useState(false);
-  const [audioHistoryError, setAudioHistoryError] = useState<string | null>(null);
-  const audioHistoryRequestVersion = useRef(0);
   const [deletingAudioFile, setDeletingAudioFile] = useState<string | null>(null);
-  const [isLoadingVoices, setIsLoadingVoices] = useState(false);
-  const [voiceListError, setVoiceListError] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
-  const [isSavingProfile, setIsSavingProfile] = useState(false);
-  const [isImportingVoice, setIsImportingVoice] = useState(false);
-  const [isImportingSeed, setIsImportingSeed] = useState(false);
-  const [isSeedingVieNeu, setIsSeedingVieNeu] = useState(false);
   const [isCancellingSeed, setIsCancellingSeed] = useState(false);
   const [seedProgress, setSeedProgress] = useState<ProgressEvent | null>(null);
   const [seedResult, setSeedResult] = useState<SeedVieNeuResult | null>(null);
@@ -2598,22 +2895,17 @@ function App() {
   const [profilePresetId, setProfilePresetId] = useState("");
   const [designInstruction, setDesignInstruction] = useState("");
   const [result, setResult] = useState<SynthesisResult | null>(null);
-  const [isPreparing, setIsPreparing] = useState(false);
   const [preparingProvider, setPreparingProvider] = useState<ProviderId | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [engineOnline, setEngineOnline] = useState(false);
-  const [engineStatus, setEngineStatus] = useState<StatusResult | null>(null);
   const [logs, setLogs] = useState<RequestLog[]>(() => client.getLogs());
-  const [device, setDevice] = useState("unknown");
   const [dataDir, setDataDir] = useState<string | null>(null);
-  const [modelStatusError, setModelStatusError] = useState<string | null>(null);
-  const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
   const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null);
   const [theme, setTheme] = useState<ThemeMode>(readTheme);
   const [takes, setTakes] = useState<TakeItem[]>([]);
   const [activeTakeId, setActiveTakeId] = useState<string | null>(null);
+  const bundledSeedImportStarted = useRef(false);
+  const lastView = useRef<AppView>(view);
 
   useEffect(() => {
     applyTheme(theme);
@@ -2626,6 +2918,169 @@ function App() {
 
   const appLanguage: AppLanguage = translator.language === "vi" ? "vi" : "en";
   const copy: UiCopy = createUiCopy(t);
+  const queryClient = useQueryClient();
+  const statusQuery = useQuery({
+    queryKey: STATUS_QUERY_KEY,
+    queryFn: () => client.request<StatusResult>({ type: "status" }),
+  });
+  const engineStatus = statusQuery.data ?? null;
+  const engineOnline = Boolean(engineStatus);
+  const device = engineStatus?.device ?? "unknown";
+  const voicesQuery = useQuery({
+    queryKey: VOICES_QUERY_KEY,
+    queryFn: () => client.request<{ voices: VoiceProfile[] }>({ type: "list_voices" }),
+    enabled: engineOnline,
+  });
+  const voices = voicesQuery.data?.voices ?? [];
+  const historyQuery = useInfiniteQuery({
+    queryKey: AUDIO_HISTORY_QUERY_KEY,
+    queryFn: ({ pageParam }) =>
+      client.request<AudioHistoryPage>({
+        type: "list_audio_history",
+        paginated: true,
+        cursor: pageParam ?? undefined,
+      }),
+    initialPageParam: null as AudioHistoryCursor | null,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    enabled: view === "history",
+  });
+  const audioHistory = useMemo(() => {
+    const seen = new Set<string>();
+    return (historyQuery.data?.pages.flatMap((page) => page.items) ?? []).filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+  }, [historyQuery.data]);
+  const lastHistoryPage = historyQuery.data?.pages.at(-1);
+  const audioHistoryTotal = lastHistoryPage?.total ?? 0;
+  const audioHistoryCursor = lastHistoryPage?.next_cursor ?? null;
+  const isLoadingAudioHistory = historyQuery.isLoading || historyQuery.isRefetching;
+  const isLoadingMoreAudioHistory = historyQuery.isFetchingNextPage;
+  const isLoadingVoices = voicesQuery.isFetching;
+  const voiceListError = voicesQuery.error
+    ? voicesQuery.error instanceof Error
+      ? voicesQuery.error.message
+      : copy.couldNotLoadProfiles
+    : null;
+  const isRefreshingStatus = statusQuery.isFetching;
+  const modelStatusError = statusQuery.error
+    ? statusQuery.error instanceof Error
+      ? statusQuery.error.message
+      : translator.t("errors.engineUnavailable")
+    : null;
+  const prepareMutation = useMutation({
+    mutationFn: (target: ProviderId) =>
+      client.request<{ model_ready: boolean }>({ type: "prepare_model", provider: target }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: STATUS_QUERY_KEY }),
+  });
+  const seedImportMutation = useMutation({
+    mutationFn: (seedDirectory: string) =>
+      client.request<SeedImportResult>({ type: "import_seed_voices", seed_dir: seedDirectory }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: VOICES_QUERY_KEY }),
+  });
+  const seedVieNeuMutation = useMutation({
+    mutationFn: () => client.request<SeedVieNeuResult>({ type: "seed_vieneu_voices" }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: VOICES_QUERY_KEY }),
+  });
+  const importVoiceMutation = useMutation({
+    mutationFn: (request: { name: string; path: string; language: Language }) =>
+      client.request({
+        type: "save_voice",
+        name: request.name,
+        ref_audio: request.path,
+        language: request.language,
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: VOICES_QUERY_KEY }),
+  });
+  type SaveProfileRequest =
+    | { kind: "vieneu_preset"; name: string; presetId: string }
+    | { kind: "design"; name: string; instruction: string; language: Language }
+    | { kind: "clone"; name: string; refAudio: string; refText?: string; language: Language };
+  const saveProfileMutation = useMutation({
+    mutationFn: (request: SaveProfileRequest) => {
+      if (request.kind === "vieneu_preset") {
+        return client.request({
+          type: "save_vieneu_preset",
+          name: request.name,
+          preset_id: request.presetId,
+        });
+      }
+      if (request.kind === "design") {
+        return client.saveDesignVoice(request.name, request.instruction, request.language);
+      }
+      return client.request({
+        type: "save_voice",
+        name: request.name,
+        ref_audio: request.refAudio,
+        ref_text: request.refText,
+        language: request.language,
+      });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: VOICES_QUERY_KEY }),
+  });
+  const deleteProfileMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const response = await client.request<{ deleted: boolean }>({ type: "delete_voice", name });
+      if (!response.deleted) throw new Error(copy.couldNotDeleteVoice);
+      return name;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: VOICES_QUERY_KEY }),
+  });
+  const synthesisMutation = useMutation({
+    mutationFn: (request: { type: string; [key: string]: unknown }) =>
+      client.request<SynthesisResult>(request),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: AUDIO_HISTORY_QUERY_KEY }),
+  });
+  const deleteHistoryMutation = useMutation({
+    mutationFn: async (audioId: string) => {
+      const response = await client.request<{ deleted: boolean }>({
+        type: "delete_audio_history",
+        file_name: audioId,
+      });
+      if (!response.deleted) throw new Error(copy.audioHistoryDeleteFailed);
+      return audioId;
+    },
+    onSuccess: (_, audioId) => {
+      queryClient.setQueryData<InfiniteData<AudioHistoryPage, AudioHistoryCursor | null>>(
+        AUDIO_HISTORY_QUERY_KEY,
+        (current) => {
+          if (!current || !current.pages.some((page) => page.items.some((item) => item.id === audioId))) {
+            return current;
+          }
+          return {
+            ...current,
+            pages: current.pages.map((page) => ({
+              ...page,
+              items: page.items.filter((item) => item.id !== audioId),
+              total: Math.max(0, page.total - 1),
+            })),
+          };
+        },
+      );
+      setTakes((current) => current.filter((take) => fileName(take.audioPath) !== audioId));
+      if (result && fileName(result.audio_path) === audioId) {
+        setResult(null);
+        setActiveTakeId(null);
+      }
+    },
+  });
+  const historyLoadError = historyQuery.error
+    ? historyQuery.error instanceof Error
+      ? `${copy.audioHistoryLoadFailed}: ${historyQuery.error.message}`
+      : copy.audioHistoryLoadFailed
+    : null;
+  const audioHistoryError = deleteHistoryMutation.error
+    ? deleteHistoryMutation.error instanceof Error
+      ? `${copy.audioHistoryDeleteFailed}: ${deleteHistoryMutation.error.message}`
+      : copy.audioHistoryDeleteFailed
+    : historyLoadError;
+  const isPreparing = prepareMutation.isPending;
+  const isSavingProfile = saveProfileMutation.isPending;
+  const isImportingVoice = importVoiceMutation.isPending;
+  const isImportingSeed = seedImportMutation.isPending;
+  const isSeedingVieNeu = seedVieNeuMutation.isPending;
+  const isGenerating = synthesisMutation.isPending;
   const providerStatuses = engineStatus?.providers ?? null;
   const modelReady = providerStatuses
     ? providerIsReady(providerStatuses[provider])
@@ -2636,39 +3091,54 @@ function App() {
   const presetVoices = engineStatus?.providers?.vieneu?.preset_voices ?? [];
   const audioUrl = useMemo(() => (result ? convertFileSrc(result.audio_path) : null), [result]);
 
+  async function importBundledSeedVoices() {
+    if (bundledSeedImportStarted.current) return;
+    bundledSeedImportStarted.current = true;
+    try {
+      const seedDirectory = await resolveResource(BUNDLED_SEED_DIRECTORY);
+      const imported = await seedImportMutation.mutateAsync(seedDirectory);
+      if (imported.errors.length) {
+        console.warn("[volo-ai] Some bundled voice seeds could not be imported", imported.errors);
+      }
+    } catch (reason) {
+      bundledSeedImportStarted.current = false;
+      console.warn("[volo-ai] Could not import bundled voice seeds", reason);
+    }
+  }
+
   useEffect(() => {
     const unsubscribe = client.onProgress((event) => {
       if (event.phase === "seed_vieneu") setSeedProgress(event);
       else setModelProgress(event);
     });
     const unsubscribeLogs = client.onLog(() => setLogs(client.getLogs()));
-    let active = true;
-    void (async () => {
-      try {
-        const status = await client.request<StatusResult>({ type: "status" });
-        if (!active) return;
-        setEngineOnline(true);
-        setDevice(status.device);
-        setEngineStatus(status);
-        const selectedReady = status.providers
-          ? providerIsReady(status.providers[provider])
-          : provider === "omnivoice" && status.model_ready;
-        if (selectedReady && provider === "omnivoice") await importBundledSeedVoices();
-        await refreshVoices();
-      } catch (reason) {
-        if (active)
-          setSetupError(
-            reason instanceof Error ? reason.message : translator.t("errors.engineUnavailable"),
-          );
-      }
-    })();
     return () => {
-      active = false;
       unsubscribe();
       unsubscribeLogs();
       void client.stop();
     };
   }, []);
+
+  useEffect(() => {
+    if (!engineStatus) return;
+    const selectedReady = engineStatus.providers
+      ? providerIsReady(engineStatus.providers[provider])
+      : provider === "omnivoice" && engineStatus.model_ready;
+    if (selectedReady && provider === "omnivoice") void importBundledSeedVoices();
+  }, [engineStatus, provider]);
+
+  useEffect(() => {
+    const loadedVoices = voicesQuery.data?.voices;
+    if (!loadedVoices) return;
+    setSelectedVoice((current) => {
+      if (mode !== "profile") return current;
+      const selected = loadedVoices.find((voice) => voice.name === current);
+      if (selected?.kind === "vieneu_preset") return current;
+      return selected?.language === language
+        ? current
+        : preferredVoiceForLanguage(loadedVoices, language);
+    });
+  }, [voicesQuery.data, language, mode]);
 
   useEffect(() => {
     if (view !== "settings") return;
@@ -2678,14 +3148,10 @@ function App() {
   }, [view]);
 
   useEffect(() => {
-    if (view !== "profiles" || !engineOnline) return;
-    void refreshVoices();
-  }, [view, engineOnline]);
-
-  useEffect(() => {
-    if (view !== "history") return;
-    void refreshAudioHistory();
-  }, [view]);
+    const enteringProfiles = view === "profiles" && lastView.current !== "profiles";
+    lastView.current = view;
+    if (enteringProfiles && engineOnline && voicesQuery.data) void voicesQuery.refetch();
+  }, [view, engineOnline, voicesQuery.data, voicesQuery.refetch]);
 
   useEffect(() => {
     if (provider !== "vieneu" || !engineStatus) return;
@@ -2714,41 +3180,25 @@ function App() {
 
   async function prepareModel(target: ProviderId = provider) {
     setSetupError(null);
-    setIsPreparing(true);
     setPreparingProvider(target);
     try {
-      await client.request<{ model_ready: boolean }>({ type: "prepare_model", provider: target });
-      const status = await client.request<StatusResult>({ type: "status" });
-      setEngineStatus(status);
-      setEngineOnline(true);
-      setDevice(status.device);
-      if (target === "omnivoice" && target === provider) await importBundledSeedVoices();
-      if (target === provider) await refreshVoices();
+      await prepareMutation.mutateAsync(target);
+      if (target === "omnivoice" && target === provider) {
+        await importBundledSeedVoices();
+      } else if (target === provider) {
+        await queryClient.invalidateQueries({ queryKey: VOICES_QUERY_KEY });
+      }
     } catch (reason) {
       setSetupError(
         reason instanceof Error ? reason.message : translator.t("errors.modelSetupFailed"),
       );
     } finally {
-      setIsPreparing(false);
       setPreparingProvider(null);
     }
   }
 
   async function refreshModelStatus() {
-    setIsRefreshingStatus(true);
-    setModelStatusError(null);
-    try {
-      const status = await client.request<StatusResult>({ type: "status" });
-      setEngineOnline(true);
-      setDevice(status.device);
-      setEngineStatus(status);
-    } catch (reason) {
-      setModelStatusError(
-        reason instanceof Error ? reason.message : translator.t("errors.engineUnavailable"),
-      );
-    } finally {
-      setIsRefreshingStatus(false);
-    }
+    await statusQuery.refetch();
   }
 
   async function cancelModelPreparation() {
@@ -2766,85 +3216,27 @@ function App() {
   }
 
   async function refreshVoices() {
-    setIsLoadingVoices(true);
-    setVoiceListError(null);
-    try {
-      const response = await client.request<{ voices: VoiceProfile[] }>({ type: "list_voices" });
-      setVoices(response.voices);
-      setSelectedVoice((current) => {
-        if (mode !== "profile") return current;
-        const selected = response.voices.find((voice) => voice.name === current);
-        if (selected?.kind === "vieneu_preset") return current;
-        return selected?.language === language
-          ? current
-          : preferredVoiceForLanguage(response.voices, language);
-      });
-    } catch (reason) {
-      setVoiceListError(reason instanceof Error ? reason.message : copy.couldNotLoadProfiles);
-    } finally {
-      setIsLoadingVoices(false);
-    }
+    await voicesQuery.refetch();
   }
 
   async function refreshAudioHistory() {
-    const requestVersion = ++audioHistoryRequestVersion.current;
-    setIsLoadingAudioHistory(true);
-    setIsLoadingMoreAudioHistory(false);
-    setAudioHistoryError(null);
-    try {
-      const response = await client.request<AudioHistoryPage>({
-        type: "list_audio_history",
-        paginated: true,
-      });
-      if (requestVersion !== audioHistoryRequestVersion.current) return;
-      setAudioHistory(response.items);
-      setAudioHistoryTotal(response.total);
-      setAudioHistoryCursor(response.next_cursor);
-    } catch (reason) {
-      if (requestVersion !== audioHistoryRequestVersion.current) return;
-      setAudioHistoryError(
-        reason instanceof Error
-          ? `${copy.audioHistoryLoadFailed}: ${reason.message}`
-          : copy.audioHistoryLoadFailed,
-      );
-    } finally {
-      if (requestVersion === audioHistoryRequestVersion.current) {
-        setIsLoadingAudioHistory(false);
-      }
-    }
+    deleteHistoryMutation.reset();
+    await queryClient.resetQueries({ queryKey: AUDIO_HISTORY_QUERY_KEY, exact: true });
   }
 
   async function loadMoreAudioHistory() {
-    const cursor = audioHistoryCursor;
-    if (!cursor || isLoadingAudioHistory || isLoadingMoreAudioHistory) return;
-    const requestVersion = audioHistoryRequestVersion.current;
-    setIsLoadingMoreAudioHistory(true);
-    setAudioHistoryError(null);
-    try {
-      const response = await client.request<AudioHistoryPage>({
-        type: "list_audio_history",
-        paginated: true,
-        cursor,
-      });
-      if (requestVersion !== audioHistoryRequestVersion.current) return;
-      setAudioHistory((current) => {
-        const existing = new Set(current.map((item) => item.id));
-        return [...current, ...response.items.filter((item) => !existing.has(item.id))];
-      });
-      setAudioHistoryTotal(response.total);
-      setAudioHistoryCursor(response.next_cursor);
-    } catch (reason) {
-      if (requestVersion !== audioHistoryRequestVersion.current) return;
-      setAudioHistoryError(
-        reason instanceof Error
-          ? `${copy.audioHistoryLoadFailed}: ${reason.message}`
-          : copy.audioHistoryLoadFailed,
-      );
-    } finally {
-      if (requestVersion === audioHistoryRequestVersion.current) {
-        setIsLoadingMoreAudioHistory(false);
-      }
+    if (!historyQuery.hasNextPage || historyQuery.isFetchingNextPage) return;
+    deleteHistoryMutation.reset();
+    await historyQuery.fetchNextPage();
+  }
+
+  function navigateTo(nextView: AppView) {
+    if (nextView === view) return;
+    if (nextView === "history") {
+      deleteHistoryMutation.reset();
+      queryClient.removeQueries({ queryKey: AUDIO_HISTORY_QUERY_KEY, exact: true });
     }
+    setView(nextView);
   }
 
   function changeAppLanguage(next: AppLanguage) {
@@ -2854,7 +3246,7 @@ function App() {
   function changeProvider(next: ProviderId) {
     setProvider(next);
     localStorage.setItem("volo-ai.provider", next);
-    setView("workspace");
+    navigateTo("workspace");
     setSetupError(null);
     setError(null);
     setResult(null);
@@ -2867,7 +3259,7 @@ function App() {
       setMode("preset");
       setSelectedVoice(engineStatus?.providers?.vieneu?.default_voice ?? "");
     }
-    void refreshVoices();
+    void queryClient.invalidateQueries({ queryKey: VOICES_QUERY_KEY });
   }
 
   function changeSynthesisLanguage(next: Language) {
@@ -2936,18 +3328,11 @@ function App() {
       });
       return;
     }
-    setIsImportingVoice(true);
     setVoiceImportStatus(null);
     setSeedImportStatus(null);
     setProfileError(null);
     try {
-      await client.request({
-        type: "save_voice",
-        name,
-        ref_audio: selected,
-        language,
-      });
-      await refreshVoices();
+      await importVoiceMutation.mutateAsync({ name, path: selected, language });
       setRefAudio(selected);
       setVoiceImportStatus({
         message: `${copy.voiceImportCompleted}: ${name}`,
@@ -2958,8 +3343,6 @@ function App() {
         message: reason instanceof Error ? reason.message : copy.voiceImportFailed,
         tone: "error",
       });
-    } finally {
-      setIsImportingVoice(false);
     }
   }
 
@@ -2979,15 +3362,10 @@ function App() {
       return;
     }
     if (typeof selected !== "string") return;
-    setIsImportingSeed(true);
     setSeedImportStatus(null);
     setVoiceImportStatus(null);
     try {
-      const result = await client.request<SeedImportResult>({
-        type: "import_seed_voices",
-        seed_dir: selected,
-      });
-      await refreshVoices();
+      const result = await seedImportMutation.mutateAsync(selected);
       if (!result.imported.length && !result.skipped.length && !result.errors.length) {
         setSeedImportStatus({ message: copy.noSeedVoicesFound, tone: "error" });
       } else {
@@ -3001,13 +3379,10 @@ function App() {
         message: reason instanceof Error ? reason.message : copy.seedImportFailed,
         tone: "error",
       });
-    } finally {
-      setIsImportingSeed(false);
     }
   }
 
   async function seedVieNeuVoices() {
-    setIsSeedingVieNeu(true);
     setIsCancellingSeed(false);
     setSeedProgress(null);
     setSeedResult(null);
@@ -3015,13 +3390,11 @@ function App() {
     setVoiceImportStatus(null);
     setSeedImportStatus(null);
     try {
-      const result = await client.request<SeedVieNeuResult>({ type: "seed_vieneu_voices" });
+      const result = await seedVieNeuMutation.mutateAsync();
       setSeedResult(result);
     } catch (reason) {
       setSeedError(reason instanceof Error ? reason.message : copy.seedVieNeuFailed);
     } finally {
-      await refreshVoices();
-      setIsSeedingVieNeu(false);
       setIsCancellingSeed(false);
     }
   }
@@ -3053,6 +3426,7 @@ function App() {
     let steps: number | undefined;
     let duration: number | undefined;
     let generationConfig: GenerationConfig = {};
+    let vieneuConfig: VieNeuConfig = {};
     if (provider === "omnivoice") {
       try {
         steps = readAdvancedNumber(advanced.steps, copy.diffusionSteps, {
@@ -3093,9 +3467,16 @@ function App() {
         setAdvancedError(reason instanceof Error ? reason.message : copy.invalidAdvancedValue);
         return;
       }
+    } else {
+      try {
+        vieneuConfig = readVieNeuConfig(vieneuAdvanced, copy.invalidVieNeuSettings);
+      } catch {
+        setVieNeuAdvancedError(copy.invalidVieNeuSettings);
+        return;
+      }
     }
     setAdvancedError(null);
-    setIsGenerating(true);
+    setVieNeuAdvancedError(null);
     setResult(null);
     try {
       const request: { type: string; [key: string]: unknown } = {
@@ -3115,14 +3496,17 @@ function App() {
           normalize_text: advanced.normalize_text,
           generation_config: generationConfig,
         });
-      } else if (mode === "preset") {
-        request.preset_id = selectedVoice;
-      } else if (mode === "profile") {
-        request.voice_name = selectedVoice;
       } else {
-        request.ref_audio = refAudio;
+        if (Object.keys(vieneuConfig).length) request.vieneu_config = vieneuConfig;
+        if (mode === "preset") {
+          request.preset_id = selectedVoice;
+        } else if (mode === "profile") {
+          request.voice_name = selectedVoice;
+        } else {
+          request.ref_audio = refAudio;
+        }
       }
-      const response = await client.request<SynthesisResult>(request);
+      const response = await synthesisMutation.mutateAsync(request);
       setResult(response);
       const activeVoiceLabel =
         mode === "profile"
@@ -3143,8 +3527,6 @@ function App() {
       setActiveTakeId(newTake.id);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : copy.synthesisFailed);
-    } finally {
-      setIsGenerating(false);
     }
   }
 
@@ -3197,37 +3579,40 @@ function App() {
       setProfileError(message);
       return;
     }
-    setIsSavingProfile(true);
     setProfileError(null);
     try {
+      let request: SaveProfileRequest;
       if (profileKind === "vieneu_preset") {
-        await client.request({
-          type: "save_vieneu_preset",
+        request = {
+          kind: "vieneu_preset",
           name: profileName.trim(),
-          preset_id: profilePresetId,
-        });
+          presetId: profilePresetId,
+        };
       } else if (profileKind === "design") {
-        await client.saveDesignVoice(profileName.trim(), designInstruction.trim(), language);
-      } else {
-        await client.request({
-          type: "save_voice",
+        request = {
+          kind: "design",
           name: profileName.trim(),
-          ref_audio: refAudio,
-          ref_text: refText || undefined,
+          instruction: designInstruction.trim(),
           language,
-        });
+        };
+      } else {
+        request = {
+          kind: "clone",
+          name: profileName.trim(),
+          refAudio: refAudio!,
+          refText: refText || undefined,
+          language,
+        };
       }
+      await saveProfileMutation.mutateAsync(request);
       setProfileName("");
       setDesignInstruction("");
-      await refreshVoices();
       setError(null);
       setProfileError(null);
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : copy.couldNotSaveVoice;
       setError(message);
       setProfileError(message);
-    } finally {
-      setIsSavingProfile(false);
     }
   }
 
@@ -3236,8 +3621,7 @@ function App() {
     setDeletingVoice(name);
     setProfileError(null);
     try {
-      const response = await client.request<{ deleted: boolean }>({ type: "delete_voice", name });
-      if (!response.deleted) throw new Error(copy.couldNotDeleteVoice);
+      await deleteProfileMutation.mutateAsync(name);
       if (selectedVoice === name) {
         setMode(provider === "vieneu" ? "preset" : "auto");
         setSelectedVoice(
@@ -3246,7 +3630,6 @@ function App() {
             : "auto",
         );
       }
-      await refreshVoices();
       setError(null);
       setProfileError(null);
     } catch (reason) {
@@ -3260,29 +3643,10 @@ function App() {
 
   async function deleteAudioHistory(audioId: string) {
     setDeletingAudioFile(audioId);
-    setAudioHistoryError(null);
     try {
-      const response = await client.request<{ deleted: boolean }>({
-        type: "delete_audio_history",
-        file_name: audioId,
-      });
-      if (!response.deleted) {
-        setAudioHistoryError(copy.audioHistoryDeleteFailed);
-        return;
-      }
-      setAudioHistory((current) => current.filter((entry) => entry.id !== audioId));
-      setAudioHistoryTotal((current) => Math.max(0, current - 1));
-      setTakes((current) => current.filter((take) => fileName(take.audioPath) !== audioId));
-      if (result && fileName(result.audio_path) === audioId) {
-        setResult(null);
-        setActiveTakeId(null);
-      }
-    } catch (reason) {
-      setAudioHistoryError(
-        reason instanceof Error
-          ? `${copy.audioHistoryDeleteFailed}: ${reason.message}`
-          : copy.audioHistoryDeleteFailed,
-      );
+      await deleteHistoryMutation.mutateAsync(audioId);
+    } catch {
+      // The mutation error is rendered by the History view.
     } finally {
       setDeletingAudioFile(null);
     }
@@ -3300,11 +3664,11 @@ function App() {
       setError(null);
       setResult(null);
       setRefAudio(null);
-      void refreshVoices();
+      void queryClient.invalidateQueries({ queryKey: VOICES_QUERY_KEY });
     }
     setSelectedVoice(name);
     setMode("profile");
-    setView("workspace");
+    navigateTo("workspace");
     setProfileError(null);
   }
 
@@ -3333,13 +3697,13 @@ function App() {
         progressEvent={modelProgress}
         isPreparing={isPreparing}
         isCancelling={isCancelling}
-        setupError={setupError}
+        setupError={setupError ?? modelStatusError}
         onPrepare={() => void prepareModel()}
         onCancel={() => void cancelModelPreparation()}
         onProviderChange={changeProvider}
-        onOpenProfiles={() => setView("profiles")}
-        onOpenHistory={() => setView("history")}
-        onOpenSettings={() => setView("settings")}
+        onOpenProfiles={() => navigateTo("profiles")}
+        onOpenHistory={() => navigateTo("history")}
+        onOpenSettings={() => navigateTo("settings")}
       />
     );
 
@@ -3371,16 +3735,17 @@ function App() {
               {copy.workspace}
             </p>
             {navItems.map(([item, label, Icon]) => (
-              <button
-                type="button"
+              <Button
+                variant="navigation"
+                size="default"
                 key={item as string}
-                onClick={() => setView(item as AppView)}
+                onClick={() => navigateTo(item as AppView)}
                 aria-current={view === item ? "page" : undefined}
-                className={`group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ring) ${view === item ? "bg-(--accent-soft) text-(--accent)" : "text-(--muted-foreground) hover:bg-(--surface-muted) hover:text-(--foreground)"}`}
+                className="group w-full gap-3 rounded-xl px-3 py-2.5 text-left"
               >
-                <Icon className="size-4" />
+                <Icon data-icon="inline-start" />
                 {label}
-              </button>
+              </Button>
             ))}
           </nav>
           <div className="mt-auto border-t border-(--border) px-2 pt-4">
@@ -3388,7 +3753,16 @@ function App() {
               <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-(--muted-foreground)">
                 {copy.theme}
               </p>
-              <div className="flex items-center rounded-lg border border-(--border) bg-(--surface-muted) p-0.5">
+              <div className="rounded-lg border border-(--border) bg-(--surface-muted) p-0.5">
+                <ToggleGroup
+                  multiple={false}
+                  value={[theme]}
+                  onValueChange={(value) => {
+                    if (value[0]) changeTheme(value[0] as ThemeMode);
+                  }}
+                  spacing={0}
+                  aria-label={copy.theme}
+                >
                 {(
                   [
                     ["light", Sun],
@@ -3396,16 +3770,18 @@ function App() {
                     ["system", Monitor],
                   ] as const
                 ).map(([mode, Icon]) => (
-                  <button
-                    type="button"
+                  <ToggleGroupItem
                     key={mode}
-                    onClick={() => changeTheme(mode)}
-                    className={`flex size-6 items-center justify-center rounded-md text-xs transition-colors ${theme === mode ? "bg-(--surface) text-(--foreground) shadow-sm" : "text-(--muted-foreground) hover:text-(--foreground)"}`}
+                    value={mode}
+                    size="sm"
+                    className="size-6 min-w-6 p-0"
+                    aria-label={mode}
                     title={mode}
                   >
-                    <Icon className="size-3" />
-                  </button>
+                    <Icon />
+                  </ToggleGroupItem>
                 ))}
+                </ToggleGroup>
               </div>
             </div>
 
@@ -3457,7 +3833,7 @@ function App() {
                     onChangeLanguage={changeAppLanguage}
                     onChangeTheme={changeTheme}
                     onRefreshStatus={() => void refreshModelStatus()}
-                    onBack={() => setView("workspace")}
+                    onBack={() => navigateTo("workspace")}
                   />
                 ) : view === "logs" ? (
                   <LogsView logs={logs} copy={copy} onClearLogs={handleClearLogs} />
@@ -3533,6 +3909,8 @@ function App() {
                     format={format}
                     advanced={advanced}
                     advancedError={advancedError}
+                    vieneuAdvanced={vieneuAdvanced}
+                    vieneuAdvancedError={vieneuAdvancedError}
                     voices={voices}
                     presetVoices={presetVoices}
                     selectedVoice={selectedVoice}
@@ -3550,6 +3928,9 @@ function App() {
                     onFormatChange={setFormat}
                     onAdvancedChange={(patch) =>
                       setAdvanced((current) => ({ ...current, ...patch }))
+                    }
+                    onVieNeuAdvancedChange={(patch) =>
+                      setVieNeuAdvanced((current) => ({ ...current, ...patch }))
                     }
                     onVoiceSelectionChange={changeVoiceSelection}
                     onChooseReference={() => void chooseReference()}

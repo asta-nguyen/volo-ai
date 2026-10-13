@@ -22,6 +22,16 @@ export type GenerationConfig = {
   fade_duration?: number;
 };
 
+export type VieNeuConfig = {
+  temperature?: number;
+  top_k?: number;
+  top_p?: number;
+  repetition_penalty?: number;
+  repetition_window?: number;
+  do_sample?: boolean;
+  seed?: number;
+};
+
 export type VoiceProfile = {
   name: string;
   language: Language | null;

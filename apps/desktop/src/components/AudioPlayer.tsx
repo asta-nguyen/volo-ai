@@ -13,7 +13,8 @@ import {
   Rewind,
   Music2,
 } from "lucide-react";
-import { Button, Badge } from "./ui";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "../lib/utils";
 import type { UiCopy } from "../lib/i18n";
 
@@ -202,7 +203,7 @@ export function AudioPlayer({
               <span className="text-sm font-semibold text-(--foreground)">
                 {voiceName ? voiceName : copy.renderedTake}
               </span>
-              <Badge className="font-mono text-[9px] uppercase tracking-wider">
+              <Badge variant="outline">
                 {format.toUpperCase()}
               </Badge>
               {sampleRate && (
@@ -295,88 +296,86 @@ export function AudioPlayer({
       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
         {/* Play / Pause / Skip controls */}
         <div className="flex items-center gap-2">
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={() => skip(-5)}
-            className="flex size-8 items-center justify-center rounded-lg text-(--muted-foreground) transition-colors hover:bg-(--surface-muted) hover:text-(--foreground)"
             title="-5s"
           >
-            <Rewind className="size-4" />
-          </button>
+            <Rewind data-icon="inline-start" />
+          </Button>
 
-          <button
-            type="button"
+          <Button
+            variant="default"
+            size="icon-lg"
             onClick={togglePlay}
-            className="flex size-11 items-center justify-center rounded-2xl bg-(--accent) text-white shadow-[0_8px_20px_rgb(191_95_69/25%)] transition-all hover:scale-105 hover:bg-(--accent-strong) active:scale-95"
+            className="rounded-2xl transition-transform hover:scale-105 active:scale-95"
             aria-label={isPlaying ? "Pause" : "Play"}
           >
             {isPlaying ? (
-              <Pause className="size-5 fill-current" />
+              <Pause data-icon="inline-start" className="fill-current" />
             ) : (
-              <Play className="ml-0.5 size-5 fill-current" />
+              <Play data-icon="inline-start" className="fill-current" />
             )}
-          </button>
+          </Button>
 
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={() => skip(5)}
-            className="flex size-8 items-center justify-center rounded-lg text-(--muted-foreground) transition-colors hover:bg-(--surface-muted) hover:text-(--foreground)"
             title="+5s"
           >
-            <FastForward className="size-4" />
-          </button>
+            <FastForward data-icon="inline-start" />
+          </Button>
 
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={() => seek(0)}
-            className="flex size-8 items-center justify-center rounded-lg text-(--muted-foreground) transition-colors hover:bg-(--surface-muted) hover:text-(--foreground)"
             title="Replay from start"
           >
-            <RotateCcw className="size-3.5" />
-          </button>
+            <RotateCcw data-icon="inline-start" />
+          </Button>
         </div>
 
         {/* Right side: Speed, Loop, Volume */}
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Rate switch */}
-          <button
-            type="button"
+          <Button
+            variant="outline"
+            size="sm"
             onClick={cyclePlaybackRate}
-            className="inline-flex h-8 items-center rounded-lg border border-(--border) bg-(--surface) px-2.5 font-mono text-xs font-semibold text-(--foreground) transition-colors hover:border-(--accent) hover:text-(--accent)"
+            className="font-mono"
             title={copy.playbackSpeed}
           >
             {playbackRate}×
-          </button>
+          </Button>
 
           {/* Loop toggle */}
-          <button
-            type="button"
+          <Button
+            variant={isLooping ? "default" : "ghost"}
+            size="icon-sm"
             onClick={toggleLoop}
-            className={cn(
-              "flex size-8 items-center justify-center rounded-lg border transition-colors",
-              isLooping
-                ? "border-(--accent) bg-(--accent-soft) text-(--accent)"
-                : "border-transparent text-(--muted-foreground) hover:bg-(--surface-muted) hover:text-(--foreground)",
-            )}
+            aria-pressed={isLooping}
             title={copy.loop}
           >
-            <Repeat className="size-3.5" />
-          </button>
+            <Repeat data-icon="inline-start" />
+          </Button>
 
           {/* Volume control */}
           <div className="flex items-center gap-1.5 pl-1">
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={toggleMute}
-              className="flex size-8 items-center justify-center rounded-lg text-(--muted-foreground) transition-colors hover:bg-(--surface-muted) hover:text-(--foreground)"
               title={isMuted ? "Unmute" : "Mute"}
             >
               {isMuted || volume === 0 ? (
-                <VolumeX className="size-4" />
+                <VolumeX data-icon="inline-start" />
               ) : (
-                <Volume2 className="size-4" />
+                <Volume2 data-icon="inline-start" />
               )}
-            </button>
+            </Button>
             <input
               type="range"
               min="0"
@@ -435,16 +434,12 @@ export function InlineAudioPreview({
   return (
     <div className="inline-flex items-center gap-2">
       <audio ref={audioRef} src={src} preload="none" />
-      <button
-        type="button"
+      <Button
+        variant={isPlaying ? "default" : "outline"}
+        size="xs"
         onClick={toggle}
         aria-label={isPlaying ? pauseLabel : label ?? "Preview"}
-        className={cn(
-          "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[11px] font-semibold transition-all",
-          isPlaying
-            ? "border-(--accent) bg-(--accent-soft) text-(--accent)"
-            : "border-(--border) bg-(--surface) text-(--muted-foreground) hover:border-(--border-strong) hover:text-(--foreground)",
-        )}
+        className="font-mono"
       >
         {isPlaying ? (
           <>
@@ -462,7 +457,7 @@ export function InlineAudioPreview({
             <span>{label ?? "Preview"}</span>
           </>
         )}
-      </button>
+      </Button>
     </div>
   );
 }

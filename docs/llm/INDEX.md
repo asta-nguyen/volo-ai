@@ -26,8 +26,9 @@ but do not yet have dedicated feature pages:
 
 - [x] Desktop provider setup and offline synthesis — the desktop sidecar reports
   both providers, prepares the selected provider on request, and routes synthesis
-  to OmniVoice or VieNeu. Voice Profiles can batch seed the validated VieNeu
-  catalog into provider-capable profiles; see the desktop provider workflow.
+  to OmniVoice or VieNeu. VieNeu has separate per-request sampler settings, and
+  Voice Profiles can batch seed its validated catalog into provider-capable
+  profiles; see the desktop provider workflow.
 - [ ] Advanced OmniVoice synthesis — desktop `synthesize` forwards native
   generation controls and duration-based long-form chunking; Voice Design
   remains available through the engine and CLI/MCP entry points.
@@ -65,7 +66,11 @@ but do not yet have dedicated feature pages:
 - `tests/test_engine.py`
 - `tests/test_desktop.py`
 - `apps/desktop/src/App.tsx`
-- `apps/desktop/src/components/ui.tsx`
+- `apps/desktop/src/main.tsx`
+- `apps/desktop/src/components/ui/button.tsx`
+- `apps/desktop/src/components/ui/tabs.tsx`
+- `apps/desktop/src/components/ui/toggle-group.tsx`
 - `apps/desktop/src/lib/utils.ts`
 - `apps/desktop/src/lib/i18n.ts`
 - `apps/desktop/src/lib/sidecar.ts`
+- `apps/desktop/package.json`

@@ -31,9 +31,9 @@ the Python worker as a Tauri sidecar and stores model/audio data locally.
   synthesis metadata, and asks for confirmation before deleting an output.
   Workspace separately retains only the five latest takes for the current app
   session; pruning that list does not delete files.
-- `apps/desktop/src/components/ui.tsx` contains source-owned shadcn-style
-  primitives backed by Base UI, `src/lib/utils.ts` owns class composition,
-  and `src/styles.css` loads Tailwind CSS v4 and the Volo AI theme tokens.
+- `apps/desktop/src/components/ui/` contains source-owned shadcn components
+  backed by Base UI, `src/lib/utils.ts` owns class composition, and
+  `src/styles.css` loads Tailwind CSS v4 and the Volo AI theme tokens.
 - Provider selection is stored in `localStorage`; it defaults to OmniVoice and
   does not trigger model downloads. When OmniVoice becomes ready, `App.tsx`
   resolves the bundled `resources/seed-voices` directory and asks the sidecar to
@@ -72,6 +72,15 @@ while unsupported output extensions are rejected.
 The frontend `SidecarClient` gives ordinary requests a five-minute timeout and
 model preparation a longer one-hour timeout; a timed-out child is terminated
 so the UI can recover instead of waiting forever.
+The React root provides one in-memory TanStack Query client. `App.tsx` queries
+sidecar status and voice profiles, and loads cursor-paginated Audio History
+only while that view is active. Successful profile and preparation mutations
+invalidate their related queries; synthesis invalidates History, while a
+confirmed History deletion removes the item from cached pages. Queries and
+mutations run for the local sidecar while the OS is offline, do not retry
+automatically, and do not refetch on focus or reconnect. `SidecarClient` keeps
+its single retry when the child process has stopped. Progress and logs remain
+event-driven UI state.
 
 The MCP `status` tool reports provider readiness, runtime and preprocessing
 availability, and VieNeu presets. `prepare_model` downloads assets only for
@@ -144,11 +153,15 @@ synthesis target remains `volo-ai.synthesis-language`.
 - `apps/desktop/package.json`
 - `apps/desktop/vite.config.ts`
 - `apps/desktop/src/styles.css`
-- `apps/desktop/src/components/ui.tsx`
+- `apps/desktop/src/components/ui/button.tsx`
+- `apps/desktop/src/components/ui/tabs.tsx`
+- `apps/desktop/src/components/ui/toggle-group.tsx`
 - `apps/desktop/src/lib/utils.ts`
 - `apps/desktop/components.json`
 - `apps/desktop/src/main.tsx`
 - `apps/desktop/src/App.tsx`
+- `apps/desktop/src/components/AudioPlayer.tsx`
+- `apps/desktop/package.json`
 - `apps/desktop/src-tauri/capabilities/default.json`
 - `apps/desktop/src-tauri/tauri.conf.json`
 - `apps/desktop/src-tauri/resources/seed-voices/tony-hoang/manifest.json`

@@ -103,6 +103,24 @@ OmniVoice when present.
 
 Evidence: `src/tts_mcp/desktop.py`, `src/tts_mcp/engine.py`, `tests/test_desktop.py`
 
+### DVP-vieneu-generation-config
+
+The desktop SHALL keep VieNeu generation settings separate from OmniVoice settings, validate the VieNeu sampler fields, and forward them only as VieNeu audio.cpp request options.
+
+#### Scenario: configure VieNeu sampling
+
+- GIVEN the user selects VieNeu and changes one or more sampler controls
+- WHEN the app synthesizes speech
+- THEN it sends only the changed VieNeu values in `vieneu_config`, which the sidecar maps to `--request-option` arguments
+
+#### Scenario: reject cross-provider or invalid configuration
+
+- GIVEN a request supplies `vieneu_config` to OmniVoice or supplies an invalid VieNeu value
+- WHEN the sidecar validates the synthesis request
+- THEN it returns `invalid_input` before invoking synthesis
+
+Evidence: `apps/desktop/src/App.tsx`, `apps/desktop/src/lib/sidecar.ts`, `src/tts_mcp/desktop.py`, `src/tts_mcp/desktop_vieneu.py`, `tests/test_desktop.py`, `tests/test_desktop_vieneu.py`
+
 ### DVP-vieneu-output-contract
 
 VieNeu synthesis SHALL accept only WAV or MP3 output and save converted audio
@@ -188,6 +206,13 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
 4. The provider phonemizes text and invokes `audiocpp_cli` with its `tts` task.
    It requires a readable 48 kHz WAV, then writes WAV or MP3 through
    `save_audio` and returns `{audio_path, format}`.
+5. With VieNeu selected, the workspace exposes separate sampler controls for
+   temperature, top-k, top-p, repetition penalty and window, sampling mode, and
+   an optional seed. Its defaults are `0.8`, `25`, `0.95`, `1.2`, `64`, and
+   sampling enabled; an empty seed leaves the audio.cpp random default. The app
+   sends only values changed from those defaults in `vieneu_config`, and the
+   sidecar validates the whitelist before adding VieNeu `--request-option`
+   arguments.
 
 ## State changes
 
@@ -195,6 +220,9 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
   in the shared SQLite voice library. A preset-only profile stores its name and
   manifest ID; a seeded profile also owns its generated reference WAV and
   transcript. Seeding does not copy or change VieNeu model assets.
+- VieNeu sampler drafts stay in app memory for the current session, including
+  when switching providers; they are not written to local storage or saved
+  voice profiles.
 - VieNeu assets are stored below `models/vieneu`. Derived speaker embeddings
   for reference cloning are cached below `models/vieneu/speaker-embeddings` by
   source audio content hash.
@@ -209,6 +237,9 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
   temporary directory. The temporary file is removed after the CLI call.
 - Each VieNeu synthesis starts the bundled or configured CPU `audiocpp_cli`.
   The desktop release stages the native binary beside the Python sidecar.
+- Changed VieNeu sampler fields and an optional seed are passed through the
+  request options interface; default sampler values are omitted so the CLI
+  keeps its defaults.
 - Voice Profiles seeding runs locally after readiness checks, stores WAVs with
   profile assets, and does not add them to Audio History.
 - Synthesis writes an output file. MP3 conversion uses the existing FFmpeg and
@@ -230,7 +261,9 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
   VieNeu and to their WAV/transcript with OmniVoice; preset-only profiles need
   VieNeu.
 - VieNeu does not consume OmniVoice speed or generation settings and does not
-  apply speed post-processing. The standalone CLI remains OmniVoice-only.
+  apply speed post-processing. `vieneu_config` is accepted only for VieNeu and
+  is restricted to its sampler fields. The standalone CLI remains
+  OmniVoice-only.
 
 ## Error paths
 
@@ -245,8 +278,8 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
   it does not download assets. Per-preset errors and unfinished IDs remain
   visible so the user can retry.
 - Unknown presets, missing references, unsupported Design profiles, invalid
-  language or format, and incompatible generation settings return structured
-  errors.
+  language or format, incompatible generation settings, and malformed or
+  cross-provider sampler settings return structured errors before inference.
 
 ## Tests
 
@@ -256,7 +289,10 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
   behavior.
 - `tests/test_desktop_vieneu.py` checks asset and manifest validation,
   cancellation and retry, runtime reporting, preset and Clone synthesis,
-  reference normalization, output cleanup, and 48 kHz WAV/MP3 paths.
+  reference normalization, VieNeu sampler validation and request-option
+  mapping, output cleanup, and 48 kHz WAV/MP3 paths.
+- `tests/test_desktop.py` checks that VieNeu configuration routes to the VieNeu
+  adapter and is rejected by OmniVoice before engine generation.
 - `tests/test_build_sidecar.py` checks target-named sidecar and audio.cpp
   staging and collection of the optional VieNeu packages.
 - `tests/test_cli.py` covers terminal command behavior and VieNeu preset
@@ -273,6 +309,8 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
 - `src/tts_mcp/desktop_vieneu.py`
 - `src/tts_mcp/engine.py`
 - `src/tts_mcp/convert.py`
+- `tests/test_desktop.py`
+- `tests/test_desktop_vieneu.py`
 - `src/tts_mcp/cli.py`
 - `apps/desktop/src/App.tsx`
 - `apps/desktop/src/lib/i18n.ts`

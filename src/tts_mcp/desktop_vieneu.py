@@ -376,6 +376,56 @@ class VieNeuProvider:
         if present:
             raise ValueError(f"Fields not valid for this VieNeu voice mode: {', '.join(present)}")
 
+    @staticmethod
+    def _validate_vieneu_config(value: Any) -> dict[str, Any]:
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise ValueError("vieneu_config must be an object")
+        allowed = {
+            "temperature",
+            "top_k",
+            "top_p",
+            "repetition_penalty",
+            "repetition_window",
+            "do_sample",
+            "seed",
+        }
+        unknown = [key for key in value if key not in allowed]
+        if unknown:
+            raise ValueError("Unsupported VieNeu config: " + ", ".join(map(str, unknown)))
+
+        validated: dict[str, Any] = {}
+        for key, item in value.items():
+            if key == "do_sample":
+                if not isinstance(item, bool):
+                    raise ValueError("do_sample must be a boolean")
+                validated[key] = item
+            elif key in {"top_k", "repetition_window", "seed"}:
+                if isinstance(item, bool) or not isinstance(item, int):
+                    raise ValueError(f"{key} must be an integer")
+                if item > 2**53 - 1:
+                    raise ValueError(f"{key} must be a safe integer")
+                if item < (1 if key == "top_k" else 0):
+                    qualifier = "positive" if key == "top_k" else "non-negative"
+                    raise ValueError(f"{key} must be a {qualifier} integer")
+                validated[key] = item
+            else:
+                if isinstance(item, bool) or not isinstance(item, (int, float)):
+                    raise ValueError(f"{key} must be a number")
+                try:
+                    number = float(item)
+                except OverflowError as exc:
+                    raise ValueError(f"{key} must be finite") from exc
+                if not math.isfinite(number):
+                    raise ValueError(f"{key} must be finite")
+                if (key == "top_p" and not 0 < number <= 1) or (
+                    key in {"temperature"} and number < 0
+                ) or (key == "repetition_penalty" and number <= 0):
+                    raise ValueError(f"{key} is outside its supported range")
+                validated[key] = number
+        return validated
+
     def _normalize_reference(self, path: Path, temp_dir: Path) -> Path:
         ffmpeg = _resolve_ffmpeg()
         if not ffmpeg:
@@ -480,6 +530,7 @@ class VieNeuProvider:
             request,
             ("speed", "steps", "duration", "normalize_text", "generation_config", "instruct"),
         )
+        vieneu_config = self._validate_vieneu_config(request.get("vieneu_config"))
 
         voice_mode = request.get("voice")
         voice_args: list[str]
@@ -566,6 +617,10 @@ class VieNeuProvider:
                         f"speaker_embedding_file={embedding}",
                     ]
                 native_output = temp_dir / "speech.wav"
+                config_args = []
+                for key, value in vieneu_config.items():
+                    serialized = str(value).lower() if isinstance(value, bool) else str(value)
+                    config_args.extend(("--request-option", f"{key}={serialized}"))
                 command = [
                     str(binary),
                     *voice_args[:2],
@@ -578,6 +633,7 @@ class VieNeuProvider:
                     "--text",
                     phonemes,
                     *voice_args[2:],
+                    *config_args,
                     "--out",
                     str(native_output),
                 ]
