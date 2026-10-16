@@ -2,11 +2,12 @@
 
 ## Status
 
-Approved.
+The desktop product design is approved. The release-automation amendment below
+was approved with the revised execution plan on 2026-10-13.
 
 ## Related context
 
-None. The repository has no verified `docs/llm/` wiki context.
+- [Architecture overview](../../llm/architecture/overview.md)
 
 ## Product intent
 
@@ -152,6 +153,44 @@ Release artifacts are built for macOS Apple Silicon
 artifact contains the UI, Tauri shell, matching Python sidecar, and matching
 FFmpeg helper; the model remains a first-run download.
 
+## Release automation amendment
+
+This amendment is approved with the revised execution plan.
+
+- Build each release target on its matching native host; do not
+  cross-compile the Python sidecar or audio.cpp CLI.
+- Accept only strict `vX.Y.Z` release tags whose version matches the values in
+  `apps/desktop/package.json`, `[package].version` in
+  `apps/desktop/src-tauri/Cargo.toml`, and
+  `apps/desktop/src-tauri/tauri.conf.json`.
+- Publish a GitHub Release only after all four native target builds and their
+  artifact uploads succeed; do not configure Apple Developer ID signing or
+  notarization.
+- A push of a Git tag matching `v*` starts a release. A version mismatch fails
+  before platform builds start; source versions are bumped before creating the
+  tag.
+- Build each existing release target on a native GitHub-hosted runner:
+  macOS ARM64, macOS Intel, Windows x64, and Linux x64. Each job builds the
+  pinned audio.cpp v0.9.0 CPU CLI, packages the Python sidecar and FFmpeg with
+  the existing `scripts/build_sidecar.py`, then runs the existing Tauri build
+  with `bundle.targets: "all"`.
+- Upload the platform bundles as uniquely named workflow artifacts. A
+  publisher job with `contents: write` waits for all four builds, attaches all
+  target assets to a draft release, and publishes it only after upload
+  succeeds. Version validation and build jobs keep read-only repository
+  permissions. Failed validation or a failed platform build does not publish
+  a partial public release. Serialize runs for the same tag without
+  cancelling an active publisher.
+- macOS packages have no Developer ID identity or notarization. Gatekeeper
+  may warn or block them, and Apple Silicon may report an unsigned download as
+  damaged. Model weights and app runtime data are not release assets.
+- A rerun can replace assets on an existing draft release. It does not
+  overwrite an already published release for the tag.
+- Standard GitHub-hosted runner disk and runtime limits may be tight for the
+  PyTorch sidecar and native audio.cpp build. If the first release exceeds
+  them, use larger runners or reduce build-cache usage; larger runners may
+  require a paid Actions plan.
+
 ## Proposed repository changes
 
 - Add a Tauri desktop app under `apps/desktop` with the React UI and
@@ -164,6 +203,9 @@ FFmpeg helper; the model remains a first-run download.
 - Reuse `convert.py` for WAV/MP3 output and the existing voice profile storage.
 - Add packaging/build documentation and focused smoke tests for the worker
   protocol, validation, model state transitions, and existing CLI/MCP paths.
+- Add a GitHub Actions tag-release workflow that validates desktop versions,
+  builds the four native platform packages, and publishes them after all
+  target builds succeed.
 
 ## Verification
 
@@ -181,6 +223,19 @@ The implementation is complete when all of the following are demonstrated:
 6. Invalid input and sidecar/model failures produce recoverable UI errors.
 7. The Tauri app builds for macOS, Windows, and Linux, and the existing CLI
    and MCP smoke checks still pass.
+8. A matching `vX.Y.Z` tag runs all four native release builds and publishes
+   uniquely named platform packages only after each build and artifact upload
+   succeeds; a mismatched version stops before platform builds.
+
+## Impact map
+
+Entry: no existing source; planned entry: `.github/workflows/release.yml::validate-version`
+Flow: no existing flow; planned flow: tag push → version validation → four native platform builds → artifact handoff → draft GitHub Release → publish
+State changes: GitHub Release metadata and downloadable platform assets; no local application data changes
+External effects: GitHub Actions runner usage and GitHub Release creation/upload through a least-privilege `GITHUB_TOKEN`
+Change candidates: `.github/workflows/release.yml`, `README.md`, `docs/desktop-development.md`, `docs/llm/architecture/overview.md`
+Verification: workflow lint and inspection; the first matching tag run must reject mismatched versions before builds, build all four native targets, upload every platform asset, and publish only after success
+Verified at: 1e7dbce4d65754d2d5f75216240101816409ed30
 
 ## Execution
 

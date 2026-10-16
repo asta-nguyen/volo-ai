@@ -53,7 +53,8 @@ but do not yet have dedicated feature pages:
 - [ ] CLI generation and profile management — `tts_mcp/cli.py`.
 - [x] MCP provider setup and voice generation — `status` and `prepare_model`
   report/prepare OmniVoice and VieNeu; `speak` and `clone` select VieNeu
-  presets or Clone/reference voices while keeping OmniVoice as the default.
+  presets or Clone/reference voices, accept optional VieNeu sampler options
+  such as `seed`, and keep OmniVoice as the default.
   MCP profile and shared-store behavior is in the workflow page.
 
 ## Sources

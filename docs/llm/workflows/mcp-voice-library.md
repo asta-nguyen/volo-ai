@@ -171,6 +171,24 @@ audio, and reject Design profiles and supplied `ref_text`.
 
 Evidence: `src/tts_mcp/server.py`, `src/tts_mcp/desktop_vieneu.py`, `tests/test_server.py`, `tests/test_desktop_vieneu.py`
 
+### VLIB-vieneu-sampler-config
+
+VieNeu MCP `speak` and `clone` SHALL accept an optional `vieneu_config` object with the desktop's VieNeu sampler fields, forward it only to VieNeu synthesis, and reject it for OmniVoice.
+
+#### Scenario: set a sampler seed
+
+- GIVEN a caller invokes VieNeu `speak` or `clone` with `vieneu_config={"seed": 1234}`
+- WHEN the request is synthesized
+- THEN the provider receives that config and maps it to audio.cpp request options
+
+#### Scenario: reject OmniVoice or invalid configuration
+
+- GIVEN a caller supplies `vieneu_config` to OmniVoice or supplies an invalid VieNeu value
+- WHEN the request is validated
+- THEN it fails before the OmniVoice engine or audio.cpp is invoked
+
+Evidence: `src/tts_mcp/server.py`, `src/tts_mcp/desktop_vieneu.py`, `tests/test_server.py`, `tests/test_desktop_vieneu.py`
+
 ### VLIB-vieneu-saved-presets
 
 The shared voice library SHALL persist a named reference to a validated VieNeu
@@ -246,6 +264,9 @@ Evidence: `src/tts_mcp/engine.py`, `src/tts_mcp/desktop.py`, `src/tts_mcp/deskto
    `ref_audio_path`. The server routes the request to `VieNeuProvider`, which
    validates the preset or reference audio, normalizes reference audio when
    needed, computes or reuses a CAM++ embedding, and invokes `audiocpp_cli`.
+   Either VieNeu call may pass `vieneu_config` (for example `{"seed": 1234}`);
+   the server adds it to the request only when supplied, and the provider
+   validates it and maps it to audio.cpp request options.
 6. For OmniVoice external-reference cloning, call `clone` with `ref_audio_path`
    and optional `ref_text`. VieNeu does not use `ref_text`.
 
@@ -307,6 +328,9 @@ directory, profile writes and deletions affect the desktop library too.
   non-default VieNeu generation controls fail before provider inference. An
   unprepared VieNeu model reports that the caller must run
   `prepare_model(provider='vieneu')`.
+- `vieneu_config` on an OmniVoice call raises `ValueError` before the engine is
+  used. For VieNeu, an unknown key or an out-of-range sampler value is rejected
+  by the provider before `audiocpp_cli` runs.
 - A pure VieNeu preset profile has no OmniVoice clone asset and fails with
   provider guidance. A stale preset ID fails through VieNeu validation without
   falling back to OmniVoice.
@@ -324,11 +348,12 @@ directory, profile writes and deletions affect the desktop library too.
   seeded-profile dispatch,
   external reference forwarding, OmniVoice defaults, provider status and
   preparation routing, VieNeu preset, Clone, and saved preset routing,
-  rejection paths, and profile-list formatting through direct calls and the
-  MCP client.
+  `vieneu_config` forwarding and its OmniVoice rejection, rejection paths, and
+  profile-list formatting through direct calls and the MCP client.
 - `tests/test_desktop_vieneu.py` checks explicit output paths, output cleanup,
   inference serialization, asset readiness, VieNeu preset and reference
-  synthesis, and native failure handling.
+  synthesis, sampler options and their validation before the CLI runs, and
+  native failure handling.
 - `tests/test_engine.py` checks Clone, Design, and VieNeu preset persistence,
   seeded WAV persistence, profile loading, v4-to-v5 schema migration,
   overwrite protection, and deletion.

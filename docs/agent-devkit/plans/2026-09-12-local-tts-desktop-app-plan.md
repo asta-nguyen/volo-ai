@@ -1,8 +1,23 @@
 # Local TTS Desktop App — Execution Plan
 
-## Approved design
+## Design
 
 [Local TTS Desktop App design](../specs/2026-09-12-local-tts-desktop-app-design.md)
+
+## Global Constraints
+
+- Build each release target on its matching native host; do not
+  cross-compile the Python sidecar or audio.cpp CLI.
+
+## Impact map
+
+Entry: no existing source; planned entry: `.github/workflows/release.yml::validate-version`
+Flow: no existing flow; planned flow: tag push → version validation → four native platform builds → artifact handoff → draft GitHub Release → publish
+State changes: GitHub Release metadata and downloadable platform assets; no local application data changes
+External effects: GitHub Actions runner usage and GitHub Release creation/upload through a least-privilege `GITHUB_TOKEN`
+Change candidates: `.github/workflows/release.yml`, `README.md`, `docs/desktop-development.md`, `docs/llm/architecture/overview.md`
+Verification: inspect the workflow gate and target matrix; the first matching tag run must build and upload all four native packages and publish only after success
+Verified at: 1e7dbce4d65754d2d5f75216240101816409ed30
 
 ## Task 1 — Bootstrap the Tauri desktop shell
 
@@ -257,9 +272,92 @@ Steps:
 5. Run the Python, frontend, Rust, sidecar, and Tauri build checks listed
    above on the current host.
 
-## Task 6 — Final review and verification
+## Task 6 — Automate tagged multi-platform releases
 
-Files: all files changed by Tasks 1–5; no new product files.
+Files:
+
+- Create `.github/workflows/release.yml::validate-version`, `build`, and
+  `publish` jobs.
+- Modify `README.md::Build a release app` and
+  `docs/desktop-development.md::Build the desktop app`.
+- Update `docs/llm/architecture/overview.md` through the `document-wiki`
+  Task updates procedure after source verification.
+
+Interfaces: A push of `v*` starts one workflow. `validate-version` accepts
+only `vX.Y.Z` and checks that the tag matches the desktop versions in
+`apps/desktop/package.json`, `[package].version` in
+`apps/desktop/src-tauri/Cargo.toml`, and
+`apps/desktop/src-tauri/tauri.conf.json`. Only a passing validation job may
+start the native build matrix. Each matrix job uploads a uniquely named set of
+Tauri bundles. `publish` consumes all four artifact sets and exposes one
+GitHub Release.
+
+Change: Build the four existing triples on matching GitHub-hosted runners:
+`macos-15` for `aarch64-apple-darwin`, `macos-15-intel` for
+`x86_64-apple-darwin`, `windows-2025` for `x86_64-pc-windows-msvc`, and
+`ubuntu-24.04` for `x86_64-unknown-linux-gnu`. Set up Node.js 22, Python 3.11,
+Rust, and FFmpeg. Install FFmpeg with Homebrew on macOS, Chocolatey on
+Windows, and apt on Ubuntu; install Tauri's documented Linux system packages
+on Ubuntu and use the Windows runner's MSVC, WebView2, and MSI prerequisites.
+Check out audio.cpp v0.9.0, build its CPU `vieneu_v3_turbo` CLI using the
+existing platform commands in `docs/desktop-development.md`, install the
+existing Python desktop extras and build requirements, and run
+`npm ci --prefix apps/desktop`. Then run `scripts/build_sidecar.py` with the
+host FFmpeg, CLI, and target triple, followed by
+`npm --prefix apps/desktop run tauri build`. Upload all produced Tauri bundles
+with target-specific names and fail the job if none are produced.
+
+Give workflow/build jobs `contents: read`; grant `contents: write` only to the
+publisher. The publisher waits for validation and all four builds, creates or
+reuses a draft release, uploads every target asset with the `vX.Y.Z` and OS/
+architecture in its filename, then publishes the draft. A validation or
+build failure creates no public release. A rerun may replace assets on an
+existing draft; it leaves an already published release untouched. Serialize
+workflow runs for the same tag without cancelling an active publisher. Do not
+add Apple Developer ID secrets or notarization; macOS users may need to allow the
+unsigned package in Gatekeeper, which may warn, block, or report it as damaged
+on Apple Silicon. Do not upload model weights or app data. Standard hosted
+runner disk and runtime limits may be tight for PyTorch and audio.cpp builds;
+larger runners may incur Actions costs if the standard runners are insufficient.
+
+Verify: inspect that every matrix entry uses the intended native runner and
+target, all builds depend on version validation, and publishing depends on all
+four builds. Run `git diff --check`. A successful tag workflow must produce
+non-empty Tauri bundle artifacts for every target, reject mismatched source
+versions before the matrix, and publish only after every upload succeeds. No
+tag is created or pushed as part of implementation.
+
+Files inspected, no change:
+
+- `scripts/build_sidecar.py::main` — existing interface validates FFmpeg and
+  audio.cpp inputs and stages target-named binaries.
+- `apps/desktop/package.json`,
+  `apps/desktop/src-tauri/Cargo.toml`, and
+  `apps/desktop/src-tauri/tauri.conf.json` — current version fields, target
+  configuration, and bundle formats.
+
+Steps:
+
+1. Add the tag trigger and a source-version validation job that fails before
+   matrix builds when the tag or any of the three version fields differs.
+2. Add the four native runner entries, host dependencies, pinned audio.cpp
+   CPU build, existing sidecar packaging command, and Tauri bundle build.
+3. Upload each target's bundle set with a unique workflow artifact name and
+   require at least one output file per target.
+4. Add a least-privilege publisher that waits for all artifacts, stages or
+   reuses a draft, attaches assets with target-specific filenames, serializes
+   same-tag runs, and publishes only after successful uploads.
+5. Update README and desktop development documentation with the tag/version
+   process and unsigned macOS limitation, then update the verified architecture
+   wiki after source checks. No `delta.md` is needed because the architecture
+   page has no `## Requirements` section to modify.
+
+Progress: todo
+Result: none
+
+## Task 7 — Final review and verification
+
+Files: all files changed by Tasks 1–6; no new product files.
 
 Interfaces: verify the implementation against the approved design and this
 plan, including the persisted language decision and all sidecar messages.
@@ -278,12 +376,14 @@ cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 python -m tts_mcp.cli --help
 ```
 
-Then run the native Tauri build on each available target host and perform the
-first-run/offline/English/Vietnamese/clone/export smoke checklist. Invoke
-`review-and-verify` for the final requirements and diff review. Because this
-feature changes user-visible behavior and the repository has no existing
-`docs/llm/` wiki, invoke `document-wiki` after verification to document the
-desktop app and setup flow.
+Then perform the first-run/offline/English/Vietnamese/clone/export smoke
+checklist. The release workflow in Task 6 owns native builds for all four
+targets; its first run requires a matching pushed version tag and is not
+triggered during implementation. Invoke `review-and-verify` for the final
+requirements and diff review. The repository now has a verified architecture
+wiki page; invoke `document-wiki` after source checks to update
+`docs/llm/architecture/overview.md` with the release workflow behavior. No
+wiki delta is needed because that page has no `## Requirements` section.
 
 Files inspected, no change: generated model caches, generated audio, and
 platform build output directories.
@@ -296,14 +396,15 @@ Steps:
 3. Review the diff and requirements, fix any in-scope blocker, and repeat the
    failed check.
 4. Invoke `review-and-verify` and record its required result block.
-5. Invoke `document-wiki` after a passing review.
 
 ## Approval Gate
 
 Required: yes
 Reason: The plan changes public Python interfaces, dependencies, packaging,
-and more than a small set of files.
+and adds a tag-triggered multi-platform release workflow that publishes
+unsigned desktop installers.
 Status: approved
+Execution: open
 
 ## Decision Log
 
@@ -353,3 +454,18 @@ Impact: `SidecarClient.request()` publishes request lifecycle updates and the
 React UI renders them in a dedicated Logs view; the Python protocol is
 unchanged.
 Confirmed by user: 2026-09-12
+
+### D5 — Tag-triggered multi-platform releases
+
+Question: How should CI publish the desktop builds?
+Decision: Pushing a strict `vX.Y.Z` tag that matches the versions in
+`package.json`, `Cargo.toml`, and `tauri.conf.json` starts native builds for
+macOS ARM64, macOS Intel, Windows x64, and Linux x64. CI publishes one GitHub
+Release only after all four builds and asset uploads succeed. Packages ship
+without Apple Developer ID signing or notarization.
+Impact: A version guard gates the native matrix; the release publisher alone
+gets `contents: write`. Target-specific assets are staged on a draft before
+publication. Same-tag runs are serialized. A version/build failure does not
+publish partial assets, and a rerun does not replace an already published
+release.
+Confirmed by user: 2026-10-13

@@ -151,6 +151,13 @@ to choose a preset ID from `preset_voices`. Use that ID in `speak`:
 }
 ```
 
+VieNeu sampling is random on every call. Pass `vieneu_config` to `speak` or
+`clone` to pin or tune it, for example `"vieneu_config": {"seed": 1234}`. It
+takes the same fields as the VieNeu settings in Volo AI: `temperature`,
+`top_k`, `top_p`, `repetition_penalty`, `repetition_window`, `do_sample`, and
+`seed`. The same `seed`, text, and voice reproduce the same audio on the same
+machine. OmniVoice rejects `vieneu_config`.
+
 For cloning, use a saved Clone profile name or provide a one-off reference
 file. `language` accepts `en` or `vi` and defaults to English:
 

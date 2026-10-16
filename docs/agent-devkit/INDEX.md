@@ -2,9 +2,11 @@
 
 ## Changes
 
+- [Tagged Multi-Platform Desktop Release Workflow](changes/2026-10-13-desktop-release-workflow/design.md) — [tasks](changes/2026-10-13-desktop-release-workflow/tasks.md)
 
 ## Archived changes
 
+- [MCP VieNeu sampler config](changes/archive/2026-10-16-mcp-vieneu-config/delta.md)
 - [VieNeu preset seed pack](changes/archive/2026-10-10-vieneu-seed-voice-pack/design.md) — [tasks](changes/archive/2026-10-10-vieneu-seed-voice-pack/tasks.md), [wiki delta](changes/archive/2026-10-10-vieneu-seed-voice-pack/delta.md)
 - [VieNeu generation controls](changes/archive/2026-10-13-vieneu-generation-controls/delta.md)
 - [Desktop shadcn and TanStack Query adoption](changes/archive/2026-10-12-shadcn-tanstack-desktop/design.md) — [tasks](changes/archive/2026-10-12-shadcn-tanstack-desktop/tasks.md), [decisions](changes/archive/2026-10-12-shadcn-tanstack-desktop/decisions.md)

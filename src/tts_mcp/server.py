@@ -47,6 +47,11 @@ def _validate_vieneu_controls(speed: float, steps: int, normalize: bool) -> None
         raise ValueError("VieNeu does not support speed, steps, or text normalization controls")
 
 
+def _reject_vieneu_config(vieneu_config: dict[str, Any] | None) -> None:
+    if vieneu_config is not None:
+        raise ValueError("vieneu_config is only valid for provider='vieneu'")
+
+
 @server.tool()
 def status() -> dict[str, Any]:
     """Report model readiness and runtime requirements for each provider."""
@@ -99,6 +104,7 @@ def speak(
     voice: str = "auto",
     preset_id: str | None = None,
     language: str | None = None,
+    vieneu_config: dict[str, Any] | None = None,
 ) -> str:
     """Generate speech with OmniVoice or a manifest preset from VieNeu.
 
@@ -112,12 +118,16 @@ def speak(
         voice: Use "auto" for OmniVoice or "preset" for VieNeu.
         preset_id: VieNeu preset ID from status().
         language: Optional synthesis language (en or vi).
+        vieneu_config: VieNeu-only sampler options: temperature, top_k, top_p,
+            repetition_penalty, repetition_window, do_sample, seed. Set seed
+            to reproduce a take.
 
     Returns:
         Path to the saved audio file.
     """
     provider_id = _provider_id(provider)
     if provider_id == "omnivoice":
+        _reject_vieneu_config(vieneu_config)
         if voice != "auto" or preset_id is not None:
             raise ValueError("OmniVoice speak supports only voice='auto'; preset_id is for VieNeu")
         gen_kwargs: dict[str, Any] = {
@@ -145,6 +155,8 @@ def speak(
         "preset_id": preset_id,
         "format": output_format,
     }
+    if vieneu_config is not None:
+        request["vieneu_config"] = vieneu_config
     result = get_vieneu_provider().synthesize(
         request,
         Engine.list_voices(),
@@ -166,6 +178,7 @@ def clone(
     normalize: bool = False,
     provider: str = "omnivoice",
     language: str | None = None,
+    vieneu_config: dict[str, Any] | None = None,
 ) -> str:
     """Generate speech with a saved profile or reference audio.
 
@@ -184,6 +197,9 @@ def clone(
         normalize: Normalize numbers to words (default false).
         provider: Synthesis provider (omnivoice by default, or vieneu).
         language: Optional synthesis language (en or vi).
+        vieneu_config: VieNeu-only sampler options: temperature, top_k, top_p,
+            repetition_penalty, repetition_window, do_sample, seed. Set seed
+            to reproduce a take.
 
     Returns:
         Path to the saved audio file.
@@ -201,6 +217,8 @@ def clone(
             "language": validate_language(language if language is not None else "en"),
             "format": output_format,
         }
+        if vieneu_config is not None:
+            request["vieneu_config"] = vieneu_config
         audio_label = "Cloned"
         voices = Engine.list_voices()
         if voice:
@@ -231,6 +249,7 @@ def clone(
         )
         return f"{audio_label} audio saved to: {result['audio_path']}"
 
+    _reject_vieneu_config(vieneu_config)
     engine = get_engine()
     gen_kwargs: dict[str, Any] = {
         "text": text,

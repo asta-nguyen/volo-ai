@@ -235,6 +235,48 @@ class ServerTests(unittest.TestCase):
         engine.assert_not_called()
         vieneu.assert_not_called()
 
+    def test_vieneu_config_is_forwarded_only_when_supplied(self):
+        vieneu = Mock()
+        vieneu.synthesize.return_value = {"audio_path": "/tmp/out.wav", "format": "wav"}
+        voices = [{"name": "Saved", "kind": "clone", "ref_audio": "/tmp/saved.wav"}]
+        config = {"seed": 1234, "temperature": 0.6}
+        calls = (
+            lambda **extra: speak(
+                "hello", "/tmp/out.wav", provider="vieneu", voice="preset",
+                preset_id="truc_ly", **extra,
+            ),
+            lambda **extra: clone(
+                "hello", "/tmp/out.wav", voice="Saved", provider="vieneu", **extra
+            ),
+            lambda **extra: clone(
+                "hello", "/tmp/out.wav", ref_audio_path="/tmp/ref.wav",
+                provider="vieneu", **extra,
+            ),
+        )
+        with (
+            patch("tts_mcp.server.get_vieneu_provider", return_value=vieneu),
+            patch("tts_mcp.server.Engine.list_voices", return_value=voices),
+        ):
+            for call in calls:
+                with self.subTest(call=call):
+                    call(vieneu_config=config)
+                    self.assertEqual(vieneu.synthesize.call_args.args[0]["vieneu_config"], config)
+                    call()
+                    self.assertNotIn("vieneu_config", vieneu.synthesize.call_args.args[0])
+
+    def test_vieneu_config_is_rejected_for_omnivoice_before_engine_use(self):
+        with (
+            patch("tts_mcp.server.get_engine") as engine,
+            patch("tts_mcp.server.get_vieneu_provider") as vieneu,
+        ):
+            with self.assertRaisesRegex(ValueError, "only valid for provider='vieneu'"):
+                speak("hello", "/tmp/out.wav", vieneu_config={"seed": 1})
+            with self.assertRaisesRegex(ValueError, "only valid for provider='vieneu'"):
+                clone("hello", "/tmp/out.wav", voice="Saved", vieneu_config={"seed": 1})
+
+        engine.assert_not_called()
+        vieneu.assert_not_called()
+
     def test_vieneu_runtime_failure_does_not_fall_back_to_omnivoice(self):
         engine = Mock()
         vieneu = Mock()
@@ -480,6 +522,32 @@ class MCPProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(prepare_result.structured_content["model_ready"])
         self.assertFalse(speak_result.is_error)
         self.assertIn("/tmp/vieneu.wav", speak_result.content[0].text)
+
+    async def test_speak_tool_accepts_vieneu_config_object(self):
+        vieneu = Mock()
+        vieneu.synthesize.return_value = {"audio_path": "/tmp/vieneu.wav", "format": "wav"}
+        with (
+            patch("tts_mcp.server.get_vieneu_provider", return_value=vieneu),
+            patch("tts_mcp.server.Engine.list_voices", return_value=[]),
+        ):
+            async with Client(server) as client:
+                result = await client.call_tool(
+                    "speak",
+                    {
+                        "text": "Xin chào",
+                        "output_path": "/tmp/vieneu.wav",
+                        "provider": "vieneu",
+                        "voice": "preset",
+                        "preset_id": "truc_ly",
+                        "vieneu_config": {"seed": 1234, "do_sample": True},
+                    },
+                )
+
+        self.assertFalse(result.is_error)
+        self.assertEqual(
+            vieneu.synthesize.call_args.args[0]["vieneu_config"],
+            {"seed": 1234, "do_sample": True},
+        )
 
     async def test_vieneu_runtime_error_is_returned_as_mcp_tool_error(self):
         engine = Mock()
