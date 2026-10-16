@@ -1,0 +1,87 @@
+docs/agent-devkit/specs/2026-09-12-local-tts-desktop-app-design.md
+  s_c64dff7b990146::t_62faaf0ecca8eb 182-183
+  s_c64dff7b990146::t_4a8f0bb0df1f09 160-168,206-208
+  s_c64dff7b990146::t_ef1271f468dd64 184-186,189-192
+  s_c64dff7b990146::t_003ff7679b83e2 10,156-157,159,172-181,187-188,193,226-233,238
+  s_c64dff7b990146::t_3cb0a90408df20 169-171
+  s_c64dff7b990146::t_bec886b8a24ad5 5-6,158,234-237
+tests/test_server.py
+  s_5b0be5e86a287b::t_ba97fc32695339 526-551
+  s_5b0be5e86a287b::t_de8391c0bbdd41 238-279
+docs/agent-devkit/changes/archive/2026-10-12-shadcn-tanstack-desktop/tasks.md
+  s_e5d47b64f7f39b::t_d07e0c07b874eb 1-203
+docs/agent-devkit/plans/2026-09-12-local-tts-desktop-app-plan.md
+  s_c64dff7b990146::t_52d88346273665 9-10,360
+  s_c64dff7b990146::t_c9cc9088f086b2 471
+  s_c64dff7b990146::t_bec886b8a24ad5 16-19,303-304,324-325,405
+  s_c64dff7b990146::t_46f5a6aa067f8e 3,7-8,11-15,20-21,275-298,309-314,322-323,326-347,350-356,358-359,379-386,404,407,457-467
+  s_c64dff7b990146::t_db7ca024adb6fe 299-302,305-308
+  s_c64dff7b990146::t_aa34fca8928c1c 315-317,348-349,468-470
+  s_c64dff7b990146::t_dd8086c68905b1 318-321
+docs/agent-devkit/INDEX.md
+  s_5b0be5e86a287b::t_ed9db8571f8ea5 9
+  s_c64dff7b990146::t_1225e5c9a8ce12 5
+src/tts_mcp/server.py
+  s_5b0be5e86a287b::t_fa477e4030101f 50-54,107,121-123,130,158-159,181,200-202,220-221,252
+docs/llm/workflows/mcp-voice-library.md
+  s_5b0be5e86a287b::t_118e5866125aa7 331-333
+  s_5b0be5e86a287b::t_d256dab0794058 267-269
+  s_5b0be5e86a287b::t_decabb3d2d29f7 174-191
+  s_5b0be5e86a287b::t_1d4b24252b4429 351-352,355-356
+docs/llm/INDEX.md
+  s_5b0be5e86a287b::t_18ff51de5bcac8 56-57
+README.md
+  s_5b0be5e86a287b::t_c8a5a16d8411a5 154-160
+docs/agent-devkit/changes/2026-10-13-desktop-release-workflow/design.md
+  s_c64dff7b990146::t_b26cb4399797dd 67-68
+  s_c64dff7b990146::t_61847bc71294ef 100
+  s_c64dff7b990146::t_da817293789600 1-10,12-66,69-99,101-105,110
+  s_c64dff7b990146::t_1225e5c9a8ce12 11,106-109
+docs/agent-devkit/changes/2026-10-13-desktop-release-workflow/tasks.md
+  s_c64dff7b990146::t_1225e5c9a8ce12 24-27,32
+  s_c64dff7b990146::t_7c4965b8bb0493 1-23,28-31,33-151
+docs/agent-devkit/changes/archive/2026-10-12-shadcn-tanstack-desktop/design.md
+  s_e5d47b64f7f39b::t_cf0492f837644a 1-105
+docs/agent-devkit/changes/archive/2026-10-10-vieneu-seed-voice-pack/delta.md
+  s_e5d47b64f7f39b::t_d1bc51e3de318e 1-183
+docs/agent-devkit/changes/archive/2026-10-10-vieneu-seed-voice-pack/design.md
+  s_e5d47b64f7f39b::t_a47b3d50cb6144 1-135
+docs/agent-devkit/changes/archive/2026-10-10-vieneu-seed-voice-pack/tasks.md
+  s_e5d47b64f7f39b::t_f6a1a959f610ba 1-281
+docs/agent-devkit/changes/archive/2026-10-12-shadcn-tanstack-desktop/decisions.md
+  s_c64dff7b990146::t_79dd9e7a5257fc 1-22
+docs/agent-devkit/changes/archive/2026-10-16-mcp-vieneu-config/delta.md
+  s_5b0be5e86a287b::t_515b402a975f2c 1-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "797775b109eca92a61f77cb7b3d872dd4fb5bb35",
+  "prompts": {},
+  "sessions": {
+    "s_5b0be5e86a287b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aa1002c8-fb8f-4e78-acd7-1d8b13d3ea97",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_c64dff7b990146": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13601-2b06-71e3-beef-97ee90b3892c",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_e5d47b64f7f39b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a134ba-2212-7a23-8dab-15376b4580d8",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
