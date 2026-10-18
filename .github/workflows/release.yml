@@ -279,7 +279,7 @@ jobs:
           )
           packages = sorted(
               path
-              for path in bundle_root.rglob("*")
+              for path in bundle_root.glob("*/*")
               if path.is_file()
               and any(path.name.lower().endswith(extension) for extension in extensions)
           )
