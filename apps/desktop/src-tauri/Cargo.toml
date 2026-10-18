@@ -1,6 +1,6 @@
 [package]
 name = "volo-ai-desktop"
-version = "0.1.0"
+version = "0.1.1"
 description = "Volo AI local voice desktop application"
 authors = ["tts-mcp"]
 edition = "2021"

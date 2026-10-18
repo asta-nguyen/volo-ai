@@ -1,4 +1,4 @@
-# Volo AI 0.1.0
+# Volo AI 0.1.1
 
 ## Highlights
 
