@@ -1,0 +1,123 @@
+docs/agent-devkit/changes/archive/2026-10-13-desktop-release-workflow/design.md
+  s_04bf982d4bca80::t_3d9392162fa549 11-12,37-41,72-74,99-105,109,113-114,117-119
+docs/llm/workflows/desktop-vieneu.md
+  s_33004f15e0d96c::t_57006a331027cc 5-26,214-225,253-256,267-269,308-311,325-326
+tests/test_desktop.py
+  s_33004f15e0d96c::t_152ae556bb6772 1321-1356
+  s_33004f15e0d96c::t_a607949e5afb3c 1040-1049,1275-1280,1282-1286,1288-1307,1310-1313
+  s_33004f15e0d96c::t_af259841baeebf 1281,1287,1308-1309,1314-1319
+  s_33004f15e0d96c::t_416ddbfe728acf 1320
+docs/desktop-development.md
+  s_04bf982d4bca80::t_5fbc9ea5acfaae 130-143,145-155,157
+  s_04bf982d4bca80::t_2aed458f427286 144
+  s_04bf982d4bca80::t_c11097d7fa4bdc 156
+  s_33004f15e0d96c::t_55ee857d7aef5d 33-39,163-166
+apps/desktop/src/App.tsx
+  s_33004f15e0d96c::t_39d6c6b57aa13c 508-510
+  s_33004f15e0d96c::t_0eb96305213a67 3075,3082-3083,3086-3090,3190-3192,3194-3198,3206-3233,3236-3237
+  s_33004f15e0d96c::t_c380f10845ead1 3118,3121
+  s_33004f15e0d96c::t_fe7390a0502cef 1559
+  s_33004f15e0d96c::t_775fb4c1fa0639 3119-3120
+  s_33004f15e0d96c::t_8a1f4e86f3bcfc 3199-3205
+  s_33004f15e0d96c::t_8acca1582cdc8c 3731,3736-3738,3742-3743,3870
+  s_33004f15e0d96c::t_407d0354bbfbc3 503
+  s_33004f15e0d96c::t_24e7754acd68ea 1344,1370,2857-2863,2895
+  s_33004f15e0d96c::t_ec259fae759d74 430-432,436-437,445-447,451-452,458-470,472,504-507,511-542,544,552-553,558,561-562,596,601-618
+  s_33004f15e0d96c::t_f2d83491039360 637,3234-3235
+  s_33004f15e0d96c::t_089137850c69c7 3084-3085
+  s_33004f15e0d96c::t_8638d4f03585f3 3866-3867
+.github/workflows/release.yml
+  s_04bf982d4bca80::t_5fbc9ea5acfaae 1-139,141-252,254-416
+  s_04bf982d4bca80::t_99eabfc42221ed 140,253
+src/tts_mcp/desktop.py
+  s_33004f15e0d96c::t_b4e52e22bfab62 554-555,562-563,697,737-739,743-753,763,777-778
+  s_33004f15e0d96c::t_78ffc1a58ff371 556-561
+  s_33004f15e0d96c::t_5754defd2fe5f5 698,740-741,756-757,779
+apps/desktop/src/lib/i18n.ts
+  s_33004f15e0d96c::t_8638d4f03585f3 384
+  s_33004f15e0d96c::t_9e62dc8331afb8 13,19,22,44,379,387,409,767,770
+README.md
+  s_33004f15e0d96c::t_10e8711cee824f 257-259
+  s_04bf982d4bca80::t_5fbc9ea5acfaae 269-281
+docs/llm/architecture/overview.md
+  s_04bf982d4bca80::t_5fbc9ea5acfaae 37-42,138-141,180-181
+docs/agent-devkit/INDEX.md
+  s_04bf982d4bca80::t_3d9392162fa549 7
+release.md
+  s_04bf982d4bca80::t_8f57b72cfff1fc 1-7
+apps/desktop/src/lib/sidecar.ts
+  s_33004f15e0d96c::t_b5cf31f9962153 162,265-275,300,336
+  s_33004f15e0d96c::t_d7228e2adc6167 68
+docs/llm/INDEX.md
+  s_33004f15e0d96c::t_755feaae86eecc 28-33
+.agents/skills/brainstorm-feature/SKILL.md
+  s_33004f15e0d96c::t_d0240fe15e49a6 3,27-28,33-36,77-80,86-88,100-101,103-111,116-118,122-124,135-138,141-143,145-151,153-154,163-167,175
+.agents/skills/brainstorm-feature/references/delta-format.md
+  s_33004f15e0d96c::t_b438a483cc39f2 1-111
+.agents/skills/brainstorm-feature/references/spec-self-review.md
+  s_33004f15e0d96c::t_57f4a3a14c199a 3-5,14-15,17-22
+.agents/skills/context-handoff/SKILL.md
+  s_33004f15e0d96c::t_de402bf711b5dd 24-25,28-29,31-32,41,43,70-71,74-81,84-91
+.agents/skills/document-wiki/SKILL.md
+  s_33004f15e0d96c::t_501607a5dcd5e0 3,9,16-22,26-29,32-48,52-70,74-85,93-96,98-181,184-185
+.agents/skills/document-wiki/references/evidence-matrix-and-page-template.md
+  s_33004f15e0d96c::t_c175f16cd0cb85 3-4
+.agents/skills/document-wiki/references/inventory-and-report.md
+  s_33004f15e0d96c::t_1050b0e85de8d8 1-61
+.agents/skills/document-wiki/references/legacy-conversion.md
+  s_33004f15e0d96c::t_27ffb5fd1cf03c 1-18
+.agents/skills/document-wiki/references/merge-task-delta.md
+  s_33004f15e0d96c::t_c6365657bdb04c 1-79
+.agents/skills/estimate-feature/SKILL.md
+  s_33004f15e0d96c::t_03a6487dcb9951 3,13-19,23-26,90-91,101
+.agents/skills/implement-task/SKILL.md
+  s_33004f15e0d96c::t_c4afc5ce263cee 10-18,20-28,34-40,42-79,83-91,95-98,100,104-109,117-120,128-130,132-140,153-160,166-169,171,174-176,178-180,183-193
+.agents/skills/lean-audit/SKILL.md
+  s_33004f15e0d96c::t_b53574a1c6c41d 55-56
+.agents/skills/plan-feature/SKILL.md
+  s_33004f15e0d96c::t_58c1f07f468c8c 3,8-30,34-92,94-97,101-106,110-131
+.agents/skills/plan-feature/references/tasks-template.md
+  s_33004f15e0d96c::t_5970a8e6980d60 1-98
+.agents/skills/read-codebase-context/SKILL.md
+  s_33004f15e0d96c::t_fc4a8e260d536a 10-12,29-30,65-67,94-97
+.agents/skills/review-and-verify/SKILL.md
+  s_33004f15e0d96c::t_9be29f1a355118 8-13,21,25-47,51,55-77,81-82,89-90,100,106-115,120,123-133,139,141-142,144-158,162-170,174-181,183-187,200-215
+.agents/skills/setup-codebase/SKILL.md
+  s_33004f15e0d96c::t_f95fcb4b76f081 11,13-17,22-23,105
+.agents/skills/setup-openez/SKILL.md
+  s_33004f15e0d96c::t_32641e7a6e79a3 3,25,27-32,38-39,45-46,52-54,107-124
+.agents/skills/systematic-debugging/SKILL.md
+  s_33004f15e0d96c::t_de2dc1455cd7c0 14-15,22-25,29-34,38,40-43,45-55,59-61,65-71,75-85,87-110,112-117,119-125,127-138,142-143,146-148,153-154,158-165
+.agents/skills/using-devkit/SKILL.md
+  s_33004f15e0d96c::t_c1982faa488146 3,8-9,13-41,50,54-76,80-83,85-102
+.agents/skills/using-devkit/references/legacy.md
+  s_33004f15e0d96c::t_65a8f33e0cc870 1-59
+docs/agent-devkit/changes/archive/2026-10-13-desktop-release-workflow/tasks.md
+  s_04bf982d4bca80::t_c3cb9d0391cc01 12-15,19-20,26-27,30-39,44,74-87,98-99,106-110,113-116,128-129,138-143,151-152,158-159,166-181,187-189,193-194
+skills-lock.json
+  s_33004f15e0d96c::t_5ae4599bb8fae5 8,14,20,26,32,38,50,56,62,68,74,86,92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "824ed3d23394f3bbc496fa3080ee9b101e760193",
+  "prompts": {},
+  "sessions": {
+    "s_04bf982d4bca80": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14db5-3a01-7451-892c-72b4ab58e0d1",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_33004f15e0d96c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14949-2dd7-7a33-8a1f-bd366e4a62f2",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
