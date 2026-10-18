@@ -1,0 +1,38 @@
+README.md
+  s_c828ccc8c7b001::t_6c1d812285a7a0 274-277
+  s_c828ccc8c7b001::t_630f0eb0382ba0 3-5
+  s_c828ccc8c7b001::t_f7002a4acbb1ef 299
+docs/llm/architecture/overview.md
+  s_c828ccc8c7b001::t_6c1d812285a7a0 39-41
+docs/agent-devkit/INDEX.md
+  s_c828ccc8c7b001::t_b560a3758fe894 7
+docs/desktop-development.md
+  s_c828ccc8c7b001::t_630f0eb0382ba0 116,122-124,148
+  s_c828ccc8c7b001::t_6c1d812285a7a0 144-147
+apps/desktop/src-tauri/tauri.conf.json
+  s_c828ccc8c7b001::t_6c1d812285a7a0 35
+docs/agent-devkit/changes/archive/2026-10-18-desktop-release-build-fixes/design.md
+  s_c828ccc8c7b001::t_b560a3758fe894 1-80
+.github/workflows/release.yml
+  s_c828ccc8c7b001::t_6c1d812285a7a0 182,184,375
+docs/agent-devkit/changes/archive/2026-10-18-desktop-release-build-fixes/decisions.md
+  s_c828ccc8c7b001::t_2a856144fb8955 1-15
+docs/agent-devkit/changes/archive/2026-10-18-desktop-release-build-fixes/tasks.md
+  s_c828ccc8c7b001::t_7213fc504605d6 1-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "629d049993a5448d4ae145a16ae245911fc6bc26",
+  "prompts": {},
+  "sessions": {
+    "s_c828ccc8c7b001": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14e6a-826f-7951-ad14-507037c4edcc",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
