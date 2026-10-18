@@ -1,0 +1,29 @@
+apps/desktop/src-tauri/tauri.conf.json
+  s_c828ccc8c7b001::t_f2e8df15668e51 4
+apps/desktop/src-tauri/Cargo.toml
+  s_c828ccc8c7b001::t_f2e8df15668e51 3
+release.md
+  s_c828ccc8c7b001::t_f2e8df15668e51 1
+apps/desktop/package.json
+  s_c828ccc8c7b001::t_f2e8df15668e51 3
+apps/desktop/package-lock.json
+  s_c828ccc8c7b001::t_2840dc3549b48b 3,9
+apps/desktop/src-tauri/Cargo.lock
+  s_c828ccc8c7b001::t_9fe7f270b12277 3994
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b49a13917e624312343f37dd7e232d4fe05982fb",
+  "prompts": {},
+  "sessions": {
+    "s_c828ccc8c7b001": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14e6a-826f-7951-ad14-507037c4edcc",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
