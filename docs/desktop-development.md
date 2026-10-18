@@ -30,11 +30,13 @@ The desktop sidecar is launched by Tauri. The development launcher can use the
 repository sidecar wrapper, but release packaging must use the target-named
 PyInstaller executable produced below.
 
-The first-run screen offers OmniVoice and VieNeu-TTS without downloading
-assets until the user requests preparation. The Model tab can be reopened to
-inspect and install either provider; its detailed model fields describe
-OmniVoice. VieNeu presets come from the pinned local manifest, and the
-workspace also offers saved Clone profiles and one-off reference files.
+The first-run screen requires both OmniVoice and VieNeu-TTS to be ready before
+the synthesis workspace opens. One explicit preparation action starts all
+missing model downloads concurrently and reuses complete assets already in
+app data. The Model tab can be reopened to inspect and install either provider;
+its detailed model fields describe OmniVoice. VieNeu presets come from the
+pinned local manifest, and the workspace also offers saved Clone profiles and
+one-off reference files.
 
 The React UI uses `i18next` and `react-i18next` for its English/Vietnamese
 interface locale. Tailwind CSS v4 is loaded from `src/styles.css` through the
@@ -125,11 +127,40 @@ Tauri packages the target-named sidecars already under
 Rebuild the sidecar after changing `src/tts_mcp/desktop.py` or its packaged
 dependencies, then build the app.
 
+### Publish a release
+
+Prepare a desktop release by updating the repository-root `release.md` with a
+short summary and selected user-facing highlights for this release only. Commit
+that file and set the same `X.Y.Z` version in
+`apps/desktop/package.json`, `apps/desktop/src-tauri/Cargo.toml`, and
+`apps/desktop/src-tauri/tauri.conf.json` before pushing tag `vX.Y.Z`. The tag
+must match all three version fields, and its commit must contain non-empty
+release notes. Do not create a GitHub Release by hand; pushing the tag starts
+the release workflow.
+
+CI builds on native GitHub-hosted runners for Apple Silicon macOS
+(`aarch64-apple-darwin`), Intel macOS (`x86_64-apple-darwin`), Windows x64
+(`x86_64-pc-windows-msvc`), and Linux x64
+(`x86_64-unknown-linux-gnu`). Each published bundle is named
+`volo-ai_<tag>_<os>_<arch>.<bundle-extension>`. The workflow stages all four
+target artifact sets on a draft release and publishes it only after every build
+and upload succeeds. The published description comes from `release.md` in the
+tagged commit. A failed run can resume an existing draft; rerunning a tag with
+an already published release leaves that release unchanged.
+
+Release bundles include the native Python sidecar, the audio.cpp VieNeu CLI,
+and FFmpeg. They exclude model weights and app data; users download model
+assets during first-run setup. Packages are unsigned and not notarized, so
+macOS Gatekeeper may warn about or block the app, including with an “app is
+damaged” message on Apple Silicon. Keep using the manual host build commands
+below for local packaging.
+
 ```sh
 npm --prefix apps/desktop run build
 npm --prefix apps/desktop run tauri build
 ```
 
-OmniVoice and VieNeu assets download only after the user selects a provider
-and requests setup. Keep downloaded assets out of the installer; later runs
-reuse them from the platform app-data directory.
+The first-run screen downloads incomplete OmniVoice and VieNeu assets only
+after the user starts setup, and runs those downloads concurrently. Later runs
+reuse complete assets from the platform app-data directory. Keep model weights
+out of the installer.

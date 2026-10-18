@@ -551,7 +551,16 @@ def dispatch_request(
             )
             result = prepare(
                 on_progress=(
-                    (lambda progress: emit({"id": request_id, "event": "progress", **progress}))
+                    (
+                        lambda progress: emit(
+                            {
+                                "id": request_id,
+                                "event": "progress",
+                                **progress,
+                                "provider": provider_id,
+                            }
+                        )
+                    )
                     if emit
                     else None
                 ),
@@ -685,6 +694,8 @@ def run_protocol(
     """Run the sidecar protocol, allowing cancellation of long operations."""
     requests: queue.Queue[dict[str, Any] | None] = queue.Queue()
     active: dict[str, threading.Event] = {}
+    active_preparations: set[str] = set()
+    active_seeds: set[str] = set()
     workers: set[threading.Thread] = set()
     write_lock = threading.Lock()
 
@@ -723,16 +734,33 @@ def run_protocol(
                 write(_error(request_id, "not_found", "No active operation for request"))
             continue
         if operation in {"prepare_model", "seed_vieneu_voices"}:
-            if operation == "prepare_model" and active:
-                write(_error(request_id, "busy", "A model download is already running"))
+            provider_id = request.get("provider") if operation == "prepare_model" else None
+            if not isinstance(provider_id, str) or provider_id not in {"omnivoice", "vieneu"}:
+                provider_id = None
+            if operation == "prepare_model" and active_seeds:
+                write(_error(request_id, "busy", "VieNeu voice seeding is already running"))
                 continue
+            if provider_id is not None:
+                if provider_id in active_preparations:
+                    write(
+                        _error(
+                            request_id,
+                            "busy",
+                            f"A {provider_id} model download is already running",
+                        )
+                    )
+                    continue
+                active_preparations.add(provider_id)
             cancel_event = threading.Event()
             active[request_id] = cancel_event
+            if operation == "seed_vieneu_voices":
+                active_seeds.add(request_id)
 
             def run_long_operation(
                 request=request,
                 request_id=request_id,
                 cancel_event=cancel_event,
+                provider_id=provider_id,
             ) -> None:
                 try:
                     write(
@@ -746,6 +774,9 @@ def run_protocol(
                     )
                 finally:
                     active.pop(request_id, None)
+                    if provider_id is not None:
+                        active_preparations.discard(provider_id)
+                    active_seeds.discard(request_id)
                     workers.discard(threading.current_thread())
 
             worker = threading.Thread(target=run_long_operation, daemon=True)

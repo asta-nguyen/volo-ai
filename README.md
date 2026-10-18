@@ -254,7 +254,9 @@ cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 
 Manual smoke flow:
 
-1. Open the app and confirm the first-run progress screen reaches `MODEL READY`.
+1. Open the app; if either provider is incomplete, start the combined setup and
+   confirm both providers become ready before the synthesis workspace opens.
+   Reopen the app and confirm complete model assets are reused.
 2. Render an automatic English voice and play the result.
 3. Switch to Vietnamese, enter Vietnamese text, and render again.
 4. Choose `Clone from file`, select a short voice recording, optionally add
@@ -263,6 +265,19 @@ Manual smoke flow:
 6. Export both WAV and MP3.
 
 ## Build a release app
+
+To publish desktop installers, update the repository-root `release.md` with a
+short summary and highlights for that release only. Commit it with the matching
+version in `apps/desktop/package.json`, `apps/desktop/src-tauri/Cargo.toml`,
+and `apps/desktop/src-tauri/tauri.conf.json`, then push a `vX.Y.Z` tag. The tag
+must match all three versions, and its commit must contain non-empty release
+notes. CI builds macOS ARM64, macOS Intel, Windows x64, and Linux x64 packages;
+it publishes the GitHub Release with that tagged `release.md` only after every
+build and asset upload succeeds. Packages include the native sidecar,
+audio.cpp CLI, and FFmpeg, but not model weights or app data. macOS packages are
+unsigned and may trigger Gatekeeper warnings. See
+[`docs/desktop-development.md`](docs/desktop-development.md#build-the-desktop-app)
+for target details and manual host builds.
 
 Build the Python sidecar on the matching native host:
 

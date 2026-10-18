@@ -2,6 +2,28 @@
 
 ## Requirements
 
+### DVP-dual-model-readiness
+
+The desktop UI SHALL keep the synthesis workspace unavailable until both
+providers are ready and prepare every provider with missing model assets
+concurrently after one explicit setup action.
+
+#### Scenario: prepare both providers on first run
+
+- GIVEN either or both providers are not ready
+- WHEN the user starts model preparation from the first-run screen
+- THEN the app starts preparation for each provider with missing model assets
+  concurrently and keeps the synthesis workspace unavailable until both
+  providers report model, runtime, and preprocessing readiness
+
+#### Scenario: reuse ready model assets
+
+- GIVEN a provider's complete model assets are already available in app data
+- WHEN the user starts model preparation from the first-run screen
+- THEN the app skips preparation for that provider and reuses its saved assets
+
+Evidence: `apps/desktop/src/App.tsx`, `apps/desktop/src/lib/sidecar.ts`, `src/tts_mcp/desktop.py`, `src/tts_mcp/engine.py`, `src/tts_mcp/desktop_vieneu.py`, `tests/test_desktop.py`
+
 ### DVP-profile-availability
 
 The desktop UI SHALL expose the shared voice library while the sidecar is
@@ -189,13 +211,18 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
 
 1. The UI asks the sidecar for `status`, displays both providers, and persists
    the selected provider as `volo-ai.provider`. The default selection is
-   OmniVoice. MCP provider behavior is documented in the
-   [MCP voice library](mcp-voice-library.md).
-2. VieNeu status reads the validated local manifest for `preset_voices` and
-   `default_voice`. The UI sends `prepare_model` only after the user chooses to
-   prepare. VieNeu then downloads its pinned GGUF, manifest, listed preset
-   assets, and CAM++ speaker encoder; progress and cancellation use the JSONL
-   stream.
+   OmniVoice. The synthesis workspace remains unavailable until both providers
+   report model, runtime, and preprocessing readiness. MCP provider behavior
+   is documented in the [MCP voice library](mcp-voice-library.md).
+2. The user starts one preparation action from the first-run screen. The UI
+   sends concurrent `prepare_model` requests only for providers with incomplete
+   model assets and shows progress separately for each provider. The sidecar
+   allows one active preparation per provider, so OmniVoice and VieNeu can
+   download together while duplicate downloads for one provider are rejected.
+   Existing complete assets are reused. VieNeu downloads its pinned GGUF,
+   manifest, listed preset assets, and CAM++ speaker encoder; progress and
+   cancellation use the JSONL stream. Settings can still prepare one provider
+   on demand.
 3. For synthesis, the sidecar validates the requested provider and voice mode.
    Direct presets and seeded VieNeu profiles use their manifest ID. When
    OmniVoice is selected, a seeded profile uses its stored reference WAV and
@@ -223,6 +250,10 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
 - VieNeu sampler drafts stay in app memory for the current session, including
   when switching providers; they are not written to local storage or saved
   voice profiles.
+- OmniVoice and VieNeu model assets are stored under `models/omnivoice` and
+  `models/vieneu` in the Tauri app-data directory passed to the sidecar through
+  `TTS_MCP_DATA_DIR`. Rebuilding the app with the same bundle identifier keeps
+  this directory and its downloaded assets.
 - VieNeu assets are stored below `models/vieneu`. Derived speaker embeddings
   for reference cloning are cached below `models/vieneu/speaker-embeddings` by
   source audio content hash.
@@ -233,6 +264,9 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
 
 - VieNeu preparation downloads the pinned repository assets declared by
   `src/tts_mcp/desktop_vieneu.py`.
+- First-run preparation uses the existing app-data model directories and can
+  download missing OmniVoice and VieNeu assets at the same time. Complete
+  provider assets are skipped by each provider's readiness check.
 - Reference files are normalized by FFmpeg to mono, 48 kHz PCM WAV in a
   temporary directory. The temporary file is removed after the CLI call.
 - Each VieNeu synthesis starts the bundled or configured CPU `audiocpp_cli`.
@@ -271,6 +305,10 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
 - An invalid manifest exposes no preset list. Invalid or incomplete assets
   remain not-ready and can be retried; cancellation leaves valid partial files
   available for retry.
+- First-run setup stays visible until both providers report ready. A download
+  error is shown for its provider and can be retried; a second active download
+  for the same provider returns `busy` while downloads for the other provider
+  remain independent.
 - Missing audio.cpp runtime or VieNeu preprocessing is reported in status. A
   missing CLI output or unreadable/non-48 kHz WAV fails synthesis, and an
   incomplete final output is removed.
@@ -284,7 +322,8 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
 ## Tests
 
 - `tests/test_desktop.py` checks provider status, provider-ID validation,
-  provider routing, seeded-profile asset selection, pure-preset OmniVoice
+  concurrent provider preparation and per-provider progress, provider routing,
+  seeded-profile asset selection, pure-preset OmniVoice
   guidance, Design rejection, seed retries/cancellation, and preparation
   behavior.
 - `tests/test_desktop_vieneu.py` checks asset and manifest validation,
@@ -318,7 +357,5 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
 - `apps/desktop/src-tauri/tauri.conf.json`
 - `scripts/build_sidecar.py`
 - `pyproject.toml`
-- `tests/test_desktop.py`
-- `tests/test_desktop_vieneu.py`
 - `tests/test_build_sidecar.py`
 - `tests/test_cli.py`

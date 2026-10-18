@@ -8,7 +8,8 @@ packages on four operating-system runners, and publishes a GitHub Release.
 
 ## Status
 
-Approved by the user on 2026-10-14 together with [tasks](tasks.md).
+This revised design was approved by the user on 2026-10-18 together with
+[tasks](tasks.md). It adds per-release notes from the tagged commit.
 
 ## Problem
 
@@ -33,6 +34,11 @@ asset uploads succeed.
   to equal `apps/desktop/package.json::version`,
   `apps/desktop/src-tauri/Cargo.toml::package.version`, and
   `apps/desktop/src-tauri/tauri.conf.json::version`.
+- The repository-root `release.md` contains concise notes for the release being
+  tagged: a short release summary and selected user-facing highlights, not a
+  cumulative changelog or commit-by-commit history. Update and commit it before
+  creating the tag. The workflow reads the copy at the tagged commit and rejects
+  a missing or empty file before starting platform builds.
 - A malformed tag or version mismatch fails before any platform build starts.
   Source versions are updated before the release tag is created.
 
@@ -63,8 +69,9 @@ asset uploads succeed.
 - Workflow and build jobs have `contents: read`; only the publisher has
   `contents: write`.
 - The publisher waits for validation and all four builds. It creates or reuses
-  a draft release, uploads every target asset with the version, operating
-  system, and architecture in its filename using
+  a draft release whose description is the tagged commit's `release.md`,
+  uploads every target asset with the version, operating system, and
+  architecture in its filename using
   `volo-ai_<tag>_<os>_<arch>.<bundle-extension>`, then publishes the draft.
 - A validation or build failure cannot publish a public release. If publishing
   fails after draft creation, the draft remains unpublished for recovery.
@@ -89,22 +96,24 @@ asset uploads succeed.
 
 ## Documentation
 
-Update the existing README release instructions and desktop development guide
-to explain tag/version rules, package assets, and unsigned macOS behavior.
-After source checks, update the architecture overview with the verified
-release workflow. That wiki page has no `## Requirements` section, so this
-change does not need a `delta.md`.
+Add the initial root `release.md` with concise notes for the current release,
+and update it with each future release before tagging. Update the existing
+README release instructions and desktop development guide to explain this
+notes-file lifecycle, tag/version rules, package assets, and unsigned macOS
+behavior. After source checks, update the architecture overview with the
+verified release workflow. That wiki page has no `## Requirements` section, so
+this change does not need a `delta.md`.
 
 ## Related context
 
-- [Architecture overview](../../../llm/architecture/overview.md)
+- [Architecture overview](../../../../llm/architecture/overview.md)
 
 ## Impact map
 
-Entry: no existing source; planned entry: `.github/workflows/release.yml::validate-version`
-Flow: no existing flow; planned flow: tag push → version gate → four native builds → artifact uploads → draft release → publish
+Entry: no existing source; planned entry: `.github/workflows/release.yml::validate-release-inputs`
+Flow: no existing flow; planned flow: tag push → version and release-notes gate → four native builds → artifact uploads → draft release with `release.md` body → publish
 State changes: GitHub Release metadata and downloadable platform assets; no local application data changes
 External effects: GitHub Actions runner usage and GitHub Release creation/upload through a least-privilege `GITHUB_TOKEN`
-Change candidates: `.github/workflows/release.yml`, `README.md`, `docs/desktop-development.md`, `docs/llm/architecture/overview.md`
-Verification: workflow lint and diff checks; inspect version gate, native target/runner pairs, portable kernel flags, job permissions, and publish dependencies; first matching tag run must publish four non-empty asset sets
-Verified at: 1e7dbce4d65754d2d5f75216240101816409ed30
+Change candidates: `.github/workflows/release.yml`, `release.md`, `README.md`, `docs/desktop-development.md`, `docs/llm/architecture/overview.md`
+Verification: workflow lint and diff checks; inspect version and release-notes gates, native target/runner pairs, portable kernel flags, job permissions, release body source, and publish dependencies; first matching tag run must publish four non-empty asset sets with the tagged `release.md` as the description
+Verified at: 797775b109eca92a61f77cb7b3d872dd4fb5bb35

@@ -1037,7 +1037,16 @@ class DesktopWorkerTests(unittest.TestCase):
 
         self.assertTrue(response["ok"])
         self.assertEqual(
-            events, [{"id": "6", "event": "progress", "phase": "download", "progress": 0.5}]
+            events,
+            [
+                {
+                    "id": "6",
+                    "event": "progress",
+                    "phase": "download",
+                    "progress": 0.5,
+                    "provider": "omnivoice",
+                }
+            ],
         )
 
     def test_save_and_delete_voice_requests(self):
@@ -1262,6 +1271,88 @@ class DesktopWorkerTests(unittest.TestCase):
                 all(result["profiles"][0]["name"] == "minh_quan_pro" for result in results)
             )
         self.history_writer.assert_not_called()
+
+    def test_protocol_prepares_both_providers_concurrently(self):
+        barrier = threading.Barrier(2)
+
+        class BlockingEngine:
+            def ensure_model(self, on_progress=None, should_cancel=None):
+                barrier.wait(timeout=3)
+                on_progress({"phase": "download", "progress": 0.5})
+                return {"ready": True}
+
+        class BlockingProvider:
+            def ensure_model(self, on_progress=None, should_cancel=None):
+                barrier.wait(timeout=3)
+                on_progress({"phase": "download", "progress": 0.5})
+                return {"ready": True}
+
+        source = io.StringIO(
+            json.dumps(
+                {"id": "omni-one", "type": "prepare_model", "provider": "omnivoice"}
+            )
+            + "\n"
+            + json.dumps(
+                {"id": "omni-two", "type": "prepare_model", "provider": "omnivoice"}
+            )
+            + "\n"
+            + json.dumps(
+                {"id": "vieneu", "type": "prepare_model", "provider": "vieneu"}
+            )
+            + "\n"
+        )
+        target = io.StringIO()
+
+        run_protocol(source, target, BlockingEngine(), BlockingProvider())
+
+        messages = [json.loads(line) for line in target.getvalue().splitlines()]
+        responses = {response["id"]: response for response in messages if "ok" in response}
+        self.assertTrue(responses["omni-one"]["ok"])
+        self.assertFalse(responses["omni-two"]["ok"])
+        self.assertEqual(responses["omni-two"]["error"]["code"], "busy")
+        self.assertTrue(responses["vieneu"]["ok"])
+        progress = {
+            (message["id"], message["provider"])
+            for message in messages
+            if message.get("event") == "progress"
+        }
+        self.assertEqual(progress, {("omni-one", "omnivoice"), ("vieneu", "vieneu")})
+
+    def test_protocol_cancels_both_provider_preparations(self):
+        class BlockingProvider:
+            def ensure_model(self, on_progress=None, should_cancel=None):
+                while not should_cancel():
+                    time.sleep(0.001)
+                raise DownloadCancelled("Model download cancelled")
+
+        source = io.StringIO(
+            json.dumps(
+                {"id": "omni", "type": "prepare_model", "provider": "omnivoice"}
+            )
+            + "\n"
+            + json.dumps(
+                {"id": "vieneu", "type": "prepare_model", "provider": "vieneu"}
+            )
+            + "\n"
+            + json.dumps({"id": "cancel-omni", "type": "cancel", "request_id": "omni"})
+            + "\n"
+            + json.dumps(
+                {"id": "cancel-vieneu", "type": "cancel", "request_id": "vieneu"}
+            )
+            + "\n"
+        )
+        target = io.StringIO()
+
+        run_protocol(source, target, BlockingProvider(), BlockingProvider())
+
+        responses = {
+            response["id"]: response
+            for response in map(json.loads, target.getvalue().splitlines())
+        }
+        self.assertTrue(responses["cancel-omni"]["ok"])
+        self.assertTrue(responses["cancel-vieneu"]["ok"])
+        self.assertEqual(responses["omni"]["error"]["code"], "cancelled")
+        self.assertEqual(responses["vieneu"]["error"]["code"], "cancelled")
 
     def test_protocol_cancels_model_preparation(self):
         class BlockingEngine:

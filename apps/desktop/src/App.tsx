@@ -426,45 +426,50 @@ function ErrorMessage({ children }: { children: React.ReactNode }) {
 
 function SetupScreen({
   copy,
-  provider,
   providers,
-  progressEvent,
+  progressEvents,
+  providerErrors,
+  preparingProviders,
   isPreparing,
   isCancelling,
   setupError,
-  onPrepare,
+  canPrepare,
+  onPrepareAll,
   onCancel,
-  onProviderChange,
   onOpenProfiles,
   onOpenHistory,
   onOpenSettings,
 }: {
   copy: UiCopy;
-  provider: ProviderId;
   providers: Record<ProviderId, ProviderStatus> | null;
-  progressEvent: ProgressEvent | null;
+  progressEvents: Record<ProviderId, ProgressEvent | null>;
+  providerErrors: Partial<Record<ProviderId, string>>;
+  preparingProviders: ProviderId[];
   isPreparing: boolean;
   isCancelling: boolean;
   setupError: string | null;
-  onPrepare: () => void;
+  canPrepare: boolean;
+  onPrepareAll: () => void;
   onCancel: () => void;
-  onProviderChange: (provider: ProviderId) => void;
   onOpenProfiles: () => void;
   onOpenHistory: () => void;
   onOpenSettings: () => void;
 }) {
-  const progress = Math.round((progressEvent?.progress ?? 0) * 100);
-  const isOmniVoice = provider === "omnivoice";
-  const assets = isOmniVoice
-    ? [copy.setupAssetOmniVoice, copy.setupAssetTokenizer, copy.setupAssetWhisper]
-    : [copy.setupAssetVieNeuModel, copy.setupAssetVieNeuVoices, copy.setupAssetVieNeuEncoder];
-  const selectedStatus = providers?.[provider];
-  const selectedReady = providerIsReady(selectedStatus);
-  const assetsNeedDownload = !selectedStatus?.model_ready;
-  const providerChoices: Array<[ProviderId, string]> = [
-    ["omnivoice", copy.providerOmni],
-    ["vieneu", copy.providerVieNeu],
+  const providerChoices: Array<[ProviderId, string, string[], string]> = [
+    [
+      "omnivoice",
+      copy.providerOmni,
+      [copy.setupAssetOmniVoice, copy.setupAssetTokenizer, copy.setupAssetWhisper],
+      copy.setupAssetsDescription,
+    ],
+    [
+      "vieneu",
+      copy.providerVieNeu,
+      [copy.setupAssetVieNeuModel, copy.setupAssetVieNeuVoices, copy.setupAssetVieNeuEncoder],
+      copy.setupAssetsVieNeuDescription,
+    ],
   ];
+  const hasErrors = Boolean(setupError || Object.values(providerErrors).some(Boolean));
   return (
     <main className="flex min-h-screen items-center justify-center overflow-auto bg-(--background) px-6 py-10 text-(--foreground)">
       <div className="w-full max-w-4xl">
@@ -495,64 +500,48 @@ function SetupScreen({
             </CardHeader>
             <CardContent className="p-7">
               <section className="mb-5">
-                <SectionLabel>{copy.chooseProvider}</SectionLabel>
-                <p className="mt-2 text-sm text-(--muted-foreground)">
-                  {copy.selectProviderDescription}
-                </p>
-                <ToggleGroup
-                  multiple={false}
-                  value={[provider]}
-                  onValueChange={(value) => {
-                    if (value[0]) onProviderChange(value[0] as ProviderId);
-                  }}
-                  className="mt-3 grid w-full gap-2 sm:grid-cols-2"
-                  aria-label={copy.chooseProvider}
-                >
-                  {providerChoices.map(([id, label]) => (
-                    <ToggleGroupItem
-                      key={id}
-                      value={id}
-                      variant="card"
-                      size="lg"
-                    >
-                      <span className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-semibold">{label}</span>
-                        <Badge variant={providerIsReady(providers?.[id]) ? "success" : "destructive"}>
-                          {providerIsReady(providers?.[id]) ? copy.ready : copy.unavailable}
-                        </Badge>
-                      </span>
-                      {providers?.[id]?.unavailable_reason && (
-                        <span className="mt-2 block text-xs leading-5 text-(--muted-foreground)">
-                          {providers[id].unavailable_reason}
-                        </span>
-                      )}
-                    </ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
+                <SectionLabel>{copy.requiredModels}</SectionLabel>
+                <div className="mt-3 grid gap-3">
+                  {providerChoices.map(([id, label]) => {
+                    const status = providers?.[id];
+                    const progressEvent = progressEvents[id];
+                    const progress = status?.model_ready
+                      ? 100
+                      : Math.round((progressEvent?.progress ?? 0) * 100);
+                    const isReady = providerIsReady(status);
+                    const isInstalling = preparingProviders.includes(id);
+                    return (
+                      <div
+                        key={id}
+                        className="rounded-2xl border border-(--border) bg-(--surface-muted) p-4"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold">{label}</p>
+                          <Badge variant={isReady ? "success" : "destructive"}>
+                            {isReady ? copy.ready : copy.unavailable}
+                          </Badge>
+                        </div>
+                        <Progress value={progress} className="mt-3" />
+                        <p className="mt-2 text-xs leading-5 text-(--muted-foreground)">
+                          {progressEvent?.message ??
+                            status?.unavailable_reason ??
+                            (isInstalling ? copy.preparingModels : copy.waitingEngine)}
+                        </p>
+                        {progressEvent?.asset && (
+                          <p className="mt-1 font-mono text-[10px] uppercase text-(--muted-foreground)">
+                            {progressEvent.asset}
+                          </p>
+                        )}
+                        {providerErrors[id] && (
+                          <div className="mt-3">
+                            <ErrorMessage>{providerErrors[id]}</ErrorMessage>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </section>
-              <div className="rounded-2xl border border-(--border) bg-(--surface-muted) p-5">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <SectionLabel>{copy.modelPackage}</SectionLabel>
-                    <p className="mt-2 text-sm font-semibold">
-                      {progressEvent?.message ?? copy.verifyAssets}
-                    </p>
-                  </div>
-                  <span className="font-mono text-lg font-semibold text-(--accent)">
-                    {progress}%
-                  </span>
-                </div>
-                <Progress value={progress} className="mt-5" />
-                <div className="mt-4 flex items-center justify-between gap-4 text-xs text-(--muted-foreground)">
-                  <span className="flex items-center gap-2">
-                    <span className="size-2 rounded-full bg-(--success)" />
-                    {copy.offlineReady}
-                  </span>
-                  <span className="font-mono uppercase">
-                    {progressEvent?.asset ?? copy.waitingEngine}
-                  </span>
-                </div>
-              </div>
               {setupError && (
                 <div className="mt-4">
                   <ErrorMessage>{setupError}</ErrorMessage>
@@ -560,17 +549,17 @@ function SetupScreen({
               )}
               <div className="mt-6 flex flex-wrap gap-3">
                 <Button
-                  onClick={onPrepare}
-                  disabled={isPreparing || isCancelling || (!assetsNeedDownload && !selectedReady)}
+                  onClick={onPrepareAll}
+                  disabled={isPreparing || isCancelling || !canPrepare}
                 >
                   {isPreparing ? (
                     <LoaderCircle className="size-4 animate-spin" />
                   ) : (
-                    <RotateCcw className="size-4" />
+                    <Download className="size-4" />
                   )}
                   {isPreparing
-                    ? copy.verifyAssets
-                    : setupError
+                    ? copy.preparingModels
+                    : hasErrors
                       ? copy.retryDownload
                       : copy.downloadModel}
                 </Button>
@@ -596,11 +585,6 @@ function SetupScreen({
               <p className="mt-4 text-xs leading-5 text-(--muted-foreground)">
                 {copy.resumeDownload}
               </p>
-              {!setupError && selectedStatus?.unavailable_reason && (
-                <div className="mt-4">
-                  <ErrorMessage>{selectedStatus.unavailable_reason}</ErrorMessage>
-                </div>
-              )}
             </CardContent>
           </Card>
           <div className="grid gap-4">
@@ -609,24 +593,31 @@ function SetupScreen({
                 <div>
                   <SectionLabel>{copy.setupDownloads}</SectionLabel>
                   <CardTitle className="mt-2">
-                    {isOmniVoice ? copy.setupAssets : copy.providerVieNeu}
+                    {copy.providerOmni} + {copy.providerVieNeu}
                   </CardTitle>
                 </div>
                 <ShieldCheck className="size-5 text-(--success)" />
               </CardHeader>
-              <CardContent className="space-y-2.5">
-                {assets.map((asset) => (
-                  <div
-                    key={asset}
-                    className="flex items-center gap-3 rounded-xl border border-(--border) bg-(--surface-muted) px-3.5 py-3 text-sm"
-                  >
-                    <CheckCircle2 className="size-4 text-(--success)" />
-                    {asset}
+              <CardContent className="space-y-5">
+                {providerChoices.map(([id, label, assets, description]) => (
+                  <div key={id}>
+                    <p className="mb-2 text-sm font-semibold">{label}</p>
+                    <div className="space-y-2">
+                      {assets.map((asset) => (
+                        <div
+                          key={asset}
+                          className="flex items-center gap-3 rounded-xl border border-(--border) bg-(--surface-muted) px-3.5 py-3 text-sm"
+                        >
+                          <CheckCircle2 className="size-4 text-(--success)" />
+                          {asset}
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-(--muted-foreground)">
+                      {description}
+                    </p>
                   </div>
                 ))}
-                <p className="pt-2 text-xs leading-5 text-(--muted-foreground)">
-                  {isOmniVoice ? copy.setupAssetsDescription : copy.setupAssetsVieNeuDescription}
-                </p>
               </CardContent>
             </Card>
             <Card>
@@ -643,7 +634,7 @@ function SetupScreen({
                 </p>
                 <div className="mt-5 flex items-center gap-2 text-xs font-semibold">
                   <HardDrive className="size-4 text-(--accent)" />
-                  {isOmniVoice ? copy.setupStorageValue : copy.setupStorageVieNeuValue}
+                  {copy.setupStorageValue}
                 </div>
                 <p className="mt-2 text-xs leading-5 text-(--muted-foreground)">
                   {copy.setupStorageDescription}
@@ -1350,7 +1341,7 @@ function SettingsView({
   progressEvent,
   isRefreshingStatus,
   isPreparing,
-  preparingProvider,
+  preparingProviders,
   onChangeLanguage,
   onChangeTheme,
   onSelectProvider,
@@ -1376,7 +1367,7 @@ function SettingsView({
   progressEvent: ProgressEvent | null;
   isRefreshingStatus: boolean;
   isPreparing: boolean;
-  preparingProvider: ProviderId | null;
+  preparingProviders: ProviderId[];
   onChangeLanguage: (language: AppLanguage) => void;
   onChangeTheme: (theme: ThemeMode) => void;
   onSelectProvider: (provider: ProviderId) => void;
@@ -1565,7 +1556,7 @@ function SettingsView({
                   {providerChoices.map(([id, label]) => {
                     const status = providers?.[id];
                     const isActive = selectedProvider === id;
-                    const isInstalling = preparingProvider === id;
+                    const isInstalling = preparingProviders.includes(id);
                     return (
                       <div
                         key={id}
@@ -2863,7 +2854,13 @@ function App() {
   const prefersReducedMotion = useReducedMotion();
   const [view, setView] = useState<AppView>("workspace");
   const [provider, setProvider] = useState<ProviderId>(readProvider);
-  const [modelProgress, setModelProgress] = useState<ProgressEvent | null>(null);
+  const [modelProgress, setModelProgress] = useState<Record<ProviderId, ProgressEvent | null>>({
+    omnivoice: null,
+    vieneu: null,
+  });
+  const [modelPreparationErrors, setModelPreparationErrors] = useState<
+    Partial<Record<ProviderId, string>>
+  >({});
   const [setupError, setSetupError] = useState<string | null>(null);
   const [language, setLanguage] = useState<Language>(readSynthesisLanguage);
   const [mode, setMode] = useState<VoiceMode>(() =>
@@ -2895,7 +2892,7 @@ function App() {
   const [profilePresetId, setProfilePresetId] = useState("");
   const [designInstruction, setDesignInstruction] = useState("");
   const [result, setResult] = useState<SynthesisResult | null>(null);
-  const [preparingProvider, setPreparingProvider] = useState<ProviderId | null>(null);
+  const [preparingProviders, setPreparingProviders] = useState<ProviderId[]>([]);
   const [isCancelling, setIsCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [logs, setLogs] = useState<RequestLog[]>(() => client.getLogs());
@@ -3075,13 +3072,22 @@ function App() {
       ? `${copy.audioHistoryDeleteFailed}: ${deleteHistoryMutation.error.message}`
       : copy.audioHistoryDeleteFailed
     : historyLoadError;
-  const isPreparing = prepareMutation.isPending;
+  const isPreparing = preparingProviders.length > 0;
   const isSavingProfile = saveProfileMutation.isPending;
   const isImportingVoice = importVoiceMutation.isPending;
   const isImportingSeed = seedImportMutation.isPending;
   const isSeedingVieNeu = seedVieNeuMutation.isPending;
   const isGenerating = synthesisMutation.isPending;
   const providerStatuses = engineStatus?.providers ?? null;
+  const allProvidersReady = Boolean(
+    providerStatuses &&
+    providerIsReady(providerStatuses.omnivoice) &&
+    providerIsReady(providerStatuses.vieneu),
+  );
+  const canPrepareAllModels =
+    !providerStatuses ||
+    !providerStatuses.omnivoice.model_ready ||
+    !providerStatuses.vieneu.model_ready;
   const modelReady = providerStatuses
     ? providerIsReady(providerStatuses[provider])
     : provider === "omnivoice" && Boolean(engineStatus?.model_ready);
@@ -3109,7 +3115,10 @@ function App() {
   useEffect(() => {
     const unsubscribe = client.onProgress((event) => {
       if (event.phase === "seed_vieneu") setSeedProgress(event);
-      else setModelProgress(event);
+      else if (event.provider) {
+        const target = event.provider;
+        setModelProgress((current) => ({ ...current, [target]: event }));
+      }
     });
     const unsubscribeLogs = client.onLog(() => setLogs(client.getLogs()));
     return () => {
@@ -3178,23 +3187,54 @@ function App() {
     );
   }, [engineStatus, profilePresetId]);
 
-  async function prepareModel(target: ProviderId = provider) {
+  async function prepareModels(targets: ProviderId[]) {
+    const requested = [...new Set(targets)];
+    if (!requested.length) return;
     setSetupError(null);
-    setPreparingProvider(target);
-    try {
-      await prepareMutation.mutateAsync(target);
-      if (target === "omnivoice" && target === provider) {
-        await importBundledSeedVoices();
-      } else if (target === provider) {
-        await queryClient.invalidateQueries({ queryKey: VOICES_QUERY_KEY });
-      }
-    } catch (reason) {
-      setSetupError(
-        reason instanceof Error ? reason.message : translator.t("errors.modelSetupFailed"),
-      );
-    } finally {
-      setPreparingProvider(null);
-    }
+    setModelPreparationErrors((current) => {
+      const next = { ...current };
+      requested.forEach((target) => delete next[target]);
+      return next;
+    });
+    setModelProgress((current) => {
+      const next = { ...current };
+      requested.forEach((target) => {
+        next[target] = null;
+      });
+      return next;
+    });
+    setPreparingProviders((current) => [...new Set([...current, ...requested])]);
+    await Promise.all(
+      requested.map(async (target) => {
+        try {
+          await prepareMutation.mutateAsync(target);
+          if (target === "omnivoice" && target === provider) {
+            await importBundledSeedVoices();
+          } else if (target === provider) {
+            await queryClient.invalidateQueries({ queryKey: VOICES_QUERY_KEY });
+          }
+        } catch (reason) {
+          setModelPreparationErrors((current) => ({
+            ...current,
+            [target]:
+              reason instanceof Error ? reason.message : translator.t("errors.modelSetupFailed"),
+          }));
+        } finally {
+          setPreparingProviders((current) => current.filter((item) => item !== target));
+        }
+      }),
+    );
+  }
+
+  async function prepareModel(target: ProviderId = provider) {
+    await prepareModels([target]);
+  }
+
+  async function prepareBothModels() {
+    const targets = (["omnivoice", "vieneu"] as ProviderId[]).filter(
+      (target) => !providerStatuses?.[target].model_ready,
+    );
+    await prepareModels(targets);
   }
 
   async function refreshModelStatus() {
@@ -3688,19 +3728,20 @@ function App() {
     }
   }
 
-  if (!modelReady && view !== "profiles" && view !== "history" && view !== "settings")
+  if (!allProvidersReady && view !== "profiles" && view !== "history" && view !== "settings")
     return (
       <SetupScreen
         copy={copy}
-        provider={provider}
         providers={providerStatuses}
-        progressEvent={modelProgress}
+        progressEvents={modelProgress}
+        providerErrors={modelPreparationErrors}
+        preparingProviders={preparingProviders}
         isPreparing={isPreparing}
         isCancelling={isCancelling}
         setupError={setupError ?? modelStatusError}
-        onPrepare={() => void prepareModel()}
+        canPrepare={canPrepareAllModels}
+        onPrepareAll={() => void prepareBothModels()}
         onCancel={() => void cancelModelPreparation()}
-        onProviderChange={changeProvider}
         onOpenProfiles={() => navigateTo("profiles")}
         onOpenHistory={() => navigateTo("history")}
         onOpenSettings={() => navigateTo("settings")}
@@ -3822,11 +3863,11 @@ function App() {
                     tokenizerId={engineStatus?.tokenizer ?? "Audio tokenizer"}
                     asrModelId={engineStatus?.asr_model ?? "Whisper ASR"}
                     modelStatusError={modelStatusError}
-                    setupError={setupError}
-                    progressEvent={modelProgress}
+                    setupError={modelPreparationErrors[provider] ?? setupError}
+                    progressEvent={modelProgress[provider]}
                     isRefreshingStatus={isRefreshingStatus}
                     isPreparing={isPreparing}
-                    preparingProvider={preparingProvider}
+                    preparingProviders={preparingProviders}
                     onSelectProvider={changeProvider}
                     onPrepareProvider={(target) => void prepareModel(target)}
                     onCancelPrepare={() => void cancelModelPreparation()}

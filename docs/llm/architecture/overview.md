@@ -34,6 +34,12 @@ the Python worker as a Tauri sidecar and stores model/audio data locally.
 - `apps/desktop/src/components/ui/` contains source-owned shadcn components
   backed by Base UI, `src/lib/utils.ts` owns class composition, and
   `src/styles.css` loads Tailwind CSS v4 and the Volo AI theme tokens.
+- `.github/workflows/release.yml` starts on a `v*` tag push, checks that the
+  strict `vX.Y.Z` tag matches all three desktop version fields and that the
+  tagged commit has non-empty `release.md`, then builds macOS ARM64, macOS
+  Intel, Windows x64, and Linux x64 packages. It publishes a GitHub Release
+  with the tagged notes only after every target build and artifact upload
+  succeeds.
 - Provider selection is stored in `localStorage`; it defaults to OmniVoice and
   does not trigger model downloads. When OmniVoice becomes ready, `App.tsx`
   resolves the bundled `resources/seed-voices` directory and asks the sidecar to
@@ -129,6 +135,10 @@ VieNeu requires `TTS_MCP_AUDIOCPP_PATH` for the local audio.cpp runtime.
 Release bundles include the native sidecar, audio.cpp CLI, and FFmpeg, so
 installed users do not need Python, Node.js, or FFmpeg; those runtimes are only
 development/build requirements.
+The tagged release workflow requires the root `release.md` to be committed with
+the tag; that per-release summary becomes the published release description.
+Installers exclude model weights and app data, which are prepared on first use.
+Release packages are unsigned and are not notarized.
 The app interface supports English and Vietnamese through `i18next` and
 `react-i18next`; the app locale is stored as `volo-ai.app-language`, while the
 synthesis target remains `volo-ai.synthesis-language`.
@@ -167,3 +177,5 @@ synthesis target remains `volo-ai.synthesis-language`.
 - `apps/desktop/src-tauri/resources/seed-voices/tony-hoang/manifest.json`
 - `apps/desktop/src/lib/i18n.ts`
 - `apps/desktop/src/lib/sidecar.ts`
+- `.github/workflows/release.yml`
+- `release.md`

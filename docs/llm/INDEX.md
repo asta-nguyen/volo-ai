@@ -25,10 +25,12 @@ coverage below. The remaining behaviors are mapped in the architecture overview
 but do not yet have dedicated feature pages:
 
 - [x] Desktop provider setup and offline synthesis — the desktop sidecar reports
-  both providers, prepares the selected provider on request, and routes synthesis
-  to OmniVoice or VieNeu. VieNeu has separate per-request sampler settings, and
-  Voice Profiles can batch seed its validated catalog into provider-capable
-  profiles; see the desktop provider workflow.
+  both providers, the first-run screen prepares all missing providers
+  concurrently and blocks synthesis until both are ready, and Settings can
+  prepare one provider on request. Synthesis routes to OmniVoice or VieNeu.
+  VieNeu has separate per-request sampler settings, and Voice Profiles can
+  batch seed its validated catalog into provider-capable profiles; see the
+  desktop provider workflow.
 - [ ] Advanced OmniVoice synthesis — desktop `synthesize` forwards native
   generation controls and duration-based long-form chunking; Voice Design
   remains available through the engine and CLI/MCP entry points.

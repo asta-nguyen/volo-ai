@@ -65,6 +65,7 @@ const MAX_REQUEST_LOGS = 500;
 export type ProgressEvent = {
   id: string;
   event: "progress";
+  provider?: ProviderId;
   phase: string;
   asset?: string;
   progress?: number | null;
@@ -158,7 +159,7 @@ export class SidecarClient {
   private child: Child | null = null;
   private command: Command<string> | null = null;
   private startPromise: Promise<void> | null = null;
-  private activePreparationId: string | null = null;
+  private activePreparationIds = new Set<string>();
   private activeSeedId: string | null = null;
   private nextId = 1;
   private pending = new Map<
@@ -261,8 +262,17 @@ export class SidecarClient {
   }
 
   async cancelPreparation(): Promise<void> {
-    if (!this.activePreparationId) return;
-    await this.request({ type: "cancel", request_id: this.activePreparationId });
+    const results = await Promise.allSettled(
+      [...this.activePreparationIds].map((request_id) =>
+        this.request({ type: "cancel", request_id }),
+      ),
+    );
+    const failure = results.find(
+      (result) =>
+        result.status === "rejected" &&
+        !(result.reason instanceof SidecarError && result.reason.code === "not_found"),
+    );
+    if (failure?.status === "rejected") throw failure.reason;
   }
 
   async cancelSeed(): Promise<void> {
@@ -287,7 +297,7 @@ export class SidecarClient {
     const id = String(this.nextId++);
     const isPreparation = payload.type === "prepare_model";
     const isSeed = payload.type === "seed_vieneu_voices";
-    if (isPreparation) this.activePreparationId = id;
+    if (isPreparation) this.activePreparationIds.add(id);
     if (isSeed) this.activeSeedId = id;
     this.addLog({
       id,
@@ -323,7 +333,7 @@ export class SidecarClient {
       this.completeLog(id, "error", error);
       throw reason;
     } finally {
-      if (isPreparation && this.activePreparationId === id) this.activePreparationId = null;
+      if (isPreparation) this.activePreparationIds.delete(id);
       if (isSeed && this.activeSeedId === id) this.activeSeedId = null;
     }
   }

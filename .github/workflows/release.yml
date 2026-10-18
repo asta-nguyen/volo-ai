@@ -1,0 +1,416 @@
+name: Desktop release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-release-inputs:
+    name: Validate release tag and notes
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Validate tag, source versions, and release.md
+        id: validate
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import tomllib
+          from pathlib import Path
+
+          tag = os.environ["RELEASE_TAG"]
+          match = re.fullmatch(
+              r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)",
+              tag,
+          )
+          if match is None:
+              raise SystemExit(f"Tag must use strict vX.Y.Z format, got: {tag}")
+
+          tag_version = match.group(0)[1:]
+          package_version = json.loads(
+              Path("apps/desktop/package.json").read_text(encoding="utf-8")
+          )["version"]
+          cargo_version = tomllib.loads(
+              Path("apps/desktop/src-tauri/Cargo.toml").read_text(encoding="utf-8")
+          )["package"]["version"]
+          tauri_version = json.loads(
+              Path("apps/desktop/src-tauri/tauri.conf.json").read_text(encoding="utf-8")
+          )["version"]
+
+          versions = {
+              "apps/desktop/package.json": package_version,
+              "apps/desktop/src-tauri/Cargo.toml": cargo_version,
+              "apps/desktop/src-tauri/tauri.conf.json": tauri_version,
+          }
+          mismatches = {
+              path: version
+              for path, version in versions.items()
+              if version != tag_version
+          }
+          if mismatches:
+              details = ", ".join(f"{path}={version}" for path, version in mismatches.items())
+              raise SystemExit(f"Tag {tag} does not match source versions: {details}")
+
+          notes_path = Path("release.md")
+          if not notes_path.is_file() or not notes_path.read_text(encoding="utf-8").strip():
+              raise SystemExit("The tagged commit must contain a non-empty release.md")
+
+          print(f"Validated {tag} against all desktop version fields and release.md")
+          PY
+
+  build:
+    name: Build ${{ matrix.os }} ${{ matrix.arch }}
+    needs: validate-release-inputs
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos
+            arch: arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+          - os: macos
+            arch: x64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: windows
+            arch: x64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+          - os: linux
+            arch: x64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_OS: ${{ matrix.os }}
+      RELEASE_ARCH: ${{ matrix.arch }}
+      TARGET_TRIPLE: ${{ matrix.target }}
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Set up stable Rust
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2
+        with:
+          toolchain: stable
+          cache: false
+
+      - name: Install Linux build dependencies
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            build-essential \
+            cmake \
+            curl \
+            file \
+            ffmpeg \
+            libasound2-dev \
+            libayatana-appindicator3-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            librsvg2-dev \
+            patchelf \
+            pkg-config \
+            wget
+
+      - name: Install macOS build dependencies
+        if: matrix.os == 'macos'
+        run: brew install cmake ffmpeg
+
+      - name: Install Windows build dependencies
+        if: matrix.os == 'windows'
+        run: choco install ffmpeg --no-progress --yes
+
+      - name: Check out audio.cpp v0.9.0
+        run: git clone --depth 1 --branch v0.9.0 https://github.com/0xShug0/audio.cpp.git audio.cpp
+
+      - name: Build audio.cpp CLI on macOS
+        if: matrix.os == 'macos'
+        shell: bash
+        run: |
+          cmake_args=(
+            -DCMAKE_BUILD_TYPE=Release
+            -DENGINE_ENABLE_CUDA=OFF
+            -DENGINE_ENABLE_VULKAN=OFF
+            -DENGINE_ENABLE_METAL=OFF
+            -DENGINE_ENABLE_OPENMP=OFF
+            -DGGML_OPENMP=OFF
+            -DAUDIOCPP_MODEL_SET=custom
+            -DAUDIOCPP_MODELS=vieneu_v3_turbo
+          )
+          if [[ "$TARGET_TRIPLE" == "x86_64-apple-darwin" ]]; then
+            cmake_args+=(-DENGINE_ENABLE_NATIVE_CPU=OFF)
+          fi
+          cmake -S audio.cpp -B audio.cpp/build/macos-cpu-release "${cmake_args[@]}"
+          cmake --build audio.cpp/build/macos-cpu-release \
+            --parallel "$(sysctl -n hw.logicalcpu)" \
+            --target audiocpp_cli
+
+      - name: Build audio.cpp CLI on Linux
+        if: matrix.os == 'linux'
+        shell: bash
+        run: |
+          audio.cpp/scripts/build_linux.sh \
+            --backend cpu \
+            --model-set custom \
+            --models vieneu_v3_turbo \
+            --target audiocpp_cli \
+            --native-cpu OFF
+
+      - name: Build audio.cpp CLI on Windows
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          & .\audio.cpp\scripts\build_windows.ps1 `
+            -Preset windows-cpu-release `
+            -ModelSet custom `
+            -Models "vieneu_v3_turbo" `
+            -Target audiocpp_cli `
+            -CpuArch baseline
+          if ($LASTEXITCODE -ne 0) {
+            throw "audio.cpp build failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Install Python desktop dependencies
+        if: matrix.os != 'windows'
+        run: |
+          python -m pip install -e '.[mp3,desktop-vieneu]'
+          python -m pip install -r requirements-build.txt
+
+      - name: Install Python desktop dependencies on Windows
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          python -m pip install -e ".[mp3,desktop-vieneu]"
+          if ($LASTEXITCODE -ne 0) { throw "Desktop dependency install failed" }
+          python -m pip install -r requirements-build.txt
+          if ($LASTEXITCODE -ne 0) { throw "Build dependency install failed" }
+
+      - name: Install desktop Node dependencies
+        run: npm ci --prefix apps/desktop
+
+      - name: Package the desktop sidecar on macOS and Linux
+        if: matrix.os != 'windows'
+        shell: bash
+        run: |
+          audiocpp_cli="$(find audio.cpp/build -type f -name audiocpp_cli -print -quit)"
+          if [[ -z "$audiocpp_cli" ]]; then
+            echo "audio.cpp did not produce audiocpp_cli" >&2
+            exit 1
+          fi
+          python scripts/build_sidecar.py \
+            --ffmpeg "$(command -v ffmpeg)" \
+            --audiocpp "$audiocpp_cli" \
+            --target "$TARGET_TRIPLE"
+
+      - name: Package the desktop sidecar on Windows
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          $audiocppCli = Get-ChildItem -Path audio.cpp\build -Recurse -File -Filter audiocpp_cli.exe |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $audiocppCli) {
+            throw "audio.cpp did not produce audiocpp_cli.exe"
+          }
+          $ffmpeg = (Get-Command ffmpeg.exe -ErrorAction Stop).Source
+          python scripts\build_sidecar.py --ffmpeg "$ffmpeg" --audiocpp "$audiocppCli" --target $env:TARGET_TRIPLE
+          if ($LASTEXITCODE -ne 0) { throw "Sidecar packaging failed" }
+
+      - name: Build Tauri desktop bundles
+        run: npm --prefix apps/desktop run tauri build
+
+      - name: Stage non-empty release bundles
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import shutil
+          from pathlib import Path
+
+          bundle_root = Path("apps/desktop/src-tauri/target/release/bundle")
+          if not bundle_root.is_dir():
+              raise SystemExit(f"Tauri bundle directory was not created: {bundle_root}")
+
+          extensions = (
+              ".app.tar.gz",
+              ".msixbundle",
+              ".appimage",
+              ".appx",
+              ".msix",
+              ".snap",
+              ".dmg",
+              ".msi",
+              ".deb",
+              ".rpm",
+              ".exe",
+              ".tar.gz",
+              ".zip",
+          )
+          packages = sorted(
+              path
+              for path in bundle_root.rglob("*")
+              if path.is_file()
+              and any(path.name.lower().endswith(extension) for extension in extensions)
+          )
+          if not packages:
+              raise SystemExit(f"Tauri produced no recognized release bundles under {bundle_root}")
+
+          output_dir = Path("release-assets")
+          output_dir.mkdir(parents=True, exist_ok=True)
+          for package in packages:
+              extension = next(
+                  extension
+                  for extension in extensions
+                  if package.name.lower().endswith(extension)
+              )
+              destination = output_dir / (
+                  f"volo-ai_{os.environ['RELEASE_TAG']}_"
+                  f"{os.environ['RELEASE_OS']}_{os.environ['RELEASE_ARCH']}{extension}"
+              )
+              if destination.exists():
+                  raise SystemExit(f"More than one bundle has the same asset extension: {extension}")
+              if package.stat().st_size == 0:
+                  raise SystemExit(f"Tauri produced an empty release bundle: {package}")
+              shutil.copy2(package, destination)
+              print(f"Staged {package} as {destination}")
+          PY
+
+      - name: Upload ${{ matrix.os }} ${{ matrix.arch }} bundles
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.os }}-${{ matrix.arch }}
+          path: release-assets/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub release
+    needs:
+      - validate-release-inputs
+      - build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Download all platform bundles
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify all target assets are present and non-empty
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          assets = sorted(path for path in Path("release-assets").glob("*") if path.is_file())
+          if not assets:
+              raise SystemExit("No platform release assets were downloaded")
+
+          expected_targets = {
+              ("macos", "arm64"),
+              ("macos", "x64"),
+              ("windows", "x64"),
+              ("linux", "x64"),
+          }
+          seen_targets = set()
+          tag_prefix = f"volo-ai_{os.environ['RELEASE_TAG']}_"
+          for asset in assets:
+              if asset.stat().st_size == 0:
+                  raise SystemExit(f"Downloaded release asset is empty: {asset.name}")
+              if not asset.name.startswith(tag_prefix):
+                  raise SystemExit(f"Unexpected release asset name: {asset.name}")
+              platform_arch = asset.name[len(tag_prefix):].split(".", 1)[0]
+              try:
+                  platform, arch = platform_arch.split("_", 1)
+              except ValueError as error:
+                  raise SystemExit(f"Could not identify platform in {asset.name}") from error
+              seen_targets.add((platform, arch))
+
+          missing_targets = expected_targets - seen_targets
+          if missing_targets:
+              missing = ", ".join(f"{platform}/{arch}" for platform, arch in sorted(missing_targets))
+              raise SystemExit(f"Missing release assets for: {missing}")
+
+          print(f"Verified {len(assets)} non-empty release asset(s) for all four targets")
+          PY
+
+      - name: Create or resume draft, upload assets, and publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if existing_draft="$(gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            if [[ "$existing_draft" == "false" ]]; then
+              echo "Release $RELEASE_TAG is already published; leaving it unchanged."
+              exit 0
+            fi
+            if [[ "$existing_draft" != "true" ]]; then
+              echo "Could not determine whether release $RELEASE_TAG is a draft." >&2
+              exit 1
+            fi
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GH_REPO" \
+              --title "Volo AI $RELEASE_TAG" \
+              --notes-file release.md
+          else
+            gh release create "$RELEASE_TAG" \
+              --repo "$GH_REPO" \
+              --verify-tag \
+              --draft \
+              --title "Volo AI $RELEASE_TAG" \
+              --notes-file release.md
+          fi
+
+          gh release upload "$RELEASE_TAG" --repo "$GH_REPO" release-assets/* --clobber
+          gh release edit "$RELEASE_TAG" --repo "$GH_REPO" --draft=false
