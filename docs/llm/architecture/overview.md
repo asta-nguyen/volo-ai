@@ -36,8 +36,9 @@ the Python worker as a Tauri sidecar and stores model/audio data locally.
   `src/styles.css` loads Tailwind CSS v4 and the Volo AI theme tokens.
 - `.github/workflows/release.yml` starts on a `v*` tag push, checks that the
   strict `vX.Y.Z` tag matches all three desktop version fields and that the
-  tagged commit has non-empty `release.md`, then builds macOS ARM64, macOS
-  Intel, Windows x64, and Linux x64 packages. It publishes a GitHub Release
+  tagged commit has non-empty `release.md`, then builds macOS ARM64, Windows
+  x64, and Linux x64 packages. Intel macOS is not an official desktop release
+  target. It publishes a GitHub Release
   with the tagged notes only after every target build and artifact upload
   succeeds.
 - Provider selection is stored in `localStorage`; it defaults to OmniVoice and

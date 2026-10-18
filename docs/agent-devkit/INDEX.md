@@ -4,6 +4,7 @@
 
 ## Archived changes
 
+- [Desktop Release Target and Build Corrections](changes/archive/2026-10-18-desktop-release-build-fixes/design.md) — [tasks](changes/archive/2026-10-18-desktop-release-build-fixes/tasks.md), [decisions](changes/archive/2026-10-18-desktop-release-build-fixes/decisions.md)
 - [Tagged Multi-Platform Desktop Release Workflow](changes/archive/2026-10-13-desktop-release-workflow/design.md) — [tasks](changes/archive/2026-10-13-desktop-release-workflow/tasks.md)
 - [MCP VieNeu sampler config](changes/archive/2026-10-16-mcp-vieneu-config/delta.md)
 - [VieNeu preset seed pack](changes/archive/2026-10-10-vieneu-seed-voice-pack/design.md) — [tasks](changes/archive/2026-10-10-vieneu-seed-voice-pack/tasks.md), [wiki delta](changes/archive/2026-10-10-vieneu-seed-voice-pack/delta.md)

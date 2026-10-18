@@ -1,8 +1,8 @@
 # Volo AI
 
-Local text-to-speech desktop app powered by OmniVoice. The app runs on
-macOS, Windows, and Linux through Tauri, with a bundled Python sidecar for
-release builds.
+Local text-to-speech desktop app powered by OmniVoice. It runs on Apple
+Silicon macOS, Windows, and Linux through Tauri, with a bundled Python sidecar
+for release builds.
 
 ## Current release scope
 
@@ -271,9 +271,10 @@ short summary and highlights for that release only. Commit it with the matching
 version in `apps/desktop/package.json`, `apps/desktop/src-tauri/Cargo.toml`,
 and `apps/desktop/src-tauri/tauri.conf.json`, then push a `vX.Y.Z` tag. The tag
 must match all three versions, and its commit must contain non-empty release
-notes. CI builds macOS ARM64, macOS Intel, Windows x64, and Linux x64 packages;
-it publishes the GitHub Release with that tagged `release.md` only after every
-build and asset upload succeeds. Packages include the native sidecar,
+notes. CI builds macOS ARM64, Windows x64, and Linux x64 packages; Intel macOS
+is not an official desktop release target. It publishes the GitHub Release
+with that tagged `release.md` only after every build and asset upload succeeds.
+Packages include the native sidecar,
 audio.cpp CLI, and FFmpeg, but not model weights or app data. macOS packages are
 unsigned and may trigger Gatekeeper warnings. See
 [`docs/desktop-development.md`](docs/desktop-development.md#build-the-desktop-app)
@@ -295,7 +296,7 @@ Build audio.cpp v0.9.0 with its CPU backend on the matching host before
 packaging. Linux uses `scripts/build_linux.sh --backend cpu --target
 audiocpp_cli`; Windows uses
 `scripts/build_windows.ps1 -Preset windows-cpu-release -Target audiocpp_cli`.
-For macOS, follow the CPU-only CMake command in the pinned
+For Apple Silicon macOS, follow the CPU-only CMake command in the pinned
 [audio.cpp v0.9.0 build guide](https://github.com/0xShug0/audio.cpp/tree/v0.9.0).
 The model is downloaded on first use and is not bundled into the installer.
 

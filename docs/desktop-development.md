@@ -113,12 +113,14 @@ The release packaging script accepts that path as `--audiocpp`.
 
 The packaging script stages target-named Python and audio.cpp executables under
 `apps/desktop/src-tauri/binaries/`. Tauri expects native binaries; build each
-target on its matching host:
+official desktop target on its matching host:
 
 - `aarch64-apple-darwin`
-- `x86_64-apple-darwin`
 - `x86_64-pc-windows-msvc`
 - `x86_64-unknown-linux-gnu`
+
+Intel macOS is not an official Volo AI desktop packaging target. The standalone
+audio.cpp CLI can still be built locally on Intel macOS.
 
 ## Build the desktop app
 
@@ -139,10 +141,11 @@ release notes. Do not create a GitHub Release by hand; pushing the tag starts
 the release workflow.
 
 CI builds on native GitHub-hosted runners for Apple Silicon macOS
-(`aarch64-apple-darwin`), Intel macOS (`x86_64-apple-darwin`), Windows x64
-(`x86_64-pc-windows-msvc`), and Linux x64
-(`x86_64-unknown-linux-gnu`). Each published bundle is named
-`volo-ai_<tag>_<os>_<arch>.<bundle-extension>`. The workflow stages all four
+(`aarch64-apple-darwin`), Windows x64 (`x86_64-pc-windows-msvc`), and Linux
+x64 (`x86_64-unknown-linux-gnu`). Intel macOS is not an official desktop
+release target because the OmniVoice/PyTorch runtime dependencies cannot be
+installed by the Intel build job. Each published bundle is named
+`volo-ai_<tag>_<os>_<arch>.<bundle-extension>`. The workflow stages all three
 target artifact sets on a draft release and publishes it only after every build
 and upload succeeds. The published description comes from `release.md` in the
 tagged commit. A failed run can resume an existing draft; rerunning a tag with

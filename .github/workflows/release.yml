@@ -91,10 +91,6 @@ jobs:
             arch: arm64
             runner: macos-15
             target: aarch64-apple-darwin
-          - os: macos
-            arch: x64
-            runner: macos-15-intel
-            target: x86_64-apple-darwin
           - os: windows
             arch: x64
             runner: windows-2025
@@ -175,9 +171,6 @@ jobs:
             -DAUDIOCPP_MODEL_SET=custom
             -DAUDIOCPP_MODELS=vieneu_v3_turbo
           )
-          if [[ "$TARGET_TRIPLE" == "x86_64-apple-darwin" ]]; then
-            cmake_args+=(-DENGINE_ENABLE_NATIVE_CPU=OFF)
-          fi
           cmake -S audio.cpp -B audio.cpp/build/macos-cpu-release "${cmake_args[@]}"
           cmake --build audio.cpp/build/macos-cpu-release \
             --parallel "$(sysctl -n hw.logicalcpu)" \
@@ -186,8 +179,9 @@ jobs:
       - name: Build audio.cpp CLI on Linux
         if: matrix.os == 'linux'
         shell: bash
+        working-directory: audio.cpp
         run: |
-          audio.cpp/scripts/build_linux.sh \
+          scripts/build_linux.sh \
             --backend cpu \
             --model-set custom \
             --models vieneu_v3_turbo \
@@ -356,7 +350,6 @@ jobs:
 
           expected_targets = {
               ("macos", "arm64"),
-              ("macos", "x64"),
               ("windows", "x64"),
               ("linux", "x64"),
           }
@@ -379,7 +372,7 @@ jobs:
               missing = ", ".join(f"{platform}/{arch}" for platform, arch in sorted(missing_targets))
               raise SystemExit(f"Missing release assets for: {missing}")
 
-          print(f"Verified {len(assets)} non-empty release asset(s) for all four targets")
+          print(f"Verified {len(assets)} non-empty release asset(s) for all three targets")
           PY
 
       - name: Create or resume draft, upload assets, and publish
