@@ -1,0 +1,21 @@
+apps/desktop/package.json
+  s_c828ccc8c7b001::t_b8ea2bf8599267 35
+apps/desktop/package-lock.json
+  s_c828ccc8c7b001::t_8ea506cb25b17d 29,1606-1608,1622-1632,1636-1638,1653-1655,1670-1672,1687-1689,1694-1696,1707-1709,1714-1716,1727-1729,1734-1736,1747-1749,1754-1756,1767-1769,1774-1776,1787-1789,1804-1806,1821-1823
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4ed026c7658e37254c9e4650d595ff02a1eaad86",
+  "prompts": {},
+  "sessions": {
+    "s_c828ccc8c7b001": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14e6a-826f-7951-ad14-507037c4edcc",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
