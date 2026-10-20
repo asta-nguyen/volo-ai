@@ -1,0 +1,45 @@
+docs/agent-devkit/changes/2026-10-21-3-desktop-local-rest-api/design.md
+  s_39270ae3bb7555::t_2e0644da6c3524 42-43
+  s_39270ae3bb7555::t_f135793407b881 1-41,44-66
+docs/agent-devkit/changes/2026-10-21-2-audio-history-rename-copy-path/design.md
+  s_39270ae3bb7555::t_f135793407b881 1-53
+docs/agent-devkit/changes/2026-10-21-2-audio-history-rename-copy-path/tasks.md
+  s_39270ae3bb7555::t_f135793407b881 1-78,80-83
+  s_39270ae3bb7555::t_bb8212c0ef0587 79
+docs/agent-devkit/changes/2026-10-21-4-desktop-update-notice/design.md
+  s_39270ae3bb7555::t_f135793407b881 1-20,22-25,27-53
+  s_39270ae3bb7555::t_2e0644da6c3524 21,26
+docs/agent-devkit/changes/2026-10-21-4-desktop-update-notice/tasks.md
+  s_39270ae3bb7555::t_f135793407b881 1-12,14-36,38-81,83-86
+  s_39270ae3bb7555::t_2e0644da6c3524 13,37
+  s_39270ae3bb7555::t_bb8212c0ef0587 82
+docs/agent-devkit/changes/2026-10-21-5-web-changelog-page/design.md
+  s_39270ae3bb7555::t_477e0580ce7405 3
+  s_39270ae3bb7555::t_05c76effec4b9a 1-2,4-51
+docs/agent-devkit/INDEX.md
+  s_39270ae3bb7555::t_bb8212c0ef0587 5-9
+docs/agent-devkit/changes/2026-10-21-5-web-changelog-page/tasks.md
+  s_39270ae3bb7555::t_477e0580ce7405 3,20-26
+  s_39270ae3bb7555::t_05c76effec4b9a 1-2,4-19,27-79,81-84
+  s_39270ae3bb7555::t_bb8212c0ef0587 80
+docs/agent-devkit/changes/2026-10-21-3-desktop-local-rest-api/tasks.md
+  s_39270ae3bb7555::t_bb8212c0ef0587 83
+  s_39270ae3bb7555::t_f135793407b881 1-14,16-35,37-82,84-87
+  s_39270ae3bb7555::t_2e0644da6c3524 15,36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7d2ff1b5d111292af6529efa3d0c53e96a7f3f03",
+  "prompts": {},
+  "sessions": {
+    "s_39270ae3bb7555": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15a40-3655-7e73-98c0-e06c51fe4bf7",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
