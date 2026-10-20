@@ -1,0 +1,31 @@
+docs/agent-devkit/changes/2026-10-21-4-desktop-update-notice/tasks.md
+  s_39270ae3bb7555::t_347d78510f1d28 84
+  s_39270ae3bb7555::t_1e2963a74b5e93 80-83
+docs/agent-devkit/changes/2026-10-21-3-desktop-local-rest-api/tasks.md
+  s_39270ae3bb7555::t_1e2963a74b5e93 81-84
+  s_39270ae3bb7555::t_347d78510f1d28 85
+  s_39270ae3bb7555::t_bf714ce98af4e5 40,53
+docs/agent-devkit/changes/2026-10-21-5-web-changelog-page/tasks.md
+  s_39270ae3bb7555::t_1e2963a74b5e93 78-80
+  s_39270ae3bb7555::t_347d78510f1d28 81
+docs/agent-devkit/changes/2026-10-21-2-audio-history-rename-copy-path/tasks.md
+  s_39270ae3bb7555::t_bf714ce98af4e5 39
+  s_39270ae3bb7555::t_347d78510f1d28 81
+  s_39270ae3bb7555::t_1e2963a74b5e93 77-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9f8cbe062b27831c2b3ec7c3610d393702fb228d",
+  "prompts": {},
+  "sessions": {
+    "s_39270ae3bb7555": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15a40-3655-7e73-98c0-e06c51fe4bf7",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
