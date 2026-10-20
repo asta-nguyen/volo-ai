@@ -452,6 +452,7 @@ class VieNeuSynthesisTests(VieNeuAssetFixture, unittest.TestCase):
 
         with (
             patch.dict("os.environ", {"TTS_MCP_AUDIOCPP_PATH": str(self.binary)}),
+            patch("tts_mcp.desktop_vieneu._resolve_ffmpeg", return_value="ffmpeg"),
             patch("tts_mcp.desktop_vieneu.subprocess.run", side_effect=run),
         ):
             result = self.provider.synthesize(
