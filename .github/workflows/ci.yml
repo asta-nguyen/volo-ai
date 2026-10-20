@@ -74,5 +74,15 @@ jobs:
       - name: Build desktop frontend
         run: npm --prefix apps/desktop run build
 
+      - name: Add placeholders for compile-only Tauri check
+        run: |
+          # Tauri validates externalBin paths during cargo check; release builds use real binaries.
+          mkdir -p apps/desktop/src-tauri/binaries
+          printf '#!/bin/sh\nexit 0\n' > apps/desktop/src-tauri/binaries/tts-sidecar-x86_64-unknown-linux-gnu
+          printf '#!/bin/sh\nexit 0\n' > apps/desktop/src-tauri/binaries/audiocpp-cli-x86_64-unknown-linux-gnu
+          chmod +x \
+            apps/desktop/src-tauri/binaries/tts-sidecar-x86_64-unknown-linux-gnu \
+            apps/desktop/src-tauri/binaries/audiocpp-cli-x86_64-unknown-linux-gnu
+
       - name: Check Tauri Rust dependencies
         run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
