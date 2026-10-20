@@ -1,0 +1,19 @@
+tests/test_desktop_vieneu.py
+  s_f1ed8e255ad1fe::t_511af0a9c1092f 455
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e7b29638391bc2ec51d90956f992b85a196913a1",
+  "prompts": {},
+  "sessions": {
+    "s_f1ed8e255ad1fe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13927-c744-79e1-a219-96269723b902",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
