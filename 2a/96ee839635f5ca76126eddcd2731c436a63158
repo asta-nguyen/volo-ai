@@ -1,0 +1,31 @@
+apps/web/lib/releases.ts
+  s_b5e828c546827a::t_8b4ba523e3336c 25-26,85,119
+apps/web/app/(default)/page.tsx
+  s_b5e828c546827a::t_b4474ccfe18097 4
+apps/web/app/[locale]/page.tsx
+  s_b5e828c546827a::t_8b4ba523e3336c 2,88,114,198,288,302
+docs/llm/architecture/overview.md
+  s_b5e828c546827a::t_b4474ccfe18097 49
+docs/llm/workflows/desktop-runtime-diagnostics.md
+  s_b5e828c546827a::t_8b4ba523e3336c 84
+src/tts_mcp/desktop_runtime.py
+  s_b5e828c546827a::t_8b4ba523e3336c 23
+apps/web/app/(default)/layout.tsx
+  s_b5e828c546827a::t_b4474ccfe18097 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2a96ee839635f5ca76126eddcd2731c436a63158",
+  "prompts": {},
+  "sessions": {
+    "s_b5e828c546827a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14f1d-932e-7542-827a-30c0d636c25c",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
