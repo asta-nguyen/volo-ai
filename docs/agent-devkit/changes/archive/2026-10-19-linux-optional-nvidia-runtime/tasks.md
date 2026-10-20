@@ -9,43 +9,48 @@
 - Keep macOS ARM64 and Windows x64 release behavior unchanged.
 - Keep Linux CPU synthesis usable when the optional runtime is missing, stale,
   damaged, or cannot use an NVIDIA GPU.
+- Keep the normal Linux installer CPU-only; the CUDA payload remains a separate
+  network download started from Settings.
+- Keep the CPU, macOS, and Windows release targets and the website's
+  installer-only asset list unchanged; the publisher still requires verified
+  CUDA assets.
 - Keep bounded error diagnostics locally on all desktop platforms and provide
   a user-initiated, content-safe export from the Logs view.
 - Download only version-matched runtime assets from the fixed public GitHub
-  repository, validate them before execution, and replace installed files
-  atomically.
+  repository, validate the archive and extracted tree before execution, and
+  atomically select a complete replacement.
 - Do not require a system Python installation or change the audio.cpp CPU
-  runtime.
-- Do not create, move, or push a Git tag or publish a release during this
-  change.
+  runtime, model downloads, or hosting provider.
+- Keep the existing v0.1.1 release target and run its full workflow after final
+  review; do not introduce a new app version.
 
 ## Impact map
 
-Entry: `apps/desktop/src/App.tsx::SettingsView` and
-`src/tts_mcp/desktop.py::dispatch_request`
+Entry: `apps/desktop/src/App.tsx::SettingsView`,
+`src/tts_mcp/desktop.py::main`, and
+`src/tts_mcp/desktop_runtime.py::install`
 Flow: Settings → `SidecarClient.request` → desktop JSONL protocol → runtime
-installer; startup → bundled CPU sidecar → verified optional CUDA sidecar when
-the app version matches and the NVIDIA health check passes → existing engine
-device detection
-State changes: Optional sidecar and its version metadata under the Tauri
-app-data directory; no changes to models, voices, or generated audio
+installer; release workflow → PyInstaller CUDA onedir output → PAX archive,
+manifest, and split assets → publisher; startup → bundled CPU sidecar →
+verified extracted CUDA executable and health check → `os.execve`, or CPU
+fallback
+State changes: Versioned, content-addressed extracted runtime directory and
+`current.json` under Tauri app data; temporary staging is removed on failure;
+models, voices, generated audio, and diagnostic data are unchanged
 External effects: Versioned GitHub Release asset downloads; GitHub Actions
-builds and uploads the CPU installers and split CUDA sidecar assets
-Change candidates: `.github/workflows/release.yml`,
-`requirements-linux-cpu.txt`, `requirements-linux-cuda.txt`,
-`scripts/build_sidecar.py`, `src/tts_mcp/desktop.py`,
-new `src/tts_mcp/desktop_runtime.py`,
-`tests/test_desktop.py`, `tests/test_build_sidecar.py`,
-`apps/desktop/src/lib/sidecar.ts`, new desktop diagnostics helper and tests,
-`apps/desktop/src/App.tsx`, `apps/desktop/src/lib/i18n.ts`,
-`apps/desktop/src-tauri/capabilities/default.json`, `README.md`,
-`docs/desktop-development.md`,
-`docs/llm/architecture/overview.md`
-Verification: Python unit suite; desktop frontend build; Tauri Rust check;
-workflow asset-size and manifest checks; diagnostics export/privacy checks;
-wiki validation; CUDA hardware smoke check only when a compatible NVIDIA host
-is available
-Verified at: ed2728a9892667e6204aca84ec77b25809668f97
+builds and publishes CPU installers and split CUDA archive assets
+Change candidates: `.github/workflows/release.yml::build-cuda-runtime`,
+`.github/workflows/release.yml::publish`, `scripts/build_sidecar.py::main`,
+`scripts/package_cuda_runtime.py`, `src/tts_mcp/desktop_runtime.py`,
+`src/tts_mcp/desktop.py::main`, `tests/test_build_sidecar.py`,
+`tests/test_package_cuda_runtime.py`, `tests/test_desktop_runtime.py`,
+`tests/test_desktop.py`, `docs/desktop-development.md`,
+`docs/llm/workflows/desktop-runtime-diagnostics.md`
+Verification: Focused builder, archive, runtime, and protocol tests; full
+Python unit suite; archive and release asset verification; wiki validation;
+full v0.1.1 release workflow; CUDA hardware smoke check only when a compatible
+NVIDIA host is available
+Verified at: dcd3d9853cc85e8796a516509454d9c68ece57a1
 
 ## Baseline before source edits
 
@@ -156,6 +161,99 @@ platform behavior and links; run `git diff --check`.
 Progress: done
 Result: README, desktop release docs, and the verified architecture wiki describe CPU-default Linux, optional NVIDIA installation, CPU fallback, and local user-exported reports. The wiki validator reported 0 errors and 0 warnings; `rtk git diff --check` passed.
 
+### Task 5 — Build and publish the CUDA runtime as an onedir archive
+
+Files: `.github/workflows/release.yml::build-cuda-runtime`,
+`.github/workflows/release.yml::publish`, `scripts/build_sidecar.py::main`,
+`scripts/package_cuda_runtime.py::main`,
+`tests/test_build_sidecar.py::SidecarBuildTests`,
+`tests/test_package_cuda_runtime.py`
+Interfaces: Keep the CPU sidecar's onefile build and existing release targets.
+The CUDA build produces a Linux x64 onedir directory; packaging produces a
+gzip-compressed POSIX PAX tar rooted at `runtime/`, with the fixed executable
+at `runtime/tts-sidecar-cuda`. A format-2 manifest records archive size,
+archive SHA-256, expanded size, entrypoint, and part metadata.
+Change: Add explicit onedir output support to the sidecar builder without
+changing its default. Package and split the CUDA directory into fixed-name
+parts below 1,900,000,000 bytes. Extend asset verification to validate the
+manifest, archive member types and paths, expanded-size metadata, executable
+entrypoint, all part hashes, and the whole archive hash. Keep CUDA verification
+required by the existing publisher and leave website installer filtering
+unchanged.
+Verify: Run the focused builder and package tests. Verify synthetic onedir
+fixtures create and validate a format-2 archive, reject unsafe archives, split
+and recombine under the per-asset limit, and produce matching part and archive
+hashes. The requested tagged release run verifies the real CUDA build and
+publisher path.
+Progress: done
+Result: Builder and package tests under Python 3.10 and `.venv` Python 3.12 —
+onedir staging preserves the CPU onefile default, format-2 PAX archives split
+below the part limit, verify archive and part hashes, and reject unsafe members,
+symlinks, and size mismatches. Compression uses `gzip.GzipFile` so the stream
+writer works with the repository's Python 3.10 minimum.
+
+### Task 6 — Stream, safely extract, and select the CUDA runtime
+
+Files: `src/tts_mcp/desktop_runtime.py::_validate_manifest`,
+`src/tts_mcp/desktop_runtime.py::install`,
+`src/tts_mcp/desktop_runtime.py::_read_installed`,
+`src/tts_mcp/desktop_runtime.py::select`,
+`src/tts_mcp/desktop_runtime.py::remove`,
+`src/tts_mcp/desktop.py::main`,
+`tests/test_desktop_runtime.py::DesktopRuntimeTests`,
+`tests/test_desktop.py`
+Interfaces: Preserve the existing JSONL install/status/remove requests,
+progress, cancellation, and CPU fallback. Change the downloaded payload from a
+single executable to the format-2 tar archive and return the extracted
+CUDA executable path to the unchanged process handoff.
+Change: Stream fixed-name release parts through per-part and whole-archive
+hash checks into a validated tar reader; do not stage a second complete
+archive. Enforce archive size, 20 GB expanded size, 100,000 member limit,
+unique relative paths below `runtime/`, and a regular executable at the
+manifest's fixed entrypoint. Reject absolute or parent-traversal paths,
+duplicate names, hard links, devices, FIFOs, unsafe or escaping symlinks, and
+members nested under symlinks. Extract only regular files, directories, and
+safe relative symlinks into a temporary app-data directory; ignore archive
+ownership and apply safe permissions. Check available space before download
+and enforce expanded size during extraction. Hash the completed tree
+deterministically, move it to its content-addressed directory, and atomically
+update `current.json` only after every check passes. Keep the prior runtime on
+download, cancellation, extraction, or state-write failure. Recompute the
+tree hash and run the CUDA health check before each handoff; an old format-1
+single-file runtime stays on CPU until the user installs the current format.
+Removal deletes only managed runtime trees, their state file, and legacy
+content-addressed `.bin` files.
+Verify: Run focused runtime and protocol tests for valid installation,
+wrong-version/target/part data, archive and tree size caps, traversal,
+duplicate names, unsafe symlinks, unsupported tar members, missing or
+non-executable entrypoint, insufficient space, cancellation during download
+and extraction, checksum/tamper detection, failed replacement preserving the
+previous runtime, healthy CUDA selection, legacy fallback, CPU fallback, and
+managed-only removal. Confirm temporary files are removed on every failure.
+Progress: done
+Result: Focused builder, archive, runtime, and protocol suite — 67 tests passed;
+streaming install, archive validation, extracted-tree tamper detection, CPU
+fallback, cancellation cleanup, and failed-update preservation passed.
+
+### Task 7 — Document the archive-based runtime
+
+Files: `docs/desktop-development.md::Publish a release`,
+`docs/llm/workflows/desktop-runtime-diagnostics.md::Flow`,
+`docs/llm/workflows/desktop-runtime-diagnostics.md::State changes`,
+`docs/llm/workflows/desktop-runtime-diagnostics.md::Error paths`,
+`docs/llm/workflows/desktop-runtime-diagnostics.md::Tests`
+Interfaces: Developer release instructions and the verified runtime wiki
+describe the same onedir archive, streamed installation, app-data state, and
+integrity behavior as source.
+Change: Document that the CUDA CI job archives the onedir worker, while Linux
+Settings streams and validates the optional runtime into app data. Keep the
+user-facing CPU-default behavior and website installer list unchanged. Update
+the wiki only from implemented source and tests; keep internal links relative.
+Verify: Run the wiki validator and `git diff --check`; confirm each updated
+claim matches source and test evidence and every index/link target resolves.
+Progress: done
+Result: `rtk node .agents/skills/document-wiki/scripts/validate-llm-wiki.mjs /Users/nus/projects/tts-mcp` validated 6 Markdown files and 28 requirements with 0 errors and 0 warnings; `rtk git diff --check` passed. Desktop release instructions and the runtime wiki now match the format-2 onedir archive and streaming installer.
+
 ## Files inspected, no change
 
 - `pyproject.toml` — confirms PyTorch and torchaudio are current base
@@ -173,8 +271,9 @@ Result: README, desktop release docs, and the verified architecture wiki describ
   and bilingual copy.
 - `apps/web/lib/releases.ts` — the staged website changes filter platform
   installer names and formats; auxiliary CUDA assets are ignored.
-- `docs/llm/AGENTS.md` and `docs/llm/architecture/overview.md` — wiki rules and
-  the existing desktop/release behavior to update after implementation.
+- `docs/llm/AGENTS.md` — wiki verification and source-grounding rules.
+- `docs/llm/architecture/overview.md` — high-level desktop runtime and release
+  flow; its claims remain valid for the proposed change.
 - `docs/agent-devkit/changes/archive/2026-10-18-desktop-release-build-fixes/`
   — prior release fix scope and verification.
 
@@ -192,3 +291,15 @@ after installing the app.
 Impact: Requires a split CUDA sidecar release payload, runtime management in
 the desktop sidecar, Linux Settings controls, and release documentation.
 Confirmed by user: 2026-10-19
+
+### D2 — Package the CUDA worker as an onedir archive
+
+Question: How should the optional CUDA worker avoid PyInstaller's 4 GiB
+onefile CArchive limit while remaining downloadable after app installation?
+Decision: Proposed PyInstaller onedir output in a PAX tar archive, split into
+versioned release parts. The app streams, verifies, safely extracts, and
+content-addresses the runtime under app data before selecting its executable.
+Impact: Changes the CUDA build output, release manifest format, archive trust
+boundary, app-data state shape, runtime selection, and runtime documentation.
+Approval: Approved by the user's `implement-task` instruction after the revised
+design and tasks were presented together on 2026-10-20.

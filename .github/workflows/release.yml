@@ -441,6 +441,7 @@ jobs:
             --ffmpeg "$(command -v ffmpeg)" \
             --target x86_64-unknown-linux-gnu \
             --sidecar-name tts-sidecar-cuda \
+            --onedir \
             --output-dir build/cuda-runtime
 
       - name: Split and validate the CUDA sidecar

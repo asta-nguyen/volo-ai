@@ -149,10 +149,12 @@ installed by the Intel build job. Each published bundle is named
 target artifact sets on a draft release and publishes it only after every build
 and upload succeeds. The published description comes from `release.md` in the
 tagged commit. Linux installers use CPU-only PyTorch. A separate Linux x64 job
-builds the optional CUDA sidecar, splits it into checksummed release assets, and
-publishes its version-matched manifest with the installers. The website lists
-only installer assets. A failed run can resume an existing draft; rerunning a
-tag with an already published release leaves that release unchanged.
+builds the optional CUDA sidecar in PyInstaller onedir mode, creates a PAX tar
+archive, and splits it into checksummed release assets with a version-matched
+manifest. The app downloads and extracts that archive into app data only after
+the user installs NVIDIA support from Settings. The website lists only
+installer assets. A failed run can resume an existing draft; rerunning a tag
+with an already published release leaves that release unchanged.
 
 Release bundles include the native Python sidecar, the audio.cpp VieNeu CLI,
 and FFmpeg. They exclude model weights and app data; users download model
