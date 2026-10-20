@@ -1,0 +1,19 @@
+.github/workflows/ci.yml
+  s_c828ccc8c7b001::t_7430f24119374a 77-86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dcd3d9853cc85e8796a516509454d9c68ece57a1",
+  "prompts": {},
+  "sessions": {
+    "s_c828ccc8c7b001": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14e6a-826f-7951-ad14-507037c4edcc",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
