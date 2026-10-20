@@ -2,6 +2,11 @@
 
 ## Changes
 
+- [Audio History Rename and Copy Path](changes/2026-10-21-2-audio-history-rename-copy-path/design.md) — [tasks](changes/2026-10-21-2-audio-history-rename-copy-path/tasks.md)
+- [Desktop Local REST API](changes/2026-10-21-3-desktop-local-rest-api/design.md) — [tasks](changes/2026-10-21-3-desktop-local-rest-api/tasks.md)
+- [Desktop Update Notice](changes/2026-10-21-4-desktop-update-notice/design.md) — [tasks](changes/2026-10-21-4-desktop-update-notice/tasks.md)
+- [Website Changelog Page](changes/2026-10-21-5-web-changelog-page/design.md) — [tasks](changes/2026-10-21-5-web-changelog-page/tasks.md)
+
 ## Archived changes
 
 - [CPU-default Linux packages with optional NVIDIA runtime](changes/archive/2026-10-19-linux-optional-nvidia-runtime/design.md) — [tasks](changes/archive/2026-10-19-linux-optional-nvidia-runtime/tasks.md)
