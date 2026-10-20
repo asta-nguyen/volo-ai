@@ -20,7 +20,7 @@ import zlib
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 
-REPOSITORY = "asta-nguyen/volo-ai"
+REPOSITORY = "az-forge/volo-ai"
 TARGET = "x86_64-unknown-linux-gnu"
 MAX_MANIFEST_SIZE = 1_000_000
 MAX_PART_SIZE = 1_900_000_000

@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getLatestRelease, PLATFORM_KEYS, type PlatformKey, type ReleaseAsset } from "@/lib/releases";
+import { getLatestRelease, GITHUB_REPOSITORY, PLATFORM_KEYS, type PlatformKey, type ReleaseAsset } from "@/lib/releases";
 import { copy, isLocale, type Locale } from "@/lib/site-copy";
 
 type PageProps = { params: Promise<{ locale: string }> };
@@ -85,7 +85,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
         <nav className="main-navigation" aria-label={text.navigation}>
           <a href="#about">{text.aboutLink}</a>
           <a href="#downloads">{text.downloadLink}</a>
-          <a href="https://github.com/asta-nguyen/volo-ai">GitHub <span aria-hidden="true">↗</span></a>
+          <a href={`https://github.com/${GITHUB_REPOSITORY}`}>GitHub <span aria-hidden="true">↗</span></a>
         </nav>
 
         <div className="header-actions">
@@ -111,7 +111,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
               <a className="button button-primary" href="#downloads">
                 {text.heroAction} <span aria-hidden="true">↘</span>
               </a>
-              <a className="button button-secondary" href="https://github.com/asta-nguyen/volo-ai">
+              <a className="button button-secondary" href={`https://github.com/${GITHUB_REPOSITORY}`}>
                 {text.sourceAction} <span aria-hidden="true">↗</span>
               </a>
             </div>
@@ -195,7 +195,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
                     <h3>{release.kind === "no-release" ? text.noReleaseTitle : text.unavailableTitle}</h3>
                     <p>{release.kind === "no-release" ? text.noReleaseBody : text.unavailableBody}</p>
                   </div>
-                  <a className="release-notes" href="https://github.com/asta-nguyen/volo-ai/releases">
+                  <a className="release-notes" href={`https://github.com/${GITHUB_REPOSITORY}/releases`}>
                     {text.releasesLink}<span aria-hidden="true"> ↗</span>
                   </a>
                 </>
@@ -285,7 +285,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
 
             <div className="download-footer">
               <span>{locale === "vi" ? "Không tìm thấy bản phù hợp?" : "Need a different build?"}</span>
-              <a href="https://github.com/asta-nguyen/volo-ai/releases">{text.releasesLink}<span aria-hidden="true"> ↗</span></a>
+              <a href={`https://github.com/${GITHUB_REPOSITORY}/releases`}>{text.releasesLink}<span aria-hidden="true"> ↗</span></a>
             </div>
           </div>
         </section>
@@ -299,7 +299,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
         <p>{text.footerText}</p>
         <div className="footer-meta">
           <span>{text.footerNote}</span>
-          <a href="https://github.com/asta-nguyen/volo-ai">GitHub <span aria-hidden="true">↗</span></a>
+          <a href={`https://github.com/${GITHUB_REPOSITORY}`}>GitHub <span aria-hidden="true">↗</span></a>
         </div>
       </footer>
     </>

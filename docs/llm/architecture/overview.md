@@ -46,7 +46,7 @@ the Python worker as a Tauri sidecar and stores model/audio data locally.
   version-matched CUDA sidecar and publishes it as a checksummed manifest and
   split payload assets. The publisher verifies installer targets and runtime
   assets before publishing a GitHub Release with the tagged notes.
-- `apps/web/app/(default)/page.tsx` redirects `/` to `/en`; the localized
+- `apps/web/app/(default)/page.tsx` redirects `/` to `/vi`; the localized
   Next.js app serves `/en` and `/vi` with matching document languages and
   metadata. Its download page supports the same macOS ARM64, Windows x64, and
   Linux x64 targets as the release workflow.

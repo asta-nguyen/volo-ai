@@ -22,8 +22,8 @@ export type LatestRelease =
   | { kind: "no-release" }
   | { kind: "unavailable" };
 
-const REPOSITORY = "asta-nguyen/volo-ai";
-const RELEASES_API = `https://api.github.com/repos/${REPOSITORY}/releases/latest`;
+export const GITHUB_REPOSITORY = "az-forge/volo-ai";
+const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest`;
 const RELEASE_TAG_PATTERN = /^v\d+\.\d+\.\d+$/;
 const ASSET_FORMATS = new Set([
   ".app.tar.gz",
@@ -82,7 +82,7 @@ function parseRelease(value: unknown): LatestRelease {
     typeof publishedAt !== "string" ||
     !Number.isFinite(Date.parse(publishedAt)) ||
     !Array.isArray(value.assets) ||
-    !isSafeGithubUrl(value.html_url, `/${REPOSITORY}/releases/tag/${tag}`)
+    !isSafeGithubUrl(value.html_url, `/${GITHUB_REPOSITORY}/releases/tag/${tag}`)
   ) {
     return { kind: "unavailable" };
   }
@@ -116,7 +116,7 @@ function parseRelease(value: unknown): LatestRelease {
     const format = match[2].toLowerCase();
     if (
       !ASSET_FORMATS.has(format) ||
-      !isSafeGithubUrl(url, `/${REPOSITORY}/releases/download/${tag}/${name}`)
+      !isSafeGithubUrl(url, `/${GITHUB_REPOSITORY}/releases/download/${tag}/${name}`)
     ) {
       continue;
     }

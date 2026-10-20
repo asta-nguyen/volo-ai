@@ -81,7 +81,7 @@ Install, update, and remove actions take effect after the app restarts.
 ## Side effects
 
 - Runtime installation downloads versioned release assets from
-  `asta-nguyen/volo-ai`; it does not send app data or synthesis content.
+  `az-forge/volo-ai`; it does not send app data or synthesis content.
 - Reports include the app version, operating system, architecture, runtime
   state, and recent error events. Home-directory paths are redacted. The report
   excludes request payloads, synthesized text, audio, and voice content, and is
