@@ -75,6 +75,10 @@ Result: none
 - `release.md` — current per-release notes source.
 - `docs/desktop-development.md` — release preparation and tag workflow.
 
+## Baseline
+
+- 2026-10-21 before feature code: website production build passed. Next.js warned that `/Users/nus/pnpm-lock.yaml` is outside this repository and was ignored; no web test runner is configured.
+
 ## Approval Gate
 
 Status: approved

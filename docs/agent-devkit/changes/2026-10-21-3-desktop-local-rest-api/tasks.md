@@ -37,7 +37,7 @@ Interfaces: Add the eight `/api/v1` routes from the design. Return `{"result": .
 
 Change: Use a separate standard-library threaded HTTP listener on `127.0.0.1` and the fixed port `8765`. Dispatch to existing MCP functions. Validate method, route, JSON body type/size, and Host before operation dispatch; reject every request with an Origin header; emit no CORS allow headers. Keep model preparation explicit and preserve existing MCP argument semantics.
 
-Verify: `rtk python -m unittest discover -s tests -p test_api.py -v` passes. Each MCP-equivalent route returns its expected result; malformed JSON, invalid arguments, oversized body, unknown route, and operation errors return structured non-2xx JSON; bad Host, any Origin, and unsupported body content type never call the tool function; successful calls invoke the matching existing function once.
+Verify: `rtk .venv/bin/python -m unittest discover -s tests -p test_api.py -v` passes. Each MCP-equivalent route returns its expected result; malformed JSON, invalid arguments, oversized body, unknown route, and operation errors return structured non-2xx JSON; bad Host, any Origin, and unsupported body content type never call the tool function; successful calls invoke the matching existing function once.
 
 Progress: todo
 Result: none
@@ -50,7 +50,7 @@ Interfaces: Add `start_api`, `stop_api`, and `api_status` JSONL operations and t
 
 Change: Keep one server per sidecar process. Start only on user action, make Stop idempotent, report port conflicts, stop the listener during sidecar shutdown, and add localized Start/Stop/status/error/Copy URL help in the existing MCP settings view. Show the documented no-token local-process risk.
 
-Verify: `rtk python -m unittest discover -s tests -p test_desktop.py -v` and `rtk npm --prefix apps/desktop run build` pass. Lifecycle tests verify off-by-default, start, repeated stop, port conflict, and shutdown; manual curl check verifies API calls work after Start and fail after Stop/app shutdown.
+Verify: `rtk .venv/bin/python -m unittest discover -s tests -p test_desktop.py -v` and `rtk npm --prefix apps/desktop run build` pass. Lifecycle tests verify off-by-default, start, repeated stop, port conflict, and shutdown; manual curl check verifies API calls work after Start and fail after Stop/app shutdown.
 
 Progress: todo
 Result: none
@@ -77,6 +77,11 @@ Result: none
 - `docs/llm/architecture/overview.md` — current runtime and provider boundaries.
 - `docs/llm/workflows/mcp-voice-library.md` — shared profile behaviors.
 - `docs/llm/workflows/desktop-vieneu.md` — provider behavior and model preparation.
+
+## Baseline
+
+- 2026-10-21 before feature code: `.venv/bin/python -m unittest discover -s tests -v` passed all 152 tests; `.venv/bin/python -m compileall -q src tests` passed; desktop production build passed with the existing large-chunk warning.
+- The shell's global Python 3.10 has `mcp==1.27.2` and fails to collect `tests/test_server.py`; use the repository `.venv` for Python checks.
 
 ## Approval Gate
 

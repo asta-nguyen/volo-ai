@@ -36,7 +36,7 @@ Interfaces: Add `Engine.rename_audio_history(old_file_name, new_file_name)` and 
 
 Change: Validate a WAV/MP3 basename directly under `OUTPUT_DIR`; reject empty, dot, separator, control, Windows-reserved, trailing-dot/space, symlink, missing-source, and existing-target cases. Rename without overwriting. Update the metadata filename key without changing other fields; do not create a row for legacy files. If the metadata update fails, attempt to restore the old filename and return a structured error while preserving a discoverable file.
 
-Verify: `rtk python -m unittest discover -s tests -p test_engine.py -v` and `rtk python -m unittest discover -s tests -p test_desktop.py -v` pass. Cases: recorded item → same metadata under new basename; legacy item → renamed and still file-only; invalid/traversal/symlink/missing/collision → no unrelated file changes; injected metadata failure → original filename restored; injected restore failure → actual new filename remains listable and is reported.
+Verify: `rtk .venv/bin/python -m unittest discover -s tests -p test_engine.py -v` and `rtk .venv/bin/python -m unittest discover -s tests -p test_desktop.py -v` pass. Cases: recorded item → same metadata under new basename; legacy item → renamed and still file-only; invalid/traversal/symlink/missing/collision → no unrelated file changes; injected metadata failure → original filename restored; injected restore failure → actual new filename remains listable and is reported.
 
 Progress: todo
 Result: none
@@ -73,6 +73,11 @@ Result: none
 - `docs/agent-devkit/plans/2026-10-08-desktop-audio-history-plan.md` — implemented History and pagination boundaries.
 - `apps/desktop/src/components/AudioPlayer.tsx` — existing local path copy behavior in Workspace.
 - `docs/llm/architecture/overview.md` — current app-data and Audio History behavior.
+
+## Baseline
+
+- 2026-10-21 before feature code: `.venv/bin/python -m unittest discover -s tests -v` passed all 152 tests; `.venv/bin/python -m compileall -q src tests` passed; desktop production build passed with the existing large-chunk warning.
+- The shell's global Python 3.10 has `mcp==1.27.2` and fails to collect `tests/test_server.py`; use the repository `.venv` for Python checks.
 
 ## Approval Gate
 

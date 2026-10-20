@@ -77,6 +77,11 @@ Result: none
 - `apps/desktop/src/lib/i18n.ts` — English/Vietnamese copy patterns.
 - `apps/desktop/package.json` — confirms there is no frontend test script or test runner.
 
+## Baseline
+
+- 2026-10-21 before feature code: desktop production build passed with the existing large-chunk warning; the full Python suite passed all 152 tests under `.venv/bin/python`.
+- The desktop package has no frontend test runner; the plan uses a production build and a controlled manual response matrix.
+
 ## Approval Gate
 
 Status: approved
