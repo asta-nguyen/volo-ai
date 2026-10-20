@@ -8,6 +8,7 @@
     "dialog:default",
     "fs:default",
     "fs:allow-copy-file",
+    "fs:allow-write-text-file",
     {
       "identifier": "fs:scope",
       "allow": [{ "path": "$APPDATA/outputs/**" }, { "path": "$HOME/**" }]

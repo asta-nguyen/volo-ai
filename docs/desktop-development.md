@@ -148,15 +148,24 @@ installed by the Intel build job. Each published bundle is named
 `volo-ai_<tag>_<os>_<arch>.<bundle-extension>`. The workflow stages all three
 target artifact sets on a draft release and publishes it only after every build
 and upload succeeds. The published description comes from `release.md` in the
-tagged commit. A failed run can resume an existing draft; rerunning a tag with
-an already published release leaves that release unchanged.
+tagged commit. Linux installers use CPU-only PyTorch. A separate Linux x64 job
+builds the optional CUDA sidecar, splits it into checksummed release assets, and
+publishes its version-matched manifest with the installers. The website lists
+only installer assets. A failed run can resume an existing draft; rerunning a
+tag with an already published release leaves that release unchanged.
 
 Release bundles include the native Python sidecar, the audio.cpp VieNeu CLI,
 and FFmpeg. They exclude model weights and app data; users download model
-assets during first-run setup. Packages are unsigned and not notarized, so
-macOS Gatekeeper may warn about or block the app, including with an “app is
-damaged” message on Apple Silicon. Keep using the manual host build commands
-below for local packaging.
+assets during first-run setup. Linux users can install optional NVIDIA support
+from Settings when they have a supported NVIDIA GPU and driver. This download
+requires internet access, leaves CPU synthesis available while it runs, and
+requires an app restart to activate or remove the runtime. GPU health failures
+fall back to CPU and appear in local diagnostics. Logs keeps a bounded local
+history and exports a redacted JSON report only after the user chooses Export;
+it excludes request text, generated audio, and voice content. Packages are
+unsigned and not notarized, so macOS Gatekeeper may warn about or block the app,
+including with an “app is damaged” message on Apple Silicon. Keep using the
+manual host build commands below for local packaging.
 
 ```sh
 npm --prefix apps/desktop run build

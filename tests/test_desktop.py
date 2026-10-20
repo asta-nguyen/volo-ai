@@ -11,12 +11,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from tts_mcp import desktop as desktop_module
 from tts_mcp.desktop import dispatch_request, run_protocol
 from tts_mcp.engine import DownloadCancelled, Engine
 
 
 class DesktopWorkerTests(unittest.TestCase):
     def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        data_patch = patch("tts_mcp.desktop.DATA_DIR", Path(temporary.name))
+        data_patch.start()
+        self.addCleanup(data_patch.stop)
         history_patch = patch("tts_mcp.desktop.Engine.record_audio_history")
         self.history_writer = history_patch.start()
         self.addCleanup(history_patch.stop)
@@ -248,8 +254,9 @@ class DesktopWorkerTests(unittest.TestCase):
                 "ref_audio": str(reference),
                 "ref_text": "Xin chào",
             }
-            with patch("tts_mcp.desktop.OUTPUT_DIR", Path(tmp)), patch(
-                "tts_mcp.desktop.save_audio", return_value=str(output)
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", Path(tmp)),
+                patch("tts_mcp.desktop.save_audio", return_value=str(output)),
             ):
                 response = dispatch_request(
                     {
@@ -290,13 +297,30 @@ class DesktopWorkerTests(unittest.TestCase):
     def test_seed_vieneu_voices_requires_ready_manifest_and_runtime(self):
         presets = [{"id": "minh_quan_pro", "name": "Minh Quân Pro", "label": "Default"}]
         for status, message in (
-            ({**self.ready_vieneu_status(presets), "model_ready": False,
-              "unavailable_reason": "VieNeu model assets are not ready; prepare VieNeu first"},
-             "prepare VieNeu"),
-            ({**self.ready_vieneu_status(presets), "runtime_available": False,
-              "unavailable_reason": "audio.cpp CLI is missing"}, "audio.cpp CLI"),
-            ({**self.ready_vieneu_status(presets), "preprocessing_available": False,
-              "unavailable_reason": "VieNeu preprocessing is unavailable"}, "preprocessing"),
+            (
+                {
+                    **self.ready_vieneu_status(presets),
+                    "model_ready": False,
+                    "unavailable_reason": "VieNeu model assets are not ready; prepare VieNeu first",
+                },
+                "prepare VieNeu",
+            ),
+            (
+                {
+                    **self.ready_vieneu_status(presets),
+                    "runtime_available": False,
+                    "unavailable_reason": "audio.cpp CLI is missing",
+                },
+                "audio.cpp CLI",
+            ),
+            (
+                {
+                    **self.ready_vieneu_status(presets),
+                    "preprocessing_available": False,
+                    "unavailable_reason": "VieNeu preprocessing is unavailable",
+                },
+                "preprocessing",
+            ),
             ({**self.ready_vieneu_status([])}, "manifest"),
         ):
             with self.subTest(status=status):
@@ -332,9 +356,11 @@ class DesktopWorkerTests(unittest.TestCase):
 
         provider.synthesize.side_effect = synthesize
         events = []
-        with tempfile.TemporaryDirectory() as tmp, patch.object(
-            Engine, "list_voices", return_value=[]
-        ), patch("tts_mcp.desktop.OUTPUT_DIR", Path(tmp) / "outputs"):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.object(Engine, "list_voices", return_value=[]),
+            patch("tts_mcp.desktop.OUTPUT_DIR", Path(tmp) / "outputs"),
+        ):
             response = dispatch_request(
                 {"id": "seed", "type": "seed_vieneu_voices"},
                 engine,
@@ -344,14 +370,19 @@ class DesktopWorkerTests(unittest.TestCase):
 
         self.assertTrue(response["ok"])
         result = response["result"]
-        self.assertEqual([item["preset_id"] for item in result["profiles"]],
-                         ["first_voice", "second_voice"])
+        self.assertEqual(
+            [item["preset_id"] for item in result["profiles"]], ["first_voice", "second_voice"]
+        )
         self.assertEqual([item["status"] for item in result["profiles"]], ["created", "created"])
         self.assertEqual(len(calls), 2)
         self.assertTrue(all(call[0]["language"] == "vi" for call in calls))
-        self.assertTrue(all(call[0]["text"] ==
-                            "Xin chào. Đây là mẫu giọng được tạo để lưu vào thư viện giọng nói của bạn."
-                            for call in calls))
+        self.assertTrue(
+            all(
+                call[0]["text"]
+                == "Xin chào. Đây là mẫu giọng được tạo để lưu vào thư viện giọng nói của bạn."
+                for call in calls
+            )
+        )
         self.assertTrue(all(call[0]["voice"] == "preset" for call in calls))
         self.assertTrue(all(call[1].parent.name.startswith("vieneu-seed-") for call in calls))
         self.assertEqual([event["preset_id"] for event in events], ["first_voice", "second_voice"])
@@ -376,8 +407,11 @@ class DesktopWorkerTests(unittest.TestCase):
             engine = Mock()
             provider = Mock()
             provider.status.return_value = self.ready_vieneu_status(presets)
-            provider.synthesize.side_effect = lambda request, _voices, _output_dir, output_path=None: (
-                self.write_wav(Path(output_path)) or {"audio_path": str(output_path), "format": "wav"}
+            provider.synthesize.side_effect = (
+                lambda request, _voices, _output_dir, output_path=None: (
+                    self.write_wav(Path(output_path))
+                    or {"audio_path": str(output_path), "format": "wav"}
+                )
             )
             voices = [
                 {
@@ -454,8 +488,9 @@ class DesktopWorkerTests(unittest.TestCase):
 
         self.assertTrue(response["ok"])
         self.assertTrue(response["result"]["cancelled"])
-        self.assertEqual([item["preset_id"] for item in response["result"]["profiles"]],
-                         ["first_voice"])
+        self.assertEqual(
+            [item["preset_id"] for item in response["result"]["profiles"]], ["first_voice"]
+        )
         self.assertEqual(response["result"]["unfinished"], ["second_voice"])
         self.assertEqual(provider.synthesize.call_count, 1)
 
@@ -544,9 +579,7 @@ class DesktopWorkerTests(unittest.TestCase):
                 patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
                 patch.object(Engine, "list_audio_history", return_value=metadata),
             ):
-                response = dispatch_request(
-                    {"id": "history", "type": "list_audio_history"}, Mock()
-                )
+                response = dispatch_request({"id": "history", "type": "list_audio_history"}, Mock())
 
         items = response["result"]["items"]
         self.assertTrue(response["ok"])
@@ -746,9 +779,7 @@ class DesktopWorkerTests(unittest.TestCase):
                     engine,
                 )
                 with patch.object(Engine, "list_audio_history", return_value=[]):
-                    history = dispatch_request(
-                        {"id": "list", "type": "list_audio_history"}, engine
-                    )
+                    history = dispatch_request({"id": "list", "type": "list_audio_history"}, engine)
                 self.assertTrue(response["ok"])
                 self.assertTrue(Path(response["result"]["audio_path"]).is_file())
                 self.assertTrue(history["ok"])
@@ -1288,17 +1319,11 @@ class DesktopWorkerTests(unittest.TestCase):
                 return {"ready": True}
 
         source = io.StringIO(
-            json.dumps(
-                {"id": "omni-one", "type": "prepare_model", "provider": "omnivoice"}
-            )
+            json.dumps({"id": "omni-one", "type": "prepare_model", "provider": "omnivoice"})
             + "\n"
-            + json.dumps(
-                {"id": "omni-two", "type": "prepare_model", "provider": "omnivoice"}
-            )
+            + json.dumps({"id": "omni-two", "type": "prepare_model", "provider": "omnivoice"})
             + "\n"
-            + json.dumps(
-                {"id": "vieneu", "type": "prepare_model", "provider": "vieneu"}
-            )
+            + json.dumps({"id": "vieneu", "type": "prepare_model", "provider": "vieneu"})
             + "\n"
         )
         target = io.StringIO()
@@ -1326,19 +1351,13 @@ class DesktopWorkerTests(unittest.TestCase):
                 raise DownloadCancelled("Model download cancelled")
 
         source = io.StringIO(
-            json.dumps(
-                {"id": "omni", "type": "prepare_model", "provider": "omnivoice"}
-            )
+            json.dumps({"id": "omni", "type": "prepare_model", "provider": "omnivoice"})
             + "\n"
-            + json.dumps(
-                {"id": "vieneu", "type": "prepare_model", "provider": "vieneu"}
-            )
+            + json.dumps({"id": "vieneu", "type": "prepare_model", "provider": "vieneu"})
             + "\n"
             + json.dumps({"id": "cancel-omni", "type": "cancel", "request_id": "omni"})
             + "\n"
-            + json.dumps(
-                {"id": "cancel-vieneu", "type": "cancel", "request_id": "vieneu"}
-            )
+            + json.dumps({"id": "cancel-vieneu", "type": "cancel", "request_id": "vieneu"})
             + "\n"
         )
         target = io.StringIO()
@@ -1346,8 +1365,7 @@ class DesktopWorkerTests(unittest.TestCase):
         run_protocol(source, target, BlockingProvider(), BlockingProvider())
 
         responses = {
-            response["id"]: response
-            for response in map(json.loads, target.getvalue().splitlines())
+            response["id"]: response for response in map(json.loads, target.getvalue().splitlines())
         }
         self.assertTrue(responses["cancel-omni"]["ok"])
         self.assertTrue(responses["cancel-vieneu"]["ok"])
@@ -1376,6 +1394,53 @@ class DesktopWorkerTests(unittest.TestCase):
         self.assertTrue(by_id["cancel"]["ok"])
         self.assertFalse(by_id["prepare"]["ok"])
         self.assertEqual(by_id["prepare"]["error"]["code"], "cancelled")
+
+    def test_protocol_cancels_optional_runtime_install(self):
+        def blocking_install(_data_dir, _version, _request_id, *, should_cancel, emit):
+            while not should_cancel():
+                time.sleep(0.001)
+            from tts_mcp.desktop_runtime import RuntimeDownloadCancelled
+
+            raise RuntimeDownloadCancelled("NVIDIA runtime download cancelled")
+
+        source = io.StringIO(
+            json.dumps({"id": "install", "type": "install_nvidia_runtime"})
+            + "\n"
+            + json.dumps({"id": "cancel", "type": "cancel", "request_id": "install"})
+            + "\n"
+        )
+        target = io.StringIO()
+        with patch("tts_mcp.desktop.desktop_runtime.install", side_effect=blocking_install):
+            run_protocol(source, target, Mock())
+
+        responses = {item["id"]: item for item in map(json.loads, target.getvalue().splitlines())}
+        self.assertTrue(responses["cancel"]["ok"])
+        self.assertEqual(responses["install"]["error"]["code"], "cancelled")
+
+    def test_startup_uses_cpu_when_cuda_executable_cannot_start(self):
+        runtime_path = Path("/app-data/nvidia-runtime/runtime.bin")
+        provider = Mock()
+        provider._audio_cpp_path.return_value = None
+        with (
+            patch.object(
+                desktop_module.desktop_runtime,
+                "select",
+                return_value=(runtime_path, None),
+            ),
+            patch.object(desktop_module, "VieNeuProvider", return_value=provider),
+            patch.object(desktop_module.os, "execve", side_effect=OSError("exec failed")),
+            patch.object(desktop_module, "get_engine", return_value=Mock()),
+            patch.object(desktop_module, "run_protocol") as run_protocol,
+            patch.object(desktop_module.desktop_diagnostics, "record") as record,
+            patch.object(desktop_module.sys, "argv", ["desktop.py"]),
+        ):
+            desktop_module.main()
+
+        run_protocol.assert_called_once()
+        fallback = next(
+            call for call in record.call_args_list if call.args[1] == "runtime_cpu_fallback"
+        )
+        self.assertIn("could not start", fallback.kwargs["message"])
 
     def test_protocol_cancels_selected_provider_preparation(self):
         class BlockingProvider:

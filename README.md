@@ -12,6 +12,9 @@ for release builds.
 - Save and reuse local voice profiles.
 - English and Vietnamese synthesis, with English selected by default.
 - English and Vietnamese app interface, configurable in Settings.
+- Linux x64 defaults to CPU synthesis; NVIDIA CUDA support is an optional
+  download in Settings.
+- Local diagnostic history with a user-initiated report export from Logs.
 - Preview and export WAV or MP3.
 - SQLite-backed local voice profiles with portable seed manifests.
 - Tailwind CSS v4 utilities with shadcn-style/Base UI primitives.
@@ -274,7 +277,13 @@ must match all three versions, and its commit must contain non-empty release
 notes. CI builds macOS ARM64, Windows x64, and Linux x64 packages; Intel macOS
 is not an official desktop release target. It publishes the GitHub Release
 with that tagged `release.md` only after every build and asset upload succeeds.
-Packages include the native sidecar,
+Linux installers use CPU-only PyTorch. Users can install the matching optional
+NVIDIA runtime from Settings; it requires internet and a compatible NVIDIA GPU
+and driver. CPU synthesis remains available during download, and a restart
+activates or removes the runtime. If the CUDA health check fails, the app stays
+on CPU and records the reason in Logs. Diagnostic reports stay local until the
+user exports them; they exclude request text, generated audio, and voice content,
+and redact the home folder path. Packages include the native sidecar,
 audio.cpp CLI, and FFmpeg, but not model weights or app data. macOS packages are
 unsigned and may trigger Gatekeeper warnings. See
 [`docs/desktop-development.md`](docs/desktop-development.md#build-the-desktop-app)

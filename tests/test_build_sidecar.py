@@ -15,7 +15,7 @@ class SidecarBuildTests(unittest.TestCase):
             ffmpeg.write_bytes(b"ffmpeg")
             audiocpp = root / "audiocpp_cli"
             audiocpp.write_bytes(b"audio.cpp")
-            dist_dir = root / "build" / "sidecar-dist"
+            dist_dir = root / "build" / "sidecar-dist" / "tts-sidecar"
             dist_dir.mkdir(parents=True)
             (dist_dir / "tts-sidecar").write_bytes(b"sidecar")
 
@@ -57,6 +57,46 @@ class SidecarBuildTests(unittest.TestCase):
             self.assertEqual(
                 (binaries / "audiocpp-cli-aarch64-apple-darwin").read_bytes(), b"audio.cpp"
             )
+
+    def test_cuda_builder_can_skip_audiocpp_and_stage_outside_tauri(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ffmpeg = root / "ffmpeg"
+            ffmpeg.write_bytes(b"ffmpeg")
+            dist_dir = root / "build" / "sidecar-dist" / "tts-sidecar-cuda"
+            dist_dir.mkdir(parents=True)
+            (dist_dir / "tts-sidecar-cuda").write_bytes(b"cuda sidecar")
+
+            with (
+                patch.object(build_sidecar, "ROOT", root),
+                patch.object(build_sidecar, "BINARIES", root / "binaries"),
+                patch.object(build_sidecar, "host_triple", return_value="x86_64-unknown-linux-gnu"),
+                patch.object(build_sidecar.subprocess, "run") as run,
+                patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "build_sidecar.py",
+                        "--ffmpeg",
+                        str(ffmpeg),
+                        "--target",
+                        "x86_64-unknown-linux-gnu",
+                        "--sidecar-name",
+                        "tts-sidecar-cuda",
+                        "--output-dir",
+                        str(root / "cuda-out"),
+                    ],
+                ),
+            ):
+                build_sidecar.main()
+
+            command = run.call_args.args[0]
+            self.assertIn("tts-sidecar-cuda", command)
+            self.assertEqual(
+                (root / "cuda-out" / "tts-sidecar-cuda-x86_64-unknown-linux-gnu").read_bytes(),
+                b"cuda sidecar",
+            )
+            self.assertFalse((root / "binaries").exists())
 
 
 if __name__ == "__main__":

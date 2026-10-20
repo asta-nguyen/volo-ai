@@ -1,5 +1,11 @@
 import { Command, type Child } from "@tauri-apps/plugin-shell";
 import { appDataDir } from "@tauri-apps/api/path";
+import { getVersion } from "@tauri-apps/api/app";
+import {
+  clearFrontendDiagnostics,
+  recordFrontendDiagnostic,
+  type DiagnosticEvent,
+} from "./diagnostics";
 
 export type Language = "en" | "vi";
 export type ProviderId = "omnivoice" | "vieneu";
@@ -60,6 +66,7 @@ type Response<T> = Success<T> | Failure;
 const REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
 const PREPARATION_TIMEOUT_MS = 60 * 60 * 1000;
 const SEED_TIMEOUT_MS = 60 * 60 * 1000;
+const RUNTIME_INSTALL_TIMEOUT_MS = 3 * 60 * 60 * 1000;
 const MAX_REQUEST_LOGS = 500;
 
 export type ProgressEvent = {
@@ -94,6 +101,19 @@ export type StatusResult = {
   tokenizer: string;
   asr_model: string;
   providers: Record<ProviderId, ProviderStatus>;
+  nvidia_runtime?: NvidiaRuntimeStatus;
+  diagnostics?: DiagnosticEvent[];
+  diagnostics_complete?: boolean;
+};
+
+export type NvidiaRuntimeStatus = {
+  supported: boolean;
+  installed: boolean;
+  installed_version: string | null;
+  needs_update: boolean;
+  active: boolean;
+  available: boolean;
+  size: number | null;
 };
 
 export type ProviderStatus = {
@@ -161,6 +181,7 @@ export class SidecarClient {
   private startPromise: Promise<void> | null = null;
   private activePreparationIds = new Set<string>();
   private activeSeedId: string | null = null;
+  private activeRuntimeInstallId: string | null = null;
   private nextId = 1;
   private pending = new Map<
     string,
@@ -170,6 +191,7 @@ export class SidecarClient {
   private logListeners = new Set<(entry: RequestLog) => void>();
   private logs: RequestLog[] = [];
   private outputBuffer = "";
+  private diagnosticsHydrated = false;
 
   async start(): Promise<void> {
     if (this.child) return;
@@ -191,13 +213,29 @@ export class SidecarClient {
       );
     }
     const command = Command.sidecar("binaries/tts-sidecar", [], {
-      env: { TTS_MCP_DATA_DIR: await appDataDir() },
+      env: {
+        TTS_MCP_DATA_DIR: await appDataDir(),
+        TTS_MCP_APP_VERSION: await getVersion(),
+      },
     });
     this.command = command;
     command.stdout.on("data", (line) => this.consume(String(line)));
-    command.stderr.on("data", (line) => console.warn("[tts-sidecar]", line));
+    command.stderr.on("data", () =>
+      recordFrontendDiagnostic(
+        "sidecar_stderr",
+        "sidecar_stderr",
+        undefined,
+        "The local engine reported an error.",
+      ),
+    );
     const handleStopped = (reason: SidecarError) => {
       if (this.command !== command) return;
+      recordFrontendDiagnostic(
+        "sidecar_exit",
+        reason.code,
+        undefined,
+        "The local engine stopped unexpectedly.",
+      );
       this.child = null;
       this.command = null;
       this.rejectAll(reason);
@@ -220,6 +258,12 @@ export class SidecarClient {
     } catch (reason) {
       if (reason instanceof SidecarError) throw reason;
       if (this.command === command) this.command = null;
+      recordFrontendDiagnostic(
+        "sidecar_start_failed",
+        "sidecar_unavailable",
+        undefined,
+        "Could not start the local engine.",
+      );
       throw new SidecarError(
         "sidecar_unavailable",
         `Could not start the local engine: ${String(reason)}`,
@@ -251,6 +295,8 @@ export class SidecarClient {
 
   clearLogs(): void {
     this.logs = [];
+    this.diagnosticsHydrated = false;
+    clearFrontendDiagnostics();
     this.logListeners.forEach((listener) =>
       listener({
         id: "cleared",
@@ -280,6 +326,40 @@ export class SidecarClient {
     await this.request({ type: "cancel", request_id: this.activeSeedId });
   }
 
+  async cancelNvidiaRuntime(): Promise<void> {
+    if (!this.activeRuntimeInstallId) return;
+    await this.request({ type: "cancel", request_id: this.activeRuntimeInstallId });
+  }
+
+  hydrateDiagnostics(events: DiagnosticEvent[]): void {
+    if (this.diagnosticsHydrated) return;
+    this.diagnosticsHydrated = true;
+    const historic = events.slice(-MAX_REQUEST_LOGS).map((event, index): RequestLog => {
+      const startedAt = Date.parse(event.time) || Date.now();
+      const failure = [
+        "request_failed",
+        "runtime_install_failed",
+        "frontend_error",
+        "sidecar_exit",
+        "sidecar_start_failed",
+        "sidecar_stderr",
+        "runtime_cpu_fallback",
+      ].includes(event.category);
+      return {
+        id: `diagnostic-${startedAt}-${index}`,
+        operation: event.operation ?? event.category,
+        status: failure ? "error" : "success",
+        startedAt,
+        finishedAt: startedAt,
+        errorCode: failure ? (event.code ?? event.category) : undefined,
+        errorMessage: event.message,
+      };
+    });
+    this.logs = [...historic, ...this.logs].slice(-MAX_REQUEST_LOGS);
+    const latest = this.logs.at(-1);
+    if (latest) this.logListeners.forEach((listener) => listener(latest));
+  }
+
   async saveDesignVoice(
     name: string,
     designInstruction: string,
@@ -297,8 +377,10 @@ export class SidecarClient {
     const id = String(this.nextId++);
     const isPreparation = payload.type === "prepare_model";
     const isSeed = payload.type === "seed_vieneu_voices";
+    const isRuntimeInstall = payload.type === "install_nvidia_runtime";
     if (isPreparation) this.activePreparationIds.add(id);
     if (isSeed) this.activeSeedId = id;
+    if (isRuntimeInstall) this.activeRuntimeInstallId = id;
     this.addLog({
       id,
       operation: String(payload.type ?? "unknown"),
@@ -331,10 +413,18 @@ export class SidecarClient {
               message: reason instanceof Error ? reason.message : String(reason),
             };
       this.completeLog(id, "error", error);
+      recordFrontendDiagnostic(
+        "request_failed",
+        error.code,
+        String(payload.type ?? "unknown"),
+        "A local operation failed.",
+      );
       throw reason;
     } finally {
       if (isPreparation) this.activePreparationIds.delete(id);
       if (isSeed && this.activeSeedId === id) this.activeSeedId = null;
+      if (isRuntimeInstall && this.activeRuntimeInstallId === id)
+        this.activeRuntimeInstallId = null;
     }
   }
 
@@ -348,7 +438,9 @@ export class SidecarClient {
         ? PREPARATION_TIMEOUT_MS
         : payload.type === "seed_vieneu_voices"
           ? SEED_TIMEOUT_MS
-          : REQUEST_TIMEOUT_MS;
+          : payload.type === "install_nvidia_runtime"
+            ? RUNTIME_INSTALL_TIMEOUT_MS
+            : REQUEST_TIMEOUT_MS;
     let timeout: ReturnType<typeof setTimeout>;
     const response = new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });

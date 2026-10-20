@@ -203,10 +203,29 @@ jobs:
           }
 
       - name: Install Python desktop dependencies
-        if: matrix.os != 'windows'
+        if: matrix.os == 'macos'
         run: |
           python -m pip install -e '.[mp3,desktop-vieneu]'
           python -m pip install -r requirements-build.txt
+
+      - name: Install CPU-only Linux Python dependencies
+        if: matrix.os == 'linux'
+        run: |
+          python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+            -c requirements-linux-cpu.txt \
+            'torch==2.10.0+cpu' 'torchaudio==2.10.0+cpu'
+          python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+            -c requirements-linux-cpu.txt \
+            -e '.[mp3,desktop-vieneu]'
+          python -m pip install -r requirements-build.txt
+          python - <<'PY'
+          import torch
+          import torchaudio
+
+          assert torch.version.cuda is None, f"Expected CPU torch, got {torch.version.cuda}"
+          assert "+cpu" in torch.__version__ and "+cpu" in torchaudio.__version__
+          print(f"Verified CPU-only runtime: torch={torch.__version__}, torchaudio={torchaudio.__version__}")
+          PY
 
       - name: Install Python desktop dependencies on Windows
         if: matrix.os == 'windows'
@@ -320,6 +339,7 @@ jobs:
     needs:
       - validate-release-inputs
       - build
+      - build-cuda-runtime
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -336,44 +356,11 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      - name: Verify all target assets are present and non-empty
+      - name: Verify installers and CUDA runtime assets
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          python - <<'PY'
-          import os
-          from pathlib import Path
-
-          assets = sorted(path for path in Path("release-assets").glob("*") if path.is_file())
-          if not assets:
-              raise SystemExit("No platform release assets were downloaded")
-
-          expected_targets = {
-              ("macos", "arm64"),
-              ("windows", "x64"),
-              ("linux", "x64"),
-          }
-          seen_targets = set()
-          tag_prefix = f"volo-ai_{os.environ['RELEASE_TAG']}_"
-          for asset in assets:
-              if asset.stat().st_size == 0:
-                  raise SystemExit(f"Downloaded release asset is empty: {asset.name}")
-              if not asset.name.startswith(tag_prefix):
-                  raise SystemExit(f"Unexpected release asset name: {asset.name}")
-              platform_arch = asset.name[len(tag_prefix):].split(".", 1)[0]
-              try:
-                  platform, arch = platform_arch.split("_", 1)
-              except ValueError as error:
-                  raise SystemExit(f"Could not identify platform in {asset.name}") from error
-              seen_targets.add((platform, arch))
-
-          missing_targets = expected_targets - seen_targets
-          if missing_targets:
-              missing = ", ".join(f"{platform}/{arch}" for platform, arch in sorted(missing_targets))
-              raise SystemExit(f"Missing release assets for: {missing}")
-
-          print(f"Verified {len(assets)} non-empty release asset(s) for all three targets")
-          PY
+          python scripts/package_cuda_runtime.py verify release-assets "${RELEASE_TAG#v}"
 
       - name: Create or resume draft, upload assets, and publish
         env:
@@ -407,3 +394,68 @@ jobs:
 
           gh release upload "$RELEASE_TAG" --repo "$GH_REPO" release-assets/* --clobber
           gh release edit "$RELEASE_TAG" --repo "$GH_REPO" --draft=false
+
+  build-cuda-runtime:
+    name: Build optional Linux CUDA runtime
+    needs: validate-release-inputs
+    runs-on: ubuntu-24.04
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg
+
+      - name: Install CUDA Python dependencies
+        run: |
+          python -m pip install --extra-index-url https://download.pytorch.org/whl/cu128 \
+            -c requirements-linux-cuda.txt \
+            'torch==2.10.0+cu128' 'torchaudio==2.10.0+cu128'
+          python -m pip install --extra-index-url https://download.pytorch.org/whl/cu128 \
+            -c requirements-linux-cuda.txt \
+            -e '.[mp3,desktop-vieneu]'
+          python -m pip install -r requirements-build.txt
+          python - <<'PY'
+          import torch
+          import torchaudio
+
+          assert torch.version.cuda is not None, "Expected a CUDA-enabled torch build"
+          assert "+cu128" in torch.__version__ and "+cu128" in torchaudio.__version__
+          print(f"Verified CUDA runtime: torch={torch.__version__}, torchaudio={torchaudio.__version__}")
+          PY
+
+      - name: Build CUDA sidecar
+        run: |
+          python scripts/build_sidecar.py \
+            --ffmpeg "$(command -v ffmpeg)" \
+            --target x86_64-unknown-linux-gnu \
+            --sidecar-name tts-sidecar-cuda \
+            --output-dir build/cuda-runtime
+
+      - name: Split and validate the CUDA sidecar
+        run: |
+          mkdir -p release-assets
+          python scripts/package_cuda_runtime.py split \
+            build/cuda-runtime/tts-sidecar-cuda-x86_64-unknown-linux-gnu \
+            release-assets "${RELEASE_TAG#v}"
+          python scripts/package_cuda_runtime.py verify-cuda release-assets "${RELEASE_TAG#v}"
+
+      - name: Upload CUDA runtime assets
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-linux-cuda-runtime
+          path: release-assets/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7

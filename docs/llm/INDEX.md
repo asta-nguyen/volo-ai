@@ -15,6 +15,7 @@
 
 | Prefix | Domain |
 | --- | --- |
+| DSET | Desktop settings and diagnostics |
 | DVP | Desktop voice providers |
 | VLIB | MCP and shared voice profiles |
 
@@ -58,16 +59,31 @@ but do not yet have dedicated feature pages:
   presets or Clone/reference voices, accept optional VieNeu sampler options
   such as `seed`, and keep OmniVoice as the default.
   MCP profile and shared-store behavior is in the workflow page.
+- [x] Public bilingual desktop downloads — the Next.js site serves English and
+  Vietnamese pages, resolves validated latest stable GitHub release assets for
+  macOS ARM64, Windows x64, and Linux x64, and links directly to the assets;
+  unavailable release and platform states are localized. See the
+  [architecture overview](architecture/overview.md).
+- [x] Desktop NVIDIA runtime and diagnostics — Linux x64 uses CPU PyTorch by
+  default and can install a version-matched NVIDIA sidecar from Settings;
+  failed GPU checks fall back to CPU. Logs retains bounded local diagnostics
+  and exports a redacted report only when requested. See [Desktop runtime and
+  diagnostics](workflows/desktop-runtime-diagnostics.md).
 
 ## Sources
 
 - `src/tts_mcp/engine.py`
 - `src/tts_mcp/desktop.py`
+- `src/tts_mcp/desktop_runtime.py`
+- `src/tts_mcp/desktop_diagnostics.py`
 - `src/tts_mcp/cli.py`
 - `src/tts_mcp/server.py`
 - `tests/test_server.py`
 - `tests/test_engine.py`
 - `tests/test_desktop.py`
+- `tests/test_desktop_runtime.py`
+- `tests/test_desktop_diagnostics.py`
+- `tests/test_package_cuda_runtime.py`
 - `apps/desktop/src/App.tsx`
 - `apps/desktop/src/main.tsx`
 - `apps/desktop/src/components/ui/button.tsx`
@@ -76,4 +92,8 @@ but do not yet have dedicated feature pages:
 - `apps/desktop/src/lib/utils.ts`
 - `apps/desktop/src/lib/i18n.ts`
 - `apps/desktop/src/lib/sidecar.ts`
+- `apps/desktop/src/lib/diagnostics.ts`
+- `scripts/package_cuda_runtime.py`
+- `requirements-linux-cpu.txt`
+- `requirements-linux-cuda.txt`
 - `apps/desktop/package.json`

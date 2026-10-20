@@ -13,6 +13,7 @@ dist/
 
 # Node / frontend
 node_modules/
+.next/
 npm-debug.log*
 
 # Tauri / Rust build output

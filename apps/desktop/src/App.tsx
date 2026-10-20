@@ -8,9 +8,10 @@ import {
   type InfiniteData,
 } from "@tanstack/react-query";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { appDataDir, resolveResource } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { copyFile } from "@tauri-apps/plugin-fs";
+import { copyFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "motion/react";
 import {
   AlertDialog,
@@ -84,6 +85,7 @@ import {
   type AudioFormat,
   type GenerationConfig,
   type Language,
+  type NvidiaRuntimeStatus,
   type ProviderId,
   type ProviderStatus,
   type ProgressEvent,
@@ -96,6 +98,11 @@ import {
   type VoiceMode,
   type VoiceProfile,
 } from "./lib/sidecar";
+import {
+  frontendDiagnosticsComplete,
+  getFrontendDiagnostics,
+  recordFrontendDiagnostic,
+} from "./lib/diagnostics";
 import { createUiCopy, setAppLanguage, type AppLanguage, type UiCopy } from "./lib/i18n";
 import { cn } from "./lib/utils";
 import { AudioPlayer, InlineAudioPreview } from "./components/AudioPlayer";
@@ -305,9 +312,7 @@ function readVieNeuConfig(draft: VieNeuDraft, invalidMessage: string): VieNeuCon
   const repetitionWindow = readRequired(draft.repetition_window, "repetition_window", {
     integer: true,
   });
-  const seed = draft.seed.trim()
-    ? readRequired(draft.seed, "seed", { integer: true })
-    : undefined;
+  const seed = draft.seed.trim() ? readRequired(draft.seed, "seed", { integer: true }) : undefined;
   if (topP > 1) throw new Error(invalidMessage);
 
   const config: VieNeuConfig = {};
@@ -652,10 +657,16 @@ function LogsView({
   logs,
   copy,
   onClearLogs,
+  onExportDiagnostics,
+  isExportingDiagnostics,
+  diagnosticsIncomplete,
 }: {
   logs: RequestLog[];
   copy: UiCopy;
   onClearLogs: () => void;
+  onExportDiagnostics: () => void;
+  isExportingDiagnostics: boolean;
+  diagnosticsIncomplete: boolean;
 }) {
   const [filter, setFilter] = useState<"all" | "success" | "error">("all");
   const successCount = logs.filter((entry) => entry.status === "success").length;
@@ -706,8 +717,21 @@ function LogsView({
             )}
             <Badge variant="secondary">
               <span className="mr-2 size-1.5 rounded-full bg-(--success)" />
-              {copy.sessionOnly}
+              {copy.localHistory}
             </Badge>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onExportDiagnostics}
+              disabled={isExportingDiagnostics}
+            >
+              {isExportingDiagnostics ? (
+                <LoaderCircle className="size-3.5 animate-spin" />
+              ) : (
+                <FileText className="size-3.5" />
+              )}
+              {isExportingDiagnostics ? copy.exportingDiagnostics : copy.exportDiagnostics}
+            </Button>
           </div>
         }
       />
@@ -767,9 +791,11 @@ function LogsView({
                       {entry.status === "pending" ? copy.running : entry.status.toUpperCase()}
                     </Badge>
                   </div>
-                  {entry.status === "error" && (
-                    <p className="mt-2 text-sm text-(--destructive)">
-                      {entry.errorMessage ?? copy.failed}
+                  {entry.errorMessage && (
+                    <p
+                      className={`mt-2 text-sm ${entry.status === "error" ? "text-(--destructive)" : "text-(--muted-foreground)"}`}
+                    >
+                      {entry.errorMessage}
                     </p>
                   )}
                   <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] uppercase tracking-[0.08em] text-(--muted-foreground)">
@@ -795,6 +821,11 @@ function LogsView({
           </div>
         )}
       </Card>
+      {diagnosticsIncomplete && (
+        <p role="status" className="mt-3 text-sm text-(--muted-foreground)">
+          {copy.diagnosticsIncomplete}
+        </p>
+      )}
       <p className="mt-4 text-xs leading-5 text-(--muted-foreground)">{copy.logsPrivacy}</p>
     </div>
   );
@@ -954,7 +985,11 @@ function VoiceProfilesView({
       {(isSeedingVieNeu || seedResult || seedError) && (
         <div
           className={`mb-5 rounded-xl border px-4 py-3 text-sm ${seedError || seedResult?.failed.length || seedResult?.unfinished.length ? "border-(--destructive-border) bg-(--destructive-surface) text-(--destructive)" : "border-(--accent-border) bg-(--accent-soft) text-(--foreground)"}`}
-          role={seedError || seedResult?.failed.length || seedResult?.unfinished.length ? "alert" : "status"}
+          role={
+            seedError || seedResult?.failed.length || seedResult?.unfinished.length
+              ? "alert"
+              : "status"
+          }
         >
           {seedError ? (
             <p>{seedError}</p>
@@ -972,7 +1007,12 @@ function VoiceProfilesView({
                         : ""}
                     </span>
                   </p>
-                  <Button variant="ghost" size="sm" onClick={onCancelSeed} disabled={isCancellingSeed}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={onCancelSeed}
+                    disabled={isCancellingSeed}
+                  >
                     {isCancellingSeed ? copy.cancellingSeed : copy.cancelSeed}
                   </Button>
                 </div>
@@ -982,19 +1022,27 @@ function VoiceProfilesView({
                   <p>
                     {seedResult.cancelled ? copy.seedVieNeuCancelled : copy.seedVieNeuCompleted}
                     {" · "}
-                    {seedResult.profiles.filter((item) => item.status === "created").length} {copy.seedCreated}
+                    {seedResult.profiles.filter((item) => item.status === "created").length}{" "}
+                    {copy.seedCreated}
                     {" · "}
-                    {seedResult.profiles.filter((item) => item.status === "updated").length} {copy.seedUpdated}
+                    {seedResult.profiles.filter((item) => item.status === "updated").length}{" "}
+                    {copy.seedUpdated}
                     {" · "}
-                    {seedResult.profiles.filter((item) => item.status === "reused").length} {copy.seedReused}
+                    {seedResult.profiles.filter((item) => item.status === "reused").length}{" "}
+                    {copy.seedReused}
                   </p>
                   {seedResult.failed.length > 0 && (
                     <p>
-                      {copy.seedFailed}: {seedResult.failed.map((item) => `${item.preset_id} (${item.message})`).join(", ")}
+                      {copy.seedFailed}:{" "}
+                      {seedResult.failed
+                        .map((item) => `${item.preset_id} (${item.message})`)
+                        .join(", ")}
                     </p>
                   )}
                   {seedResult.unfinished.length > 0 && (
-                    <p>{copy.seedUnfinished}: {seedResult.unfinished.join(", ")}</p>
+                    <p>
+                      {copy.seedUnfinished}: {seedResult.unfinished.join(", ")}
+                    </p>
                   )}
                 </>
               )}
@@ -1056,101 +1104,99 @@ function VoiceProfilesView({
                         ? presetVoices.find((item) => item.id === voice.preset_id)
                         : undefined;
                     return (
-                    <motion.article
-                      layout
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.98 }}
-                      key={voice.name}
-                      className="rounded-2xl border border-(--border) bg-(--surface-muted) p-4 transition-colors hover:border-(--border-strong)"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-(--accent) text-white">
-                            <AudioLines className="size-5" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h3 className="truncate font-semibold">{voice.name}</h3>
-                              <Badge variant="success">{copy.profileReady}</Badge>
-                              <Badge variant="outline">
-                                {voice.kind === "design"
-                                  ? copy.designVoice
-                                  : voice.kind === "vieneu_preset"
-                                    ? copy.vieneuPresetProfile
-                                    : copy.cloneVoice}
-                              </Badge>
-                              {voice.is_default && (
-                                <Badge>
-                                  {copy.defaultVoice}
-                                </Badge>
-                              )}
+                      <motion.article
+                        layout
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.98 }}
+                        key={voice.name}
+                        className="rounded-2xl border border-(--border) bg-(--surface-muted) p-4 transition-colors hover:border-(--border-strong)"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-(--accent) text-white">
+                              <AudioLines className="size-5" />
                             </div>
-                            <p className="mt-1 flex items-center gap-1.5 truncate font-mono text-[10px] uppercase tracking-[0.08em] text-(--muted-foreground)">
-                              {voice.kind === "design" ? (
-                                <Sparkles className="size-3" />
-                              ) : (
-                                <FileAudio className="size-3" />
-                              )}
-                              {voice.kind === "vieneu_preset"
-                                ? `${copy.presetIdLabel}: ${voice.preset_id ?? ""}${manifestPreset ? ` · ${manifestPreset.name} · ${manifestPreset.label}` : ""}`
-                                : `${voice.language?.toUpperCase()} · ${
-                                    voice.kind === "design"
-                                      ? copy.designProfileSummary
-                                      : fileName(voice.ref_audio ?? undefined)
-                                  }`}
-                            </p>
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h3 className="truncate font-semibold">{voice.name}</h3>
+                                <Badge variant="success">{copy.profileReady}</Badge>
+                                <Badge variant="outline">
+                                  {voice.kind === "design"
+                                    ? copy.designVoice
+                                    : voice.kind === "vieneu_preset"
+                                      ? copy.vieneuPresetProfile
+                                      : copy.cloneVoice}
+                                </Badge>
+                                {voice.is_default && <Badge>{copy.defaultVoice}</Badge>}
+                              </div>
+                              <p className="mt-1 flex items-center gap-1.5 truncate font-mono text-[10px] uppercase tracking-[0.08em] text-(--muted-foreground)">
+                                {voice.kind === "design" ? (
+                                  <Sparkles className="size-3" />
+                                ) : (
+                                  <FileAudio className="size-3" />
+                                )}
+                                {voice.kind === "vieneu_preset"
+                                  ? `${copy.presetIdLabel}: ${voice.preset_id ?? ""}${manifestPreset ? ` · ${manifestPreset.name} · ${manifestPreset.label}` : ""}`
+                                  : `${voice.language?.toUpperCase()} · ${
+                                      voice.kind === "design"
+                                        ? copy.designProfileSummary
+                                        : fileName(voice.ref_audio ?? undefined)
+                                    }`}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                        <Button
-                          variant="destructive"
-                          size="icon"
-                          aria-label={`${copy.deleteProfile}: ${voice.name}`}
-                          onClick={() => onDelete(voice.name)}
-                          disabled={deletingVoice === voice.name}
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
-                      </div>
-                      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-(--border) pt-3">
-                        <div className="min-w-0 text-xs text-(--muted-foreground)">
-                          {voice.kind === "design" ? (
-                            <span className="line-clamp-2">
-                              {voice.design_instruction ?? copy.designProfileSummary}
-                            </span>
-                          ) : voice.kind === "vieneu_preset" ? (
-                            <span>
-                              {copy.providerVieNeu}
-                              {voice.ref_audio ? " · OmniVoice WAV" : ""}
-                              {manifestPreset ? ` · ${manifestPreset.name} · ${manifestPreset.label}` : ""}
-                            </span>
-                          ) : (
-                            <span className="flex gap-3">
-                              <span>{copy.sourceAudio}</span>
-                              <span>·</span>
-                              <span>
-                                {voice.ref_text?.trim()
-                                  ? copy.transcriptIncluded
-                                  : copy.noTranscript}
-                              </span>
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {voice.ref_audio && (
-                            <InlineAudioPreview
-                              src={convertFileSrc(voice.ref_audio)}
-                              label={copy.previewAudio}
-                              pauseLabel={copy.pauseAudio}
-                            />
-                          )}
-                          <Button size="sm" onClick={() => onUse(voice.name)}>
-                            <Play className="size-3.5" />
-                            {copy.useProfile}
+                          <Button
+                            variant="destructive"
+                            size="icon"
+                            aria-label={`${copy.deleteProfile}: ${voice.name}`}
+                            onClick={() => onDelete(voice.name)}
+                            disabled={deletingVoice === voice.name}
+                          >
+                            <Trash2 className="size-4" />
                           </Button>
                         </div>
-                      </div>
-                    </motion.article>
+                        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-(--border) pt-3">
+                          <div className="min-w-0 text-xs text-(--muted-foreground)">
+                            {voice.kind === "design" ? (
+                              <span className="line-clamp-2">
+                                {voice.design_instruction ?? copy.designProfileSummary}
+                              </span>
+                            ) : voice.kind === "vieneu_preset" ? (
+                              <span>
+                                {copy.providerVieNeu}
+                                {voice.ref_audio ? " · OmniVoice WAV" : ""}
+                                {manifestPreset
+                                  ? ` · ${manifestPreset.name} · ${manifestPreset.label}`
+                                  : ""}
+                              </span>
+                            ) : (
+                              <span className="flex gap-3">
+                                <span>{copy.sourceAudio}</span>
+                                <span>·</span>
+                                <span>
+                                  {voice.ref_text?.trim()
+                                    ? copy.transcriptIncluded
+                                    : copy.noTranscript}
+                                </span>
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {voice.ref_audio && (
+                              <InlineAudioPreview
+                                src={convertFileSrc(voice.ref_audio)}
+                                label={copy.previewAudio}
+                                pauseLabel={copy.pauseAudio}
+                              />
+                            )}
+                            <Button size="sm" onClick={() => onUse(voice.name)}>
+                              <Play className="size-3.5" />
+                              {copy.useProfile}
+                            </Button>
+                          </div>
+                        </div>
+                      </motion.article>
                     );
                   })}
                 </AnimatePresence>
@@ -1199,118 +1245,129 @@ function VoiceProfilesView({
                 >
                   {(["clone", "design", "vieneu_preset"] as VoiceKind[]).map((kind) => (
                     <ToggleGroupItem key={kind} value={kind} className="px-3 py-2 text-sm">
-                    {kind === "design"
-                      ? copy.designVoice
-                      : kind === "vieneu_preset"
-                        ? copy.vieneuPresetProfile
-                        : copy.cloneVoice}
+                      {kind === "design"
+                        ? copy.designVoice
+                        : kind === "vieneu_preset"
+                          ? copy.vieneuPresetProfile
+                          : copy.cloneVoice}
                     </ToggleGroupItem>
                   ))}
                 </ToggleGroup>
               </div>
               <FieldGroup className="gap-4">
-              <Field>
-                <FieldLabel htmlFor="profile-name">{copy.profileName}</FieldLabel>
-                <Input
-                  ref={nameInputRef}
-                  id="profile-name"
-                  value={profileName}
-                  placeholder={copy.profileNamePlaceholder}
-                  disabled={isSaving}
-                  onChange={(event) => onProfileNameChange(event.target.value)}
-                />
-              </Field>
-              {profileKind === "clone" ? (
-                <>
+                <Field>
+                  <FieldLabel htmlFor="profile-name">{copy.profileName}</FieldLabel>
+                  <Input
+                    ref={nameInputRef}
+                    id="profile-name"
+                    value={profileName}
+                    placeholder={copy.profileNamePlaceholder}
+                    disabled={isSaving}
+                    onChange={(event) => onProfileNameChange(event.target.value)}
+                  />
+                </Field>
+                {profileKind === "clone" ? (
+                  <>
+                    <Field>
+                      <FieldLabel>{copy.referenceAudio}</FieldLabel>
+                      <div className="flex flex-col gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="w-full justify-start"
+                          onClick={onChooseReference}
+                          disabled={isSaving}
+                        >
+                          <FolderOpen className="size-4 text-(--accent)" />
+                          <span className="truncate">
+                            {refAudio ? fileName(refAudio) : copy.noAudioSelected}
+                          </span>
+                        </Button>
+                        {refAudio && (
+                          <div className="flex items-center gap-2">
+                            <InlineAudioPreview
+                              src={convertFileSrc(refAudio)}
+                              label={copy.previewAudio}
+                              pauseLabel={copy.pauseAudio}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="profile-transcript">
+                        {copy.referenceTranscript}
+                      </FieldLabel>
+                      <Textarea
+                        id="profile-transcript"
+                        value={refText}
+                        placeholder={copy.optionalTranscript}
+                        disabled={isSaving}
+                        onChange={(event) => onRefTextChange(event.target.value)}
+                      />
+                    </Field>
+                  </>
+                ) : profileKind === "design" ? (
                   <Field>
-                    <FieldLabel>{copy.referenceAudio}</FieldLabel>
-                    <div className="flex flex-col gap-2">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        className="w-full justify-start"
-                        onClick={onChooseReference}
+                    <FieldLabel htmlFor="profile-design-instruction">
+                      {copy.voiceDesignInstruction}
+                    </FieldLabel>
+                    <Textarea
+                      id="profile-design-instruction"
+                      value={designInstruction}
+                      placeholder={copy.voiceDesignPlaceholder}
+                      disabled={isSaving}
+                      onChange={(event) => onDesignInstructionChange(event.target.value)}
+                    />
+                    <p className="text-xs leading-5 text-(--muted-foreground)">
+                      {copy.voiceDesignExample}
+                    </p>
+                  </Field>
+                ) : (
+                  <Field>
+                    <FieldLabel htmlFor="profile-vieneu-preset">
+                      {copy.vieneuPresetSelector}
+                    </FieldLabel>
+                    {presetVoices.length > 0 ? (
+                      <Select
+                        value={profilePresetId || null}
+                        items={presetVoices.map((voice) => ({
+                          value: voice.id,
+                          label: `${voice.name} · ${voice.label}`,
+                        }))}
+                        onValueChange={(value) => {
+                          if (typeof value === "string") onProfilePresetIdChange(value);
+                        }}
                         disabled={isSaving}
                       >
-                        <FolderOpen className="size-4 text-(--accent)" />
-                        <span className="truncate">
-                          {refAudio ? fileName(refAudio) : copy.noAudioSelected}
-                        </span>
-                      </Button>
-                      {refAudio && (
-                        <div className="flex items-center gap-2">
-                          <InlineAudioPreview
-                            src={convertFileSrc(refAudio)}
-                            label={copy.previewAudio}
-                            pauseLabel={copy.pauseAudio}
-                          />
-                        </div>
-                      )}
-                    </div>
+                        <SelectTrigger
+                          id="profile-vieneu-preset"
+                          aria-label={copy.vieneuPresetSelector}
+                        >
+                          <SelectValue placeholder={copy.vieneuPresetSelector} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {presetVoices.map((voice) => (
+                            <SelectItem key={voice.id} value={voice.id}>
+                              {voice.name} · {voice.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="rounded-xl border border-(--border) bg-(--surface-muted) p-3 text-xs leading-5 text-(--muted-foreground)">
+                        {copy.vieneuPresetCatalogUnavailable}
+                      </p>
+                    )}
                   </Field>
-                  <Field>
-                    <FieldLabel htmlFor="profile-transcript">{copy.referenceTranscript}</FieldLabel>
-                    <Textarea
-                      id="profile-transcript"
-                      value={refText}
-                      placeholder={copy.optionalTranscript}
-                      disabled={isSaving}
-                      onChange={(event) => onRefTextChange(event.target.value)}
-                    />
-                  </Field>
-                </>
-              ) : profileKind === "design" ? (
-                <Field>
-                  <FieldLabel htmlFor="profile-design-instruction">{copy.voiceDesignInstruction}</FieldLabel>
-                  <Textarea
-                    id="profile-design-instruction"
-                    value={designInstruction}
-                    placeholder={copy.voiceDesignPlaceholder}
-                    disabled={isSaving}
-                    onChange={(event) => onDesignInstructionChange(event.target.value)}
-                  />
-                  <p className="text-xs leading-5 text-(--muted-foreground)">
-                    {copy.voiceDesignExample}
-                  </p>
-                </Field>
-              ) : (
-                <Field>
-                  <FieldLabel htmlFor="profile-vieneu-preset">{copy.vieneuPresetSelector}</FieldLabel>
-                  {presetVoices.length > 0 ? (
-                    <Select
-                      value={profilePresetId || null}
-                      items={presetVoices.map((voice) => ({
-                        value: voice.id,
-                        label: `${voice.name} · ${voice.label}`,
-                      }))}
-                      onValueChange={(value) => {
-                        if (typeof value === "string") onProfilePresetIdChange(value);
-                      }}
-                      disabled={isSaving}
-                    >
-                      <SelectTrigger id="profile-vieneu-preset" aria-label={copy.vieneuPresetSelector}>
-                        <SelectValue placeholder={copy.vieneuPresetSelector} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {presetVoices.map((voice) => (
-                          <SelectItem key={voice.id} value={voice.id}>
-                            {voice.name} · {voice.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <p className="rounded-xl border border-(--border) bg-(--surface-muted) p-3 text-xs leading-5 text-(--muted-foreground)">
-                      {copy.vieneuPresetCatalogUnavailable}
-                    </p>
-                  )}
-                </Field>
-              )}
+                )}
               </FieldGroup>
               <Button
                 type="submit"
                 className="w-full"
-                disabled={isSaving || (profileKind === "vieneu_preset" && presetVoices.length === 0)}
+                disabled={
+                  isSaving || (profileKind === "vieneu_preset" && presetVoices.length === 0)
+                }
               >
                 <Plus className="size-4" />
                 {isSaving ? copy.savingProfile : copy.createProfileButton}
@@ -1339,6 +1396,12 @@ function SettingsView({
   modelStatusError,
   setupError,
   progressEvent,
+  nvidiaRuntime,
+  runtimeProgress,
+  runtimeError,
+  runtimeRestartRequired,
+  isInstallingRuntime,
+  isRemovingRuntime,
   isRefreshingStatus,
   isPreparing,
   preparingProviders,
@@ -1348,6 +1411,9 @@ function SettingsView({
   onPrepareProvider,
   onCancelPrepare,
   onRefreshStatus,
+  onInstallRuntime,
+  onCancelRuntime,
+  onRemoveRuntime,
   onBack,
 }: {
   copy: UiCopy;
@@ -1365,6 +1431,12 @@ function SettingsView({
   modelStatusError: string | null;
   setupError: string | null;
   progressEvent: ProgressEvent | null;
+  nvidiaRuntime?: NvidiaRuntimeStatus;
+  runtimeProgress: ProgressEvent | null;
+  runtimeError: string | null;
+  runtimeRestartRequired: boolean;
+  isInstallingRuntime: boolean;
+  isRemovingRuntime: boolean;
   isRefreshingStatus: boolean;
   isPreparing: boolean;
   preparingProviders: ProviderId[];
@@ -1374,6 +1446,9 @@ function SettingsView({
   onPrepareProvider: (provider: ProviderId) => void;
   onCancelPrepare: () => void;
   onRefreshStatus: () => void;
+  onInstallRuntime: () => void;
+  onCancelRuntime: () => void;
+  onRemoveRuntime: () => void;
   onBack: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("model");
@@ -1448,342 +1523,415 @@ function SettingsView({
           ))}
         </TabsList>
         <TabsContent value="general" className="grid gap-5 lg:grid-cols-2">
-        {activeTab === "general" && (
-          <>
-            <Card>
-              <CardHeader>
-                <div>
-                  <SectionLabel>{copy.appLanguage}</SectionLabel>
-                  <CardTitle className="mt-2">{copy.interfaceLanguage}</CardTitle>
-                </div>
-                <Languages className="size-5 text-(--accent)" />
-              </CardHeader>
-              <CardContent>
-                <CardDescription>{copy.appLanguageDescription}</CardDescription>
-                <div className="mt-5 rounded-xl bg-(--surface-muted) p-1.5">
-                  <ToggleGroup
-                    multiple={false}
-                    value={[appLanguage]}
-                    onValueChange={(value) => {
-                      if (value[0]) onChangeLanguage(value[0] as AppLanguage);
-                    }}
-                    spacing={0}
-                    className="grid w-full grid-cols-2"
-                    aria-label={copy.appLanguage}
-                  >
-                    {(["en", "vi"] as AppLanguage[]).map((item) => (
-                      <ToggleGroupItem key={item} value={item} size="lg">
-                        {item === "en" ? copy.english : copy.vietnamese}
-                      </ToggleGroupItem>
-                    ))}
-                  </ToggleGroup>
-                </div>
-              </CardContent>
-            </Card>
+          {activeTab === "general" && (
+            <>
+              <Card>
+                <CardHeader>
+                  <div>
+                    <SectionLabel>{copy.appLanguage}</SectionLabel>
+                    <CardTitle className="mt-2">{copy.interfaceLanguage}</CardTitle>
+                  </div>
+                  <Languages className="size-5 text-(--accent)" />
+                </CardHeader>
+                <CardContent>
+                  <CardDescription>{copy.appLanguageDescription}</CardDescription>
+                  <div className="mt-5 rounded-xl bg-(--surface-muted) p-1.5">
+                    <ToggleGroup
+                      multiple={false}
+                      value={[appLanguage]}
+                      onValueChange={(value) => {
+                        if (value[0]) onChangeLanguage(value[0] as AppLanguage);
+                      }}
+                      spacing={0}
+                      className="grid w-full grid-cols-2"
+                      aria-label={copy.appLanguage}
+                    >
+                      {(["en", "vi"] as AppLanguage[]).map((item) => (
+                        <ToggleGroupItem key={item} value={item} size="lg">
+                          {item === "en" ? copy.english : copy.vietnamese}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  </div>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader>
-                <div>
-                  <SectionLabel>{copy.theme}</SectionLabel>
-                  <CardTitle className="mt-2">{copy.theme}</CardTitle>
-                </div>
-                <Sun className="size-5 text-(--accent)" />
-              </CardHeader>
-              <CardContent>
-                <CardDescription>{copy.themeDescription}</CardDescription>
-                <div className="mt-5 rounded-xl bg-(--surface-muted) p-1.5">
-                  <ToggleGroup
-                    multiple={false}
-                    value={[theme]}
-                    onValueChange={(value) => {
-                      if (value[0]) onChangeTheme(value[0] as ThemeMode);
-                    }}
-                    spacing={0}
-                    className="grid w-full grid-cols-3"
-                    aria-label={copy.theme}
-                  >
-                  {(
-                    [
-                      ["light", copy.themeLight, Sun],
-                      ["dark", copy.themeDark, Moon],
-                      ["system", copy.themeSystem, Monitor],
-                    ] as const
-                  ).map(([item, label, Icon]) => (
-                    <ToggleGroupItem key={item} value={item} size="lg">
-                      <Icon />
-                      <span>{label}</span>
-                    </ToggleGroupItem>
-                  ))}
-                  </ToggleGroup>
-                </div>
-              </CardContent>
-            </Card>
-          </>
-        )}
+              <Card>
+                <CardHeader>
+                  <div>
+                    <SectionLabel>{copy.theme}</SectionLabel>
+                    <CardTitle className="mt-2">{copy.theme}</CardTitle>
+                  </div>
+                  <Sun className="size-5 text-(--accent)" />
+                </CardHeader>
+                <CardContent>
+                  <CardDescription>{copy.themeDescription}</CardDescription>
+                  <div className="mt-5 rounded-xl bg-(--surface-muted) p-1.5">
+                    <ToggleGroup
+                      multiple={false}
+                      value={[theme]}
+                      onValueChange={(value) => {
+                        if (value[0]) onChangeTheme(value[0] as ThemeMode);
+                      }}
+                      spacing={0}
+                      className="grid w-full grid-cols-3"
+                      aria-label={copy.theme}
+                    >
+                      {(
+                        [
+                          ["light", copy.themeLight, Sun],
+                          ["dark", copy.themeDark, Moon],
+                          ["system", copy.themeSystem, Monitor],
+                        ] as const
+                      ).map(([item, label, Icon]) => (
+                        <ToggleGroupItem key={item} value={item} size="lg">
+                          <Icon />
+                          <span>{label}</span>
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          )}
         </TabsContent>
         <TabsContent value="model" className="grid gap-5 lg:grid-cols-2">
-        {activeTab === "model" && (
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <div>
-                <SectionLabel>{copy.localEngine}</SectionLabel>
-                <CardTitle className="mt-2">{copy.modelDetails}</CardTitle>
-                <CardDescription className="mt-2">{copy.modelDescription}</CardDescription>
-              </div>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <Badge variant={modelReady ? "success" : "destructive"}>
-                  {modelReady ? copy.ready : copy.unavailable}
-                </Badge>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={onRefreshStatus}
-                  disabled={isRefreshingStatus}
-                >
-                  {isRefreshingStatus ? (
-                    <LoaderCircle className="size-3.5 animate-spin" />
-                  ) : (
-                    <RotateCcw className="size-3.5" />
-                  )}
-                  {isRefreshingStatus ? copy.refreshingStatus : copy.refreshStatus}
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="mb-6">
-                <SectionLabel>{copy.providerStatus}</SectionLabel>
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  {providerChoices.map(([id, label]) => {
-                    const status = providers?.[id];
-                    const isActive = selectedProvider === id;
-                    const isInstalling = preparingProviders.includes(id);
-                    return (
-                      <div
-                        key={id}
-                        className="rounded-2xl border border-(--border) bg-(--surface-muted) p-4"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold">{label}</p>
-                            <p className="mt-1 text-xs leading-5 text-(--muted-foreground)">
-                              {status?.unavailable_reason ?? copy.providerRuntimeReady}
-                            </p>
-                          </div>
-                          <Badge variant={providerIsReady(status) ? "success" : "destructive"}>
-                            {providerIsReady(status) ? copy.ready : copy.unavailable}
-                          </Badge>
-                        </div>
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          <Button
-                            size="sm"
-                            variant={isActive ? "secondary" : "ghost"}
-                            disabled={isActive}
-                            onClick={() => onSelectProvider(id)}
-                          >
-                            {isActive ? copy.activeProvider : copy.selectProvider}
-                          </Button>
-                          {!status?.model_ready && !isInstalling && (
-                            <Button
-                              size="sm"
-                              onClick={() => onPrepareProvider(id)}
-                              disabled={isPreparing}
-                            >
-                              {copy.downloadProvider}
-                            </Button>
-                          )}
-                          {isInstalling && (
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={onCancelPrepare}
-                              disabled={!isPreparing}
-                            >
-                              {copy.cancelDownload}
-                            </Button>
-                          )}
-                        </div>
-                        {isInstalling && progressEvent && (
-                          <div className="mt-4">
-                            <Progress value={Math.round((progressEvent.progress ?? 0) * 100)} />
-                            <p className="mt-2 text-xs text-(--muted-foreground)">
-                              {progressEvent.message ?? progressEvent.asset ?? copy.verifyAssets}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+          {activeTab === "model" && (
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <div>
+                  <SectionLabel>{copy.localEngine}</SectionLabel>
+                  <CardTitle className="mt-2">{copy.modelDetails}</CardTitle>
+                  <CardDescription className="mt-2">{copy.modelDescription}</CardDescription>
                 </div>
-              </div>
-              <div className="rounded-2xl border border-(--border) bg-(--surface-muted) p-5">
-                <div className="flex items-end justify-between gap-4">
-                  <Metric
-                    label={copy.modelPackage}
-                    value={modelReady ? copy.verifiedAssets : copy.unverifiedAssets}
-                  />
-                  <span className="font-mono text-lg font-semibold text-(--accent)">
-                    {modelReady ? "100%" : "0%"}
-                  </span>
-                </div>
-                <Progress value={modelReady ? 100 : 0} className="mt-5" />
-                <p className="mt-3 text-xs text-(--muted-foreground)">
-                  {engineOnline ? copy.offlineEngine : copy.unavailable}
-                </p>
-              </div>
-              <div className="mt-5 grid gap-3 md:grid-cols-3">
-                {assets.map((asset) => (
-                  <div
-                    key={asset}
-                    className="flex items-center gap-3 rounded-xl border border-(--border) bg-(--surface-muted) px-4 py-3"
-                  >
-                    <CheckCircle2
-                      className={`size-4 ${modelReady ? "text-(--success)" : "text-(--muted-foreground)"}`}
-                    />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">{asset}</p>
-                      <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-(--muted-foreground)">
-                        {modelReady ? copy.assetReady : copy.unavailable}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-6 grid gap-x-4 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
-                <Metric label={copy.modelId} value={modelId} />
-                <Metric label={copy.tokenizerId} value={tokenizerId} />
-                <Metric label={copy.asrModelId} value={asrModelId} />
-                <Metric
-                  label={copy.connection}
-                  value={engineOnline ? copy.offlineEngine : copy.unavailable}
-                />
-                <Metric label={copy.device} value={device.toUpperCase()} />
-                <Metric label={copy.languages} value="EN · VI" />
-                <Metric label={copy.sampleRate} value="24 KHZ" />
-              </div>
-              {(setupError || modelStatusError) && (
-                <div className="mt-5">
-                  <ErrorMessage>{setupError ?? modelStatusError}</ErrorMessage>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-        </TabsContent>
-        <TabsContent value="storage" className="grid gap-5 lg:grid-cols-2">
-        {activeTab === "storage" && (
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <div>
-                <SectionLabel>{copy.localStorage}</SectionLabel>
-                <CardTitle className="mt-2">{copy.appDataDirectory}</CardTitle>
-              </div>
-              <HardDrive className="size-5 text-(--accent)" />
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <code className="block flex-1 overflow-x-auto rounded-xl border border-(--border) bg-(--surface-muted) p-3.5 font-mono text-xs text-(--foreground)">
-                  {dataDir ?? copy.loadingDataPath}
-                </code>
-                {dataDir && (
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Badge variant={modelReady ? "success" : "destructive"}>
+                    {modelReady ? copy.ready : copy.unavailable}
+                  </Badge>
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={handleCopyDataDir}
-                    className="shrink-0 gap-1.5"
+                    onClick={onRefreshStatus}
+                    disabled={isRefreshingStatus}
                   >
-                    {copiedDataDir ? (
+                    {isRefreshingStatus ? (
+                      <LoaderCircle className="size-3.5 animate-spin" />
+                    ) : (
+                      <RotateCcw className="size-3.5" />
+                    )}
+                    {isRefreshingStatus ? copy.refreshingStatus : copy.refreshStatus}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="mb-6">
+                  <SectionLabel>{copy.providerStatus}</SectionLabel>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    {providerChoices.map(([id, label]) => {
+                      const status = providers?.[id];
+                      const isActive = selectedProvider === id;
+                      const isInstalling = preparingProviders.includes(id);
+                      return (
+                        <div
+                          key={id}
+                          className="rounded-2xl border border-(--border) bg-(--surface-muted) p-4"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold">{label}</p>
+                              <p className="mt-1 text-xs leading-5 text-(--muted-foreground)">
+                                {status?.unavailable_reason ?? copy.providerRuntimeReady}
+                              </p>
+                            </div>
+                            <Badge variant={providerIsReady(status) ? "success" : "destructive"}>
+                              {providerIsReady(status) ? copy.ready : copy.unavailable}
+                            </Badge>
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <Button
+                              size="sm"
+                              variant={isActive ? "secondary" : "ghost"}
+                              disabled={isActive}
+                              onClick={() => onSelectProvider(id)}
+                            >
+                              {isActive ? copy.activeProvider : copy.selectProvider}
+                            </Button>
+                            {!status?.model_ready && !isInstalling && (
+                              <Button
+                                size="sm"
+                                onClick={() => onPrepareProvider(id)}
+                                disabled={isPreparing}
+                              >
+                                {copy.downloadProvider}
+                              </Button>
+                            )}
+                            {isInstalling && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={onCancelPrepare}
+                                disabled={!isPreparing}
+                              >
+                                {copy.cancelDownload}
+                              </Button>
+                            )}
+                          </div>
+                          {isInstalling && progressEvent && (
+                            <div className="mt-4">
+                              <Progress value={Math.round((progressEvent.progress ?? 0) * 100)} />
+                              <p className="mt-2 text-xs text-(--muted-foreground)">
+                                {progressEvent.message ?? progressEvent.asset ?? copy.verifyAssets}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                {nvidiaRuntime?.supported && (
+                  <div className="mb-6 rounded-2xl border border-(--border) bg-(--surface-muted) p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="max-w-2xl">
+                        <SectionLabel>{copy.nvidiaRuntime}</SectionLabel>
+                        <h3 className="mt-2 text-base font-semibold">
+                          {copy.optionalNvidiaSupport}
+                        </h3>
+                        <p className="mt-2 text-sm leading-6 text-(--muted-foreground)">
+                          {copy.nvidiaRuntimeDescription}
+                        </p>
+                      </div>
+                      <Badge variant={nvidiaRuntime.active ? "success" : "secondary"}>
+                        {nvidiaRuntime.active
+                          ? copy.nvidiaActive
+                          : nvidiaRuntime.needs_update
+                            ? copy.nvidiaUpdateAvailable
+                            : nvidiaRuntime.installed
+                              ? copy.nvidiaInstalled
+                              : copy.cpuDefault}
+                      </Badge>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {(!nvidiaRuntime.installed || nvidiaRuntime.needs_update) &&
+                        !isInstallingRuntime && (
+                          <Button size="sm" onClick={onInstallRuntime}>
+                            <Download className="size-3.5" />
+                            {nvidiaRuntime.needs_update ? copy.updateNvidia : copy.installNvidia}
+                          </Button>
+                        )}
+                      {isInstallingRuntime && (
+                        <Button size="sm" variant="secondary" onClick={onCancelRuntime}>
+                          <CircleStop className="size-3.5" />
+                          {copy.cancelDownload}
+                        </Button>
+                      )}
+                      {nvidiaRuntime.installed && !isInstallingRuntime && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={onRemoveRuntime}
+                          disabled={isRemovingRuntime}
+                        >
+                          {isRemovingRuntime ? (
+                            <LoaderCircle className="size-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="size-3.5" />
+                          )}
+                          {isRemovingRuntime ? copy.removingNvidia : copy.removeNvidia}
+                        </Button>
+                      )}
+                    </div>
+                    {isInstallingRuntime && runtimeProgress && (
+                      <div className="mt-4">
+                        <Progress value={Math.round((runtimeProgress.progress ?? 0) * 100)} />
+                        <p className="mt-2 text-xs text-(--muted-foreground)">
+                          {Math.round((runtimeProgress.progress ?? 0) * 100)}% ·{" "}
+                          {copy.cpuRemainsAvailable}
+                        </p>
+                      </div>
+                    )}
+                    {(runtimeError ||
+                      runtimeRestartRequired ||
+                      (nvidiaRuntime.installed && !nvidiaRuntime.active)) && (
+                      <p role="status" className="mt-3 text-sm text-(--muted-foreground)">
+                        {runtimeError ??
+                          (runtimeRestartRequired
+                            ? copy.restartToApplyNvidia
+                            : copy.nvidiaNotActive)}
+                      </p>
+                    )}
+                  </div>
+                )}
+                <div className="rounded-2xl border border-(--border) bg-(--surface-muted) p-5">
+                  <div className="flex items-end justify-between gap-4">
+                    <Metric
+                      label={copy.modelPackage}
+                      value={modelReady ? copy.verifiedAssets : copy.unverifiedAssets}
+                    />
+                    <span className="font-mono text-lg font-semibold text-(--accent)">
+                      {modelReady ? "100%" : "0%"}
+                    </span>
+                  </div>
+                  <Progress value={modelReady ? 100 : 0} className="mt-5" />
+                  <p className="mt-3 text-xs text-(--muted-foreground)">
+                    {engineOnline ? copy.offlineEngine : copy.unavailable}
+                  </p>
+                </div>
+                <div className="mt-5 grid gap-3 md:grid-cols-3">
+                  {assets.map((asset) => (
+                    <div
+                      key={asset}
+                      className="flex items-center gap-3 rounded-xl border border-(--border) bg-(--surface-muted) px-4 py-3"
+                    >
+                      <CheckCircle2
+                        className={`size-4 ${modelReady ? "text-(--success)" : "text-(--muted-foreground)"}`}
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold">{asset}</p>
+                        <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-(--muted-foreground)">
+                          {modelReady ? copy.assetReady : copy.unavailable}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-6 grid gap-x-4 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
+                  <Metric label={copy.modelId} value={modelId} />
+                  <Metric label={copy.tokenizerId} value={tokenizerId} />
+                  <Metric label={copy.asrModelId} value={asrModelId} />
+                  <Metric
+                    label={copy.connection}
+                    value={engineOnline ? copy.offlineEngine : copy.unavailable}
+                  />
+                  <Metric label={copy.device} value={device.toUpperCase()} />
+                  <Metric label={copy.languages} value="EN · VI" />
+                  <Metric label={copy.sampleRate} value="24 KHZ" />
+                </div>
+                {(setupError || modelStatusError) && (
+                  <div className="mt-5">
+                    <ErrorMessage>{setupError ?? modelStatusError}</ErrorMessage>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+        <TabsContent value="storage" className="grid gap-5 lg:grid-cols-2">
+          {activeTab === "storage" && (
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <div>
+                  <SectionLabel>{copy.localStorage}</SectionLabel>
+                  <CardTitle className="mt-2">{copy.appDataDirectory}</CardTitle>
+                </div>
+                <HardDrive className="size-5 text-(--accent)" />
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <code className="block flex-1 overflow-x-auto rounded-xl border border-(--border) bg-(--surface-muted) p-3.5 font-mono text-xs text-(--foreground)">
+                    {dataDir ?? copy.loadingDataPath}
+                  </code>
+                  {dataDir && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleCopyDataDir}
+                      className="shrink-0 gap-1.5"
+                    >
+                      {copiedDataDir ? (
+                        <>
+                          <Check className="size-3.5 text-(--success)" />
+                          <span className="text-(--success)">{copy.appDataCopied}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="size-3.5" />
+                          <span>{copy.copyAppData}</span>
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
+                <p className="mt-3 text-sm leading-6 text-(--muted-foreground)">
+                  {copy.storageDescription}
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+        <TabsContent value="mcp" className="grid gap-5 lg:grid-cols-2">
+          {activeTab === "mcp" && (
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <div>
+                  <SectionLabel>{copy.mcpSection}</SectionLabel>
+                  <CardTitle className="mt-2">{copy.mcpTitle}</CardTitle>
+                  <CardDescription className="mt-2">{copy.mcpDescription}</CardDescription>
+                </div>
+                <Settings2 className="size-5 text-(--accent)" />
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <SectionLabel>{copy.mcpClientLabel}</SectionLabel>
+                  <Select
+                    value={mcpClient}
+                    items={mcpClients.map(([value, label]) => ({ value, label }))}
+                    onValueChange={(value) => {
+                      if (typeof value === "string") setMcpClient(value as McpClientId);
+                    }}
+                  >
+                    <SelectTrigger aria-label={copy.mcpClientLabel} className="max-w-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {mcpClients.map(([id, name]) => (
+                        <SelectItem key={id} value={id}>
+                          {name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <SectionLabel>{copy.mcpConfigurationLabel}</SectionLabel>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleCopyMcpConfig}
+                    disabled={!dataDir}
+                    className="gap-1.5"
+                  >
+                    {copiedMcpConfig ? (
                       <>
                         <Check className="size-3.5 text-(--success)" />
-                        <span className="text-(--success)">{copy.appDataCopied}</span>
+                        <span className="text-(--success)">{copy.mcpConfigCopied}</span>
                       </>
                     ) : (
                       <>
                         <Copy className="size-3.5" />
-                        <span>{copy.copyAppData}</span>
+                        <span>{copy.copyMcpConfig}</span>
                       </>
                     )}
                   </Button>
-                )}
-              </div>
-              <p className="mt-3 text-sm leading-6 text-(--muted-foreground)">
-                {copy.storageDescription}
-              </p>
-            </CardContent>
-          </Card>
-        )}
-        </TabsContent>
-        <TabsContent value="mcp" className="grid gap-5 lg:grid-cols-2">
-        {activeTab === "mcp" && (
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <div>
-                <SectionLabel>{copy.mcpSection}</SectionLabel>
-                <CardTitle className="mt-2">{copy.mcpTitle}</CardTitle>
-                <CardDescription className="mt-2">{copy.mcpDescription}</CardDescription>
-              </div>
-              <Settings2 className="size-5 text-(--accent)" />
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <SectionLabel>{copy.mcpClientLabel}</SectionLabel>
-                <Select
-                  value={mcpClient}
-                  items={mcpClients.map(([value, label]) => ({ value, label }))}
-                  onValueChange={(value) => {
-                    if (typeof value === "string") setMcpClient(value as McpClientId);
-                  }}
-                >
-                  <SelectTrigger aria-label={copy.mcpClientLabel} className="max-w-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {mcpClients.map(([id, name]) => (
-                      <SelectItem key={id} value={id}>
-                        {name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <SectionLabel>{copy.mcpConfigurationLabel}</SectionLabel>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleCopyMcpConfig}
-                  disabled={!dataDir}
-                  className="gap-1.5"
-                >
-                  {copiedMcpConfig ? (
-                    <>
-                      <Check className="size-3.5 text-(--success)" />
-                      <span className="text-(--success)">{copy.mcpConfigCopied}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="size-3.5" />
-                      <span>{copy.copyMcpConfig}</span>
-                    </>
-                  )}
-                </Button>
-              </div>
-              <pre className="mt-3 overflow-x-auto rounded-xl border border-(--border) bg-(--surface-muted) p-4 font-mono text-xs leading-6 text-(--foreground)">
-                <code>{mcpSetupConfig}</code>
-              </pre>
-              <p className="mt-3 text-sm leading-6 text-(--muted-foreground)">
-                {copy.mcpExecutableHelp}
-              </p>
-              <p className="mt-2 text-sm leading-6 text-(--muted-foreground)">
-                {copy.mcpClientHelp[mcpClient]}
-              </p>
-              <div className="mt-4 rounded-xl border border-(--border) bg-(--surface-muted) p-4">
-                <p className="text-sm leading-6 text-(--muted-foreground)">
-                  {copy.mcpVieNeuHelp}
+                </div>
+                <pre className="mt-3 overflow-x-auto rounded-xl border border-(--border) bg-(--surface-muted) p-4 font-mono text-xs leading-6 text-(--foreground)">
+                  <code>{mcpSetupConfig}</code>
+                </pre>
+                <p className="mt-3 text-sm leading-6 text-(--muted-foreground)">
+                  {copy.mcpExecutableHelp}
                 </p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+                <p className="mt-2 text-sm leading-6 text-(--muted-foreground)">
+                  {copy.mcpClientHelp[mcpClient]}
+                </p>
+                <div className="mt-4 rounded-xl border border-(--border) bg-(--surface-muted) p-4">
+                  <p className="text-sm leading-6 text-(--muted-foreground)">
+                    {copy.mcpVieNeuHelp}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>
@@ -1913,11 +2061,7 @@ function AudioHistoryView({
             <span className="hidden text-xs text-(--muted-foreground) sm:inline">
               {items.length} / {total} {copy.audioHistoryCount}
             </span>
-            <Button
-              variant="secondary"
-              onClick={onRetry}
-              disabled={isLoading || isLoadingMore}
-            >
+            <Button variant="secondary" onClick={onRetry} disabled={isLoading || isLoadingMore}>
               {isLoading || isLoadingMore ? (
                 <LoaderCircle className="size-4 animate-spin" />
               ) : (
@@ -1986,9 +2130,7 @@ function AudioHistoryView({
                       <h2 className="line-clamp-2 min-w-0 text-sm font-semibold leading-6">
                         {item.id}
                       </h2>
-                      <Badge variant="outline">
-                        {item.format}
-                      </Badge>
+                      <Badge variant="outline">{item.format}</Badge>
                     </div>
                     <div className="mt-1 flex flex-wrap gap-x-2 text-xs text-(--muted-foreground)">
                       <span>{dateLabel}</span>
@@ -2030,11 +2172,7 @@ function AudioHistoryView({
 
       {nextCursor && (
         <div className="mt-4 flex justify-center">
-          <Button
-            variant="secondary"
-            onClick={onLoadMore}
-            disabled={isLoading || isLoadingMore}
-          >
+          <Button variant="secondary" onClick={onLoadMore} disabled={isLoading || isLoadingMore}>
             {isLoadingMore && <LoaderCircle className="size-4 animate-spin" />}
             <span>{isLoadingMore ? copy.audioHistoryLoadingMore : copy.audioHistoryLoadMore}</span>
           </Button>
@@ -2151,7 +2289,7 @@ function WorkspaceView({
     ...(!isOmniVoice ? [{ value: "file", label: copy.referenceFile }] : []),
     ...visibleVoices.map((voice) => ({
       value: `profile:${voice.name}`,
-      label: `${voice.name}${voice.kind === "vieneu_preset" ? isOmniVoice && voice.ref_audio ? " · OmniVoice WAV" : ` · ${copy.providerVieNeu}` : ` · ${voice.language?.toUpperCase() ?? ""}`}${voice.is_default ? ` · ${copy.defaultVoice}` : ""}`,
+      label: `${voice.name}${voice.kind === "vieneu_preset" ? (isOmniVoice && voice.ref_audio ? " · OmniVoice WAV" : ` · ${copy.providerVieNeu}`) : ` · ${voice.language?.toUpperCase() ?? ""}`}${voice.is_default ? ` · ${copy.defaultVoice}` : ""}`,
     })),
   ];
   const speedPresets = [0.8, 1.0, 1.25, 1.5];
@@ -2189,7 +2327,9 @@ function WorkspaceView({
         description={copy.workspaceDescription}
         action={
           <div className="flex flex-wrap gap-2">
-            <Badge variant="secondary">{isOmniVoice ? copy.providerOmni : copy.providerVieNeu}</Badge>
+            <Badge variant="secondary">
+              {isOmniVoice ? copy.providerOmni : copy.providerVieNeu}
+            </Badge>
             <Badge variant="success">
               <span className="mr-2 size-1.5 rounded-full bg-(--success)" />
               {copy.modelReady}
@@ -2219,8 +2359,7 @@ function WorkspaceView({
                   </span>
                   <span>·</span>
                   <span className="flex items-center gap-1 text-(--accent)">
-                    <Clock className="size-3" />
-                    ~{estSeconds}s {copy.estimatedDuration}
+                    <Clock className="size-3" />~{estSeconds}s {copy.estimatedDuration}
                   </span>
                 </div>
 
@@ -2403,7 +2542,11 @@ function WorkspaceView({
             <div>
               <div className="flex items-center justify-between mb-2">
                 <Label>{copy.chooseProvider}</Label>
-              <Badge variant={providerIsReady(providerStatuses?.[provider]) ? "success" : "destructive"}>
+                <Badge
+                  variant={
+                    providerIsReady(providerStatuses?.[provider]) ? "success" : "destructive"
+                  }
+                >
                   {providerIsReady(providerStatuses?.[provider]) ? copy.ready : copy.unavailable}
                 </Badge>
               </div>
@@ -2553,7 +2696,12 @@ function WorkspaceView({
                   aria-label={copy.outputFormat}
                 >
                   {(["wav", "mp3"] as AudioFormat[]).map((item) => (
-                    <ToggleGroupItem key={item} value={item} size="lg" className="font-mono uppercase">
+                    <ToggleGroupItem
+                      key={item}
+                      value={item}
+                      size="lg"
+                      className="font-mono uppercase"
+                    >
                       {item}
                     </ToggleGroupItem>
                   ))}
@@ -2696,11 +2844,7 @@ function WorkspaceView({
                         ["normalize_text", copy.normalizeText],
                       ] as const
                     ).map(([key, label]) => (
-                      <Field
-                        key={key}
-                        orientation="horizontal"
-                        className="items-center gap-2"
-                      >
+                      <Field key={key} orientation="horizontal" className="items-center gap-2">
                         <Checkbox
                           id={`advanced-${key}`}
                           checked={advanced[key]}
@@ -2858,6 +3002,11 @@ function App() {
     omnivoice: null,
     vieneu: null,
   });
+  const [runtimeProgress, setRuntimeProgress] = useState<ProgressEvent | null>(null);
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const [runtimeRestartRequired, setRuntimeRestartRequired] = useState(false);
+  const [isExportingDiagnostics, setIsExportingDiagnostics] = useState(false);
+  const [diagnosticsIncomplete, setDiagnosticsIncomplete] = useState(false);
   const [modelPreparationErrors, setModelPreparationErrors] = useState<
     Partial<Record<ProviderId, string>>
   >({});
@@ -2980,6 +3129,32 @@ function App() {
     mutationFn: () => client.request<SeedVieNeuResult>({ type: "seed_vieneu_voices" }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: VOICES_QUERY_KEY }),
   });
+  const runtimeInstallMutation = useMutation({
+    mutationFn: () => client.request({ type: "install_nvidia_runtime" }),
+    onSuccess: async () => {
+      setRuntimeError(null);
+      setRuntimeProgress(null);
+      setRuntimeRestartRequired(true);
+      await queryClient.invalidateQueries({ queryKey: STATUS_QUERY_KEY });
+    },
+    onError: (reason) => {
+      setRuntimeProgress(null);
+      if (!(reason instanceof Error && "code" in reason && reason.code === "cancelled")) {
+        setRuntimeError(reason instanceof Error ? reason.message : copy.nvidiaInstallFailed);
+      }
+      void queryClient.invalidateQueries({ queryKey: STATUS_QUERY_KEY });
+    },
+  });
+  const runtimeRemoveMutation = useMutation({
+    mutationFn: () => client.request<{ removed: boolean }>({ type: "remove_nvidia_runtime" }),
+    onSuccess: async () => {
+      setRuntimeError(null);
+      setRuntimeRestartRequired(true);
+      await queryClient.invalidateQueries({ queryKey: STATUS_QUERY_KEY });
+    },
+    onError: (reason) =>
+      setRuntimeError(reason instanceof Error ? reason.message : copy.nvidiaRemoveFailed),
+  });
   const importVoiceMutation = useMutation({
     mutationFn: (request: { name: string; path: string; language: Language }) =>
       client.request({
@@ -3042,7 +3217,10 @@ function App() {
       queryClient.setQueryData<InfiniteData<AudioHistoryPage, AudioHistoryCursor | null>>(
         AUDIO_HISTORY_QUERY_KEY,
         (current) => {
-          if (!current || !current.pages.some((page) => page.items.some((item) => item.id === audioId))) {
+          if (
+            !current ||
+            !current.pages.some((page) => page.items.some((item) => item.id === audioId))
+          ) {
             return current;
           }
           return {
@@ -3115,6 +3293,7 @@ function App() {
   useEffect(() => {
     const unsubscribe = client.onProgress((event) => {
       if (event.phase === "seed_vieneu") setSeedProgress(event);
+      else if (event.phase === "nvidia_runtime") setRuntimeProgress(event);
       else if (event.provider) {
         const target = event.provider;
         setModelProgress((current) => ({ ...current, [target]: event }));
@@ -3127,6 +3306,38 @@ function App() {
       void client.stop();
     };
   }, []);
+
+  useEffect(() => {
+    const onError = (event: ErrorEvent) => {
+      const name = event.error instanceof Error ? event.error.name : "Error";
+      recordFrontendDiagnostic(
+        "frontend_error",
+        name,
+        undefined,
+        "An unhandled frontend error occurred.",
+      );
+    };
+    const onRejection = (event: PromiseRejectionEvent) => {
+      const name = event.reason instanceof Error ? event.reason.name : "UnhandledRejection";
+      recordFrontendDiagnostic(
+        "frontend_error",
+        name,
+        undefined,
+        "An unhandled frontend promise rejection occurred.",
+      );
+    };
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!engineStatus) return;
+    client.hydrateDiagnostics([...(engineStatus.diagnostics ?? []), ...getFrontendDiagnostics()]);
+  }, [engineStatus]);
 
   useEffect(() => {
     if (!engineStatus) return;
@@ -3553,7 +3764,9 @@ function App() {
           ? selectedVoice
           : mode === "preset"
             ? (presetVoices.find((p) => p.id === selectedVoice)?.label ?? selectedVoice)
-            : (refAudio ? fileName(refAudio) : copy.autoVoice);
+            : refAudio
+              ? fileName(refAudio)
+              : copy.autoVoice;
       const newTake: TakeItem = {
         id: String(Date.now()),
         timestamp: Date.now(),
@@ -3578,6 +3791,69 @@ function App() {
   function handleClearLogs() {
     client.clearLogs();
     setLogs([]);
+    setDiagnosticsIncomplete(false);
+    void client
+      .request<{ cleared: boolean; diagnostics_complete?: boolean }>({ type: "clear_diagnostics" })
+      .then((result) => {
+        client.clearLogs();
+        setLogs([]);
+        setDiagnosticsIncomplete(result.diagnostics_complete === false);
+      })
+      .catch(() => setDiagnosticsIncomplete(true));
+  }
+
+  async function handleExportDiagnostics() {
+    setIsExportingDiagnostics(true);
+    setDiagnosticsIncomplete(false);
+    try {
+      let report: unknown;
+      try {
+        report = await client.request({
+          type: "get_diagnostics",
+          frontend_events: getFrontendDiagnostics(),
+          frontend_complete: frontendDiagnosticsComplete(),
+        });
+        if (
+          typeof report === "object" &&
+          report !== null &&
+          "diagnostics_complete" in report &&
+          report.diagnostics_complete === false
+        ) {
+          setDiagnosticsIncomplete(true);
+        }
+      } catch {
+        report = {
+          format: 1,
+          created_at: new Date().toISOString(),
+          app_version: await getVersion().catch(() => "unknown"),
+          platform: { os: navigator.platform, architecture: "unknown" },
+          runtime: { state: "unavailable" },
+          diagnostics_complete: false,
+          events: getFrontendDiagnostics(),
+        };
+        setDiagnosticsIncomplete(true);
+      }
+      const destination = await save({
+        defaultPath: "volo-ai-diagnostics.json",
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+      if (typeof destination === "string") {
+        await writeTextFile(destination, JSON.stringify(report, null, 2));
+      }
+    } catch {
+      setDiagnosticsIncomplete(true);
+      setError(copy.exportFailed);
+    } finally {
+      setIsExportingDiagnostics(false);
+    }
+  }
+
+  function cancelRuntimeInstall() {
+    void client
+      .cancelNvidiaRuntime()
+      .catch((reason) =>
+        setRuntimeError(reason instanceof Error ? reason.message : copy.nvidiaInstallFailed),
+      );
   }
 
   function changeTheme(next: ThemeMode) {
@@ -3665,9 +3941,7 @@ function App() {
       if (selectedVoice === name) {
         setMode(provider === "vieneu" ? "preset" : "auto");
         setSelectedVoice(
-          provider === "vieneu"
-            ? (engineStatus?.providers?.vieneu?.default_voice ?? "")
-            : "auto",
+          provider === "vieneu" ? (engineStatus?.providers?.vieneu?.default_voice ?? "") : "auto",
         );
       }
       setError(null);
@@ -3804,24 +4078,24 @@ function App() {
                   spacing={0}
                   aria-label={copy.theme}
                 >
-                {(
-                  [
-                    ["light", Sun],
-                    ["dark", Moon],
-                    ["system", Monitor],
-                  ] as const
-                ).map(([mode, Icon]) => (
-                  <ToggleGroupItem
-                    key={mode}
-                    value={mode}
-                    size="sm"
-                    className="size-6 min-w-6 p-0"
-                    aria-label={mode}
-                    title={mode}
-                  >
-                    <Icon />
-                  </ToggleGroupItem>
-                ))}
+                  {(
+                    [
+                      ["light", Sun],
+                      ["dark", Moon],
+                      ["system", Monitor],
+                    ] as const
+                  ).map(([mode, Icon]) => (
+                    <ToggleGroupItem
+                      key={mode}
+                      value={mode}
+                      size="sm"
+                      className="size-6 min-w-6 p-0"
+                      aria-label={mode}
+                      title={mode}
+                    >
+                      <Icon />
+                    </ToggleGroupItem>
+                  ))}
                 </ToggleGroup>
               </div>
             </div>
@@ -3830,7 +4104,9 @@ function App() {
               {copy.engine}
             </p>
             <div className="mt-2 flex items-center gap-2 text-sm font-semibold">
-              <span className={`size-2 rounded-full ${modelReady ? "bg-(--success)" : "bg-(--muted-foreground)"}`} />
+              <span
+                className={`size-2 rounded-full ${modelReady ? "bg-(--success)" : "bg-(--muted-foreground)"}`}
+              />
               {modelReady ? copy.offlineEngine : copy.engineUnavailable}
             </div>
             <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.1em] text-(--muted-foreground)">
@@ -3865,6 +4141,12 @@ function App() {
                     modelStatusError={modelStatusError}
                     setupError={modelPreparationErrors[provider] ?? setupError}
                     progressEvent={modelProgress[provider]}
+                    nvidiaRuntime={engineStatus?.nvidia_runtime}
+                    runtimeProgress={runtimeProgress}
+                    runtimeError={runtimeError}
+                    runtimeRestartRequired={runtimeRestartRequired}
+                    isInstallingRuntime={runtimeInstallMutation.isPending}
+                    isRemovingRuntime={runtimeRemoveMutation.isPending}
                     isRefreshingStatus={isRefreshingStatus}
                     isPreparing={isPreparing}
                     preparingProviders={preparingProviders}
@@ -3874,10 +4156,26 @@ function App() {
                     onChangeLanguage={changeAppLanguage}
                     onChangeTheme={changeTheme}
                     onRefreshStatus={() => void refreshModelStatus()}
+                    onInstallRuntime={() => {
+                      setRuntimeError(null);
+                      setRuntimeProgress(null);
+                      runtimeInstallMutation.mutate();
+                    }}
+                    onCancelRuntime={cancelRuntimeInstall}
+                    onRemoveRuntime={() => runtimeRemoveMutation.mutate()}
                     onBack={() => navigateTo("workspace")}
                   />
                 ) : view === "logs" ? (
-                  <LogsView logs={logs} copy={copy} onClearLogs={handleClearLogs} />
+                  <LogsView
+                    logs={logs}
+                    copy={copy}
+                    onClearLogs={handleClearLogs}
+                    onExportDiagnostics={() => void handleExportDiagnostics()}
+                    isExportingDiagnostics={isExportingDiagnostics}
+                    diagnosticsIncomplete={
+                      diagnosticsIncomplete || engineStatus?.diagnostics_complete === false
+                    }
+                  />
                 ) : view === "history" ? (
                   <AudioHistoryView
                     copy={copy}

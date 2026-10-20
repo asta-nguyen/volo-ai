@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -26,24 +27,32 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ffmpeg", required=True, type=Path, help="FFmpeg executable to bundle")
     parser.add_argument(
-        "--audiocpp", required=True, type=Path, help="audio.cpp audiocpp_cli executable to bundle"
+        "--audiocpp",
+        type=Path,
+        help="audio.cpp audiocpp_cli executable to bundle beside the sidecar",
     )
     parser.add_argument(
         "--target", default=None, help="Rust target triple; defaults to the current host"
     )
+    parser.add_argument("--sidecar-name", default="tts-sidecar", help="PyInstaller executable name")
+    parser.add_argument(
+        "--output-dir", type=Path, default=BINARIES, help="Directory for packaged executables"
+    )
     args = parser.parse_args()
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", args.sidecar_name):
+        parser.error("--sidecar-name may contain only ASCII letters, digits, '_' and '-'")
 
     ffmpeg = args.ffmpeg.resolve()
     if not ffmpeg.is_file():
         parser.error(f"FFmpeg executable not found: {ffmpeg}")
-    audiocpp = args.audiocpp.resolve()
-    if not audiocpp.is_file():
+    audiocpp = args.audiocpp.resolve() if args.audiocpp else None
+    if audiocpp is not None and not audiocpp.is_file():
         parser.error(f"audio.cpp CLI executable not found: {audiocpp}")
 
     target = args.target or host_triple()
     extension = ".exe" if target.endswith("windows-msvc") else ""
     output_name = f"tts-sidecar-{target}{extension}"
-    dist_dir = ROOT / "build" / "sidecar-dist"
+    dist_dir = ROOT / "build" / "sidecar-dist" / args.sidecar_name
     work_dir = ROOT / "build" / "sidecar-work"
     separator = ";" if os.name == "nt" else ":"
 
@@ -55,7 +64,7 @@ def main() -> int:
         "--clean",
         "--onefile",
         "--name",
-        "tts-sidecar",
+        args.sidecar_name,
         "--paths",
         str(ROOT / "src"),
         "--distpath",
@@ -80,20 +89,22 @@ def main() -> int:
     ]
     subprocess.run(command, cwd=ROOT, check=True)
 
-    built = dist_dir / f"tts-sidecar{extension}"
+    built = dist_dir / f"{args.sidecar_name}{extension}"
     if not built.is_file():
         raise RuntimeError(f"PyInstaller did not produce {built}")
-    BINARIES.mkdir(parents=True, exist_ok=True)
-    destination = BINARIES / output_name
+    output_dir = args.output_dir.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    destination = output_dir / output_name.replace("tts-sidecar", args.sidecar_name, 1)
     shutil.copy2(built, destination)
     if not destination.name.endswith(".exe"):
         destination.chmod(destination.stat().st_mode | 0o111)
-    audiocpp_destination = BINARIES / f"audiocpp-cli-{target}{extension}"
-    shutil.copy2(audiocpp, audiocpp_destination)
-    if not audiocpp_destination.name.endswith(".exe"):
-        audiocpp_destination.chmod(audiocpp_destination.stat().st_mode | 0o111)
     print(destination)
-    print(audiocpp_destination)
+    if audiocpp is not None:
+        audiocpp_destination = output_dir / f"audiocpp-cli-{target}{extension}"
+        shutil.copy2(audiocpp, audiocpp_destination)
+        if not audiocpp_destination.name.endswith(".exe"):
+            audiocpp_destination.chmod(audiocpp_destination.stat().st_mode | 0o111)
+        print(audiocpp_destination)
     return 0
 
 

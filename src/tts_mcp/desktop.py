@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Callable, TextIO
 
 from tts_mcp.convert import save_audio
+from tts_mcp import desktop_diagnostics, desktop_runtime
 from tts_mcp.engine import (
     DATA_DIR,
     DownloadCancelled,
@@ -48,6 +49,41 @@ def _error(request_id: str, code: str, message: str) -> dict[str, Any]:
         "ok": False,
         "error": {"code": code, "message": message},
     }
+
+
+def _record_dispatch_failure(operation: Any, code: str, exc: Exception) -> None:
+    import traceback
+
+    category = (
+        "runtime_install_failed" if operation == "install_nvidia_runtime" else "request_failed"
+    )
+    stack = "".join(traceback.format_list(traceback.extract_tb(exc.__traceback__)))[-12_000:]
+    desktop_diagnostics.record(
+        DATA_DIR,
+        category,
+        operation=str(operation or "unknown"),
+        code=code,
+        message=type(exc).__name__,
+        traceback=stack,
+    )
+
+
+def _runtime_check() -> int:
+    try:
+        import torch
+
+        if torch.version.cuda is None:
+            raise RuntimeError("This sidecar was built without CUDA support")
+        torch.cuda.init()
+        torch.empty(1, device="cuda")
+        torch.cuda.synchronize()
+        return 0
+    except Exception as exc:
+        print(
+            f"CUDA runtime check failed: {type(exc).__name__}: {str(exc)[:500]}",
+            file=sys.stderr,
+        )
+        return 1
 
 
 def _request_id(request: dict[str, Any]) -> str:
@@ -233,9 +269,7 @@ def _history_voice_name(request: dict[str, Any]) -> str:
     return voice if isinstance(voice, str) and voice in {"auto", "design", "file"} else "auto"
 
 
-def _record_audio_history(
-    request: dict[str, Any], provider: str, result: dict[str, Any]
-) -> None:
+def _record_audio_history(request: dict[str, Any], provider: str, result: dict[str, Any]) -> None:
     try:
         audio_path = Path(result["audio_path"]).resolve()
         output_dir = OUTPUT_DIR.resolve()
@@ -323,9 +357,7 @@ def _list_audio_history_page(cursor: Any) -> dict[str, Any]:
         "items": page,
         "total": total,
         "next_cursor": (
-            {"created_at": last_item["created_at"], "id": last_item["id"]}
-            if last_item
-            else None
+            {"created_at": last_item["created_at"], "id": last_item["id"]} if last_item else None
         ),
     }
 
@@ -380,13 +412,10 @@ def _seed_vieneu_voices(
         raise RuntimeError(
             "VieNeu preset manifest is unavailable or invalid; check the local preset manifest."
         )
-    preset_ids = [
-        voice.get("id") if isinstance(voice, dict) else None for voice in presets
-    ]
-    if (
-        any(not isinstance(preset_id, str) or not preset_id for preset_id in preset_ids)
-        or len(set(preset_ids)) != len(preset_ids)
-    ):
+    preset_ids = [voice.get("id") if isinstance(voice, dict) else None for voice in presets]
+    if any(not isinstance(preset_id, str) or not preset_id for preset_id in preset_ids) or len(
+        set(preset_ids)
+    ) != len(preset_ids):
         raise RuntimeError("VieNeu preset manifest contains invalid or duplicate IDs.")
     if not status.get("runtime_available"):
         raise RuntimeError(
@@ -431,8 +460,7 @@ def _seed_vieneu_voices(
             matches = [
                 voice
                 for voice in voices
-                if voice.get("kind") == "vieneu_preset"
-                and voice.get("preset_id") == preset_id
+                if voice.get("kind") == "vieneu_preset" and voice.get("preset_id") == preset_id
             ]
             if len(matches) > 1:
                 raise ValueError(f"Multiple voice profiles use VieNeu preset ID '{preset_id}'")
@@ -529,6 +557,11 @@ def dispatch_request(
                     "model": status["model"],
                     "tokenizer": status["tokenizer"],
                     "asr_model": status["asr_model"],
+                    "nvidia_runtime": desktop_runtime.emit_runtime_status(
+                        DATA_DIR, os.environ.get("TTS_MCP_APP_VERSION")
+                    ),
+                    "diagnostics": desktop_diagnostics.events(DATA_DIR),
+                    "diagnostics_complete": desktop_diagnostics.is_complete(),
                     "providers": {
                         "omnivoice": {
                             "model_ready": bool(status["ready"]),
@@ -541,6 +574,54 @@ def dispatch_request(
                         "vieneu": vieneu_status,
                     },
                 },
+            )
+        if operation == "install_nvidia_runtime":
+            result = desktop_runtime.install(
+                DATA_DIR,
+                os.environ.get("TTS_MCP_APP_VERSION"),
+                request_id,
+                should_cancel=should_cancel or (lambda: False),
+                emit=emit,
+            )
+            desktop_diagnostics.record(
+                DATA_DIR,
+                "runtime_installed",
+                operation=operation,
+                code="success",
+                message=f"NVIDIA runtime {result['version']} verified and installed",
+            )
+            return _ok(request_id, result)
+        if operation == "remove_nvidia_runtime":
+            removed = desktop_runtime.remove(DATA_DIR)
+            desktop_diagnostics.record(
+                DATA_DIR,
+                "runtime_removed",
+                operation=operation,
+                code="success",
+                message="Optional NVIDIA runtime removed"
+                if removed
+                else "No optional runtime was installed",
+            )
+            return _ok(request_id, {"removed": removed})
+        if operation == "get_diagnostics":
+            runtime = desktop_runtime.emit_runtime_status(
+                DATA_DIR, os.environ.get("TTS_MCP_APP_VERSION")
+            )
+            return _ok(
+                request_id,
+                desktop_diagnostics.report(
+                    DATA_DIR,
+                    app_version=os.environ.get("TTS_MCP_APP_VERSION"),
+                    runtime=runtime,
+                    frontend_events=request.get("frontend_events"),
+                    frontend_complete=request.get("frontend_complete", True) is True,
+                ),
+            )
+        if operation == "clear_diagnostics":
+            desktop_diagnostics.clear(DATA_DIR)
+            return _ok(
+                request_id,
+                {"cleared": True, "diagnostics_complete": desktop_diagnostics.is_complete()},
             )
         if operation == "prepare_model":
             provider_id = _provider_id(request)
@@ -616,8 +697,7 @@ def dispatch_request(
                     "VieNeu preset list is unavailable; prepare VieNeu to load its local manifest"
                 )
             if not any(
-                isinstance(voice, dict) and voice.get("id") == preset_id
-                for voice in preset_voices
+                isinstance(voice, dict) and voice.get("id") == preset_id for voice in preset_voices
             ):
                 raise ValueError(f"Unknown VieNeu preset ID: {preset_id}")
             saved_name = engine.save_vieneu_preset(name, preset_id)
@@ -651,9 +731,7 @@ def dispatch_request(
         if operation == "delete_audio_history":
             if "file_name" not in request:
                 raise KeyError("file_name")
-            return _ok(
-                request_id, {"deleted": _delete_audio_history(request["file_name"])}
-            )
+            return _ok(request_id, {"deleted": _delete_audio_history(request["file_name"])})
         if operation == "delete_voice":
             return _ok(
                 request_id,
@@ -661,20 +739,37 @@ def dispatch_request(
             )
         if operation == "cancel":
             return _error(
-                request_id, "invalid_request", "Cancel is only valid during a model download"
+                request_id,
+                "invalid_request",
+                "Cancel is only valid during a model or optional runtime download",
             )
         return _error(request_id, "invalid_request", f"Unknown operation: {operation}")
     except DownloadCancelled as exc:
+        _record_dispatch_failure(operation, "cancelled", exc)
+        return _error(request_id, "cancelled", str(exc))
+    except desktop_runtime.RuntimeDownloadCancelled as exc:
+        desktop_diagnostics.record(
+            DATA_DIR,
+            "runtime_install_cancelled",
+            operation=str(operation),
+            code="cancelled",
+            message="NVIDIA runtime download cancelled by the user",
+        )
         return _error(request_id, "cancelled", str(exc))
     except KeyError as exc:
+        _record_dispatch_failure(operation, "invalid_input", exc)
         return _error(request_id, "invalid_input", f"Missing field: {exc.args[0]}")
     except FileNotFoundError as exc:
+        _record_dispatch_failure(operation, "not_found", exc)
         return _error(request_id, "not_found", str(exc))
     except ValueError as exc:
+        _record_dispatch_failure(operation, "invalid_input", exc)
         return _error(request_id, "invalid_input", str(exc))
     except RuntimeError as exc:
+        _record_dispatch_failure(operation, "operation_failed", exc)
         return _error(request_id, "operation_failed", str(exc))
     except Exception as exc:
+        _record_dispatch_failure(operation, "internal_error", exc)
         print(
             f"[tts-mcp] desktop operation failed: {type(exc).__name__}: {exc}",
             file=sys.stderr,
@@ -696,6 +791,7 @@ def run_protocol(
     active: dict[str, threading.Event] = {}
     active_preparations: set[str] = set()
     active_seeds: set[str] = set()
+    active_runtime_installs: set[str] = set()
     workers: set[threading.Thread] = set()
     write_lock = threading.Lock()
 
@@ -733,12 +829,17 @@ def run_protocol(
             else:
                 write(_error(request_id, "not_found", "No active operation for request"))
             continue
-        if operation in {"prepare_model", "seed_vieneu_voices"}:
+        if operation in {"prepare_model", "seed_vieneu_voices", "install_nvidia_runtime"}:
             provider_id = request.get("provider") if operation == "prepare_model" else None
             if not isinstance(provider_id, str) or provider_id not in {"omnivoice", "vieneu"}:
                 provider_id = None
             if operation == "prepare_model" and active_seeds:
                 write(_error(request_id, "busy", "VieNeu voice seeding is already running"))
+                continue
+            if operation == "install_nvidia_runtime" and active_runtime_installs:
+                write(
+                    _error(request_id, "busy", "An NVIDIA runtime installation is already running")
+                )
                 continue
             if provider_id is not None:
                 if provider_id in active_preparations:
@@ -755,6 +856,8 @@ def run_protocol(
             active[request_id] = cancel_event
             if operation == "seed_vieneu_voices":
                 active_seeds.add(request_id)
+            if operation == "install_nvidia_runtime":
+                active_runtime_installs.add(request_id)
 
             def run_long_operation(
                 request=request,
@@ -777,6 +880,7 @@ def run_protocol(
                     if provider_id is not None:
                         active_preparations.discard(provider_id)
                     active_seeds.discard(request_id)
+                    active_runtime_installs.discard(request_id)
                     workers.discard(threading.current_thread())
 
             worker = threading.Thread(target=run_long_operation, daemon=True)
@@ -790,6 +894,33 @@ def run_protocol(
 
 
 def main() -> None:
+    if sys.argv[1:] == ["--runtime-check"]:
+        raise SystemExit(_runtime_check())
+    runtime_path, fallback_reason = desktop_runtime.select(
+        DATA_DIR, os.environ.get("TTS_MCP_APP_VERSION")
+    )
+    if runtime_path:
+        desktop_diagnostics.record(
+            DATA_DIR,
+            "runtime_cuda_selected",
+            code="cuda",
+            message="Verified optional NVIDIA runtime selected",
+        )
+        env = {**os.environ, "TTS_MCP_ACTIVE_RUNTIME": "cuda"}
+        audio_cpp_path = VieNeuProvider(DATA_DIR)._audio_cpp_path()
+        if audio_cpp_path:
+            env["TTS_MCP_AUDIOCPP_PATH"] = audio_cpp_path
+        try:
+            os.execve(runtime_path, [str(runtime_path)], env)
+        except OSError as exc:
+            fallback_reason = f"NVIDIA runtime could not start: {type(exc).__name__}"
+    if fallback_reason:
+        desktop_diagnostics.record(
+            DATA_DIR,
+            "runtime_cpu_fallback",
+            code="cpu",
+            message=fallback_reason,
+        )
     run_protocol(sys.stdin, sys.stdout, get_engine(), VieNeuProvider(DATA_DIR))
 
 

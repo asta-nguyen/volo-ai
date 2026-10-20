@@ -2,8 +2,11 @@
 
 ## Changes
 
+- [CPU-default Linux packages with optional NVIDIA runtime](changes/2026-10-19-linux-optional-nvidia-runtime/design.md) — [tasks](changes/2026-10-19-linux-optional-nvidia-runtime/tasks.md)
+
 ## Archived changes
 
+- [Volo AI Website and Downloads](changes/archive/2026-10-18-web-download-site/design.md) — [tasks](changes/archive/2026-10-18-web-download-site/tasks.md)
 - [Desktop Release Target and Build Corrections](changes/archive/2026-10-18-desktop-release-build-fixes/design.md) — [tasks](changes/archive/2026-10-18-desktop-release-build-fixes/tasks.md), [decisions](changes/archive/2026-10-18-desktop-release-build-fixes/decisions.md)
 - [Tagged Multi-Platform Desktop Release Workflow](changes/archive/2026-10-13-desktop-release-workflow/design.md) — [tasks](changes/archive/2026-10-13-desktop-release-workflow/tasks.md)
 - [MCP VieNeu sampler config](changes/archive/2026-10-16-mcp-vieneu-config/delta.md)
