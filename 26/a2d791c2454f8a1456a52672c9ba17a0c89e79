@@ -1,0 +1,21 @@
+apps/web/package.json
+  s_b1307d9fa25264::t_63b0a79e34c3e2 15
+apps/web/package-lock.json
+  s_b1307d9fa25264::t_e0963b9cdf6781 11,1451-1453,1466-1468
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "26a2d791c2454f8a1456a52672c9ba17a0c89e79",
+  "prompts": {},
+  "sessions": {
+    "s_b1307d9fa25264": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "brave-sidecar",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
