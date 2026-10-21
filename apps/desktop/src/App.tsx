@@ -27,7 +27,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Field, FieldGroup, FieldLabel, FieldSet, FieldLegend } from "@/components/ui/field";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldSet,
+  FieldLegend,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -64,6 +71,7 @@ import {
   Logs,
   Monitor,
   Moon,
+  Pencil,
   Play,
   Plus,
   RotateCcw,
@@ -89,6 +97,7 @@ import {
   type ProviderId,
   type ProviderStatus,
   type ProgressEvent,
+  type RenameAudioHistoryResult,
   type RequestLog,
   type SeedVieNeuResult,
   type StatusResult,
@@ -2029,9 +2038,11 @@ function AudioHistoryView({
   isLoadingMore,
   error,
   deletingFileName,
+  renamingFileName,
   onRetry,
   onLoadMore,
   onDelete,
+  onRename,
 }: {
   copy: UiCopy;
   appLanguage: AppLanguage;
@@ -2042,13 +2053,65 @@ function AudioHistoryView({
   isLoadingMore: boolean;
   error: string | null;
   deletingFileName: string | null;
+  renamingFileName: string | null;
   onRetry: () => void;
   onLoadMore: () => void;
   onDelete: (fileName: string) => void;
+  onRename: (fileName: string, newName: string) => Promise<void>;
 }) {
   const [confirmDeleteFileName, setConfirmDeleteFileName] = useState<string | null>(null);
+  const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [copiedFileName, setCopiedFileName] = useState<string | null>(null);
+  const [copyPathFailed, setCopyPathFailed] = useState(false);
   const confirmedItem = items.find((item) => item.id === confirmDeleteFileName);
+  const isRenaming = renameTargetId !== null && renamingFileName === renameTargetId;
   const locale = appLanguage === "vi" ? "vi-VN" : "en-US";
+
+  function openRenameDialog(item: AudioHistoryItem) {
+    setRenameTargetId(item.id);
+    setRenameDraft(item.id.replace(/\.[^.]+$/, ""));
+    setRenameError(null);
+  }
+
+  function closeRenameDialog() {
+    setRenameTargetId(null);
+    setRenameError(null);
+  }
+
+  async function submitRename() {
+    if (!renameTargetId) return;
+    const stem = renameDraft.trim();
+    const currentStem = renameTargetId.replace(/\.[^.]+$/, "");
+    if (!stem) {
+      setRenameError(copy.audioHistoryRenameInvalid);
+      return;
+    }
+    if (stem === currentStem) {
+      closeRenameDialog();
+      return;
+    }
+    try {
+      await onRename(renameTargetId, stem);
+      closeRenameDialog();
+    } catch (reason) {
+      setRenameError(reason instanceof Error ? reason.message : copy.audioHistoryRenameFailed);
+    }
+  }
+
+  async function copyAudioPath(item: AudioHistoryItem) {
+    try {
+      await navigator.clipboard.writeText(item.audio_path);
+      setCopyPathFailed(false);
+      setCopiedFileName(item.id);
+      window.setTimeout(() => {
+        setCopiedFileName((current) => (current === item.id ? null : current));
+      }, 2000);
+    } catch {
+      setCopyPathFailed(true);
+    }
+  }
 
   return (
     <div>
@@ -2079,6 +2142,12 @@ function AudioHistoryView({
       {error && (
         <div className="mb-5">
           <ErrorMessage>{error}</ErrorMessage>
+        </div>
+      )}
+
+      {copyPathFailed && (
+        <div className="mb-5">
+          <ErrorMessage>{copy.copyAudioPathFailed}</ErrorMessage>
         </div>
       )}
 
@@ -2145,7 +2214,7 @@ function AudioHistoryView({
                       </p>
                     )}
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
                     <InlineAudioPreview
                       src={convertFileSrc(item.audio_path)}
                       label={copy.previewAudio}
@@ -2154,10 +2223,44 @@ function AudioHistoryView({
                     <Button
                       type="button"
                       variant="ghost"
+                      size="sm"
+                      className="h-8 gap-1.5 px-2.5 text-xs"
+                      aria-label={`${copy.audioHistoryRename}: ${item.id}`}
+                      title={copy.audioHistoryRename}
+                      disabled={Boolean(deletingFileName) || Boolean(renamingFileName)}
+                      onClick={() => openRenameDialog(item)}
+                    >
+                      <Pencil className="size-3.5" />
+                      <span>{copy.audioHistoryRename}</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 gap-1.5 px-2.5 text-xs text-(--muted-foreground) hover:text-(--foreground)"
+                      aria-label={`${copy.copyAudioPath}: ${item.id}`}
+                      title={copiedFileName === item.id ? copy.copied : copy.copyAudioPath}
+                      onClick={() => void copyAudioPath(item)}
+                    >
+                      {copiedFileName === item.id ? (
+                        <>
+                          <Check className="size-3.5 text-(--success)" />
+                          <span className="text-(--success)">{copy.copied}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="size-3.5" />
+                          <span>{copy.copyAudioPath}</span>
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
                       size="icon"
                       aria-label={`${copy.audioHistoryDelete}: ${item.id}`}
                       title={copy.audioHistoryDelete}
-                      disabled={Boolean(deletingFileName)}
+                      disabled={Boolean(deletingFileName) || Boolean(renamingFileName)}
                       onClick={() => setConfirmDeleteFileName(item.id)}
                     >
                       <Trash2 className="size-4 text-(--destructive)" />
@@ -2194,6 +2297,60 @@ function AudioHistoryView({
         }}
         busy={deletingFileName === confirmDeleteFileName}
       />
+
+      <AlertDialog
+        open={Boolean(renameTargetId)}
+        onOpenChange={(open) => {
+          if (!open) closeRenameDialog();
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{copy.audioHistoryRenameTitle}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {copy.audioHistoryRenameDescription}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Field>
+            <FieldLabel htmlFor="audio-history-rename">
+              {copy.audioHistoryRenameLabel}
+            </FieldLabel>
+            <Input
+              id="audio-history-rename"
+              value={renameDraft}
+              disabled={isRenaming}
+              autoFocus
+              onChange={(event) => {
+                setRenameDraft(event.target.value);
+                setRenameError(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void submitRename();
+                }
+              }}
+            />
+            {renameTargetId && (
+              <p className="text-xs text-(--muted-foreground)">
+                {renameTargetId.slice(renameTargetId.lastIndexOf("."))}
+              </p>
+            )}
+            {renameError && <FieldError>{renameError}</FieldError>}
+          </Field>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isRenaming}>{copy.cancel}</AlertDialogCancel>
+            <AlertDialogAction
+              type="button"
+              disabled={isRenaming}
+              onClick={() => void submitRename()}
+            >
+              {isRenaming && <LoaderCircle className="size-4 animate-spin" />}
+              {copy.audioHistoryRename}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -3025,6 +3182,7 @@ function App() {
   const [refAudio, setRefAudio] = useState<string | null>(null);
   const [refText, setRefText] = useState("");
   const [deletingAudioFile, setDeletingAudioFile] = useState<string | null>(null);
+  const [renamingAudioFile, setRenamingAudioFile] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [isCancellingSeed, setIsCancellingSeed] = useState(false);
   const [seedProgress, setSeedProgress] = useState<ProgressEvent | null>(null);
@@ -3240,16 +3398,43 @@ function App() {
       }
     },
   });
+  const renameHistoryMutation = useMutation({
+    mutationFn: (request: { fileName: string; newName: string }) =>
+      client.request<RenameAudioHistoryResult>({
+        type: "rename_audio_history",
+        file_name: request.fileName,
+        new_name: request.newName,
+      }),
+    onSuccess: async (response, request) => {
+      await queryClient.resetQueries({ queryKey: AUDIO_HISTORY_QUERY_KEY, exact: true });
+      setTakes((current) =>
+        current.map((take) =>
+          fileName(take.audioPath) === request.fileName
+            ? { ...take, audioPath: response.audio_path }
+            : take,
+        ),
+      );
+      setResult((current) =>
+        current && fileName(current.audio_path) === request.fileName
+          ? { ...current, audio_path: response.audio_path }
+          : current,
+      );
+    },
+  });
   const historyLoadError = historyQuery.error
     ? historyQuery.error instanceof Error
       ? `${copy.audioHistoryLoadFailed}: ${historyQuery.error.message}`
       : copy.audioHistoryLoadFailed
     : null;
-  const audioHistoryError = deleteHistoryMutation.error
-    ? deleteHistoryMutation.error instanceof Error
-      ? `${copy.audioHistoryDeleteFailed}: ${deleteHistoryMutation.error.message}`
-      : copy.audioHistoryDeleteFailed
-    : historyLoadError;
+  const audioHistoryError = renameHistoryMutation.error
+    ? renameHistoryMutation.error instanceof Error
+      ? `${copy.audioHistoryRenameFailed}: ${renameHistoryMutation.error.message}`
+      : copy.audioHistoryRenameFailed
+    : deleteHistoryMutation.error
+      ? deleteHistoryMutation.error instanceof Error
+        ? `${copy.audioHistoryDeleteFailed}: ${deleteHistoryMutation.error.message}`
+        : copy.audioHistoryDeleteFailed
+      : historyLoadError;
   const isPreparing = preparingProviders.length > 0;
   const isSavingProfile = saveProfileMutation.isPending;
   const isImportingVoice = importVoiceMutation.isPending;
@@ -3472,12 +3657,14 @@ function App() {
 
   async function refreshAudioHistory() {
     deleteHistoryMutation.reset();
+    renameHistoryMutation.reset();
     await queryClient.resetQueries({ queryKey: AUDIO_HISTORY_QUERY_KEY, exact: true });
   }
 
   async function loadMoreAudioHistory() {
     if (!historyQuery.hasNextPage || historyQuery.isFetchingNextPage) return;
     deleteHistoryMutation.reset();
+    renameHistoryMutation.reset();
     await historyQuery.fetchNextPage();
   }
 
@@ -3485,6 +3672,7 @@ function App() {
     if (nextView === view) return;
     if (nextView === "history") {
       deleteHistoryMutation.reset();
+      renameHistoryMutation.reset();
       queryClient.removeQueries({ queryKey: AUDIO_HISTORY_QUERY_KEY, exact: true });
     }
     setView(nextView);
@@ -3966,6 +4154,15 @@ function App() {
     }
   }
 
+  async function renameAudioHistory(fileName: string, newName: string) {
+    setRenamingAudioFile(fileName);
+    try {
+      await renameHistoryMutation.mutateAsync({ fileName, newName });
+    } finally {
+      setRenamingAudioFile(null);
+    }
+  }
+
   function useProfile(name: string) {
     const profile = voices.find((voice) => voice.name === name);
     if (provider === "vieneu" && profile?.kind === "design") {
@@ -4187,9 +4384,11 @@ function App() {
                     isLoadingMore={isLoadingMoreAudioHistory}
                     error={audioHistoryError}
                     deletingFileName={deletingAudioFile}
+                    renamingFileName={renamingAudioFile}
                     onRetry={() => void refreshAudioHistory()}
                     onLoadMore={() => void loadMoreAudioHistory()}
                     onDelete={(fileName) => void deleteAudioHistory(fileName)}
+                    onRename={renameAudioHistory}
                   />
                 ) : view === "profiles" ? (
                   <VoiceProfilesView

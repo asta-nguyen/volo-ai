@@ -1367,6 +1367,19 @@ class Engine:
                     )
                 return cursor.rowcount > 0
 
+    @staticmethod
+    def rename_audio_history(old_file_name: str, new_file_name: str) -> bool:
+        old_file_name = _validate_audio_history_file_name(old_file_name)
+        new_file_name = _validate_audio_history_file_name(new_file_name)
+        with _STORAGE_LOCK:
+            with closing(Engine._open_storage()) as connection:
+                with connection:
+                    cursor = connection.execute(
+                        "UPDATE audio_history SET file_name = ? WHERE file_name = ?",
+                        (new_file_name, old_file_name),
+                    )
+                return cursor.rowcount > 0
+
 
 # Module-level convenience
 def get_engine() -> Engine:

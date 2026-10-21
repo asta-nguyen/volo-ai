@@ -149,6 +149,11 @@ export type AudioHistoryPage = {
   next_cursor: AudioHistoryCursor | null;
 };
 
+export type RenameAudioHistoryResult = {
+  file_name: string;
+  audio_path: string;
+};
+
 export class SidecarError extends Error {
   constructor(
     public code: string,

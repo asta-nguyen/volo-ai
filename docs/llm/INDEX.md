@@ -50,9 +50,10 @@ but do not yet have dedicated feature pages:
   Claude Code, Claude Desktop, Cursor, VS Code / GitHub Copilot, and Zed,
   including the app data path; Settings is also reachable from the first-run
   setup screen.
-- [ ] Desktop audio history — the app lists and plays WAV/MP3 files from its
-  output directory, including older files without synthesis metadata, confirms
-  before deletion, and keeps the five latest session takes in Workspace.
+- [x] Desktop audio history — the app lists and plays WAV/MP3 files from its
+  output directory, including older files without synthesis metadata; it can
+  rename an output while preserving its extension and metadata, copy its local
+  path, confirm deletion, and keep the five latest session takes in Workspace.
 - [ ] CLI generation and profile management — `tts_mcp/cli.py`.
 - [x] MCP provider setup and voice generation — `status` and `prepare_model`
   report/prepare OmniVoice and VieNeu; `speak` and `clone` select VieNeu

@@ -770,6 +770,75 @@ class EngineTests(unittest.TestCase):
                         Engine.record_audio_history(**{**valid, key: value})
                 self.assertEqual(Engine.list_audio_history(), [])
 
+    def test_audio_history_rename_preserves_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.storage_patches(Path(tmp)):
+                entry = {
+                    "file_name": "take.wav",
+                    "provider": "omnivoice",
+                    "voice_name": "auto",
+                    "format": "wav",
+                    "text": "hello",
+                    "created_at": "2026-10-08T12:00:00+00:00",
+                }
+                Engine.record_audio_history(**entry)
+
+                self.assertTrue(Engine.rename_audio_history("take.wav", "renamed.wav"))
+                self.assertEqual(
+                    Engine.list_audio_history(), [{**entry, "file_name": "renamed.wav"}]
+                )
+                self.assertFalse(Engine.rename_audio_history("take.wav", "other.wav"))
+                self.assertEqual(
+                    Engine.list_audio_history(), [{**entry, "file_name": "renamed.wav"}]
+                )
+
+    def test_audio_history_rename_rejects_invalid_names(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.storage_patches(Path(tmp)):
+                entry = {
+                    "file_name": "take.wav",
+                    "provider": "omnivoice",
+                    "voice_name": "auto",
+                    "format": "wav",
+                    "text": "hello",
+                    "created_at": "2026-10-08T12:00:00+00:00",
+                }
+                Engine.record_audio_history(**entry)
+
+                for old_name, new_name in (
+                    ("../take.wav", "renamed.wav"),
+                    ("take.flac", "renamed.wav"),
+                    ("take.wav", "../renamed.wav"),
+                    ("take.wav", "renamed.flac"),
+                    ("take.wav", ""),
+                    ("take.wav", "nested/renamed.wav"),
+                ):
+                    with self.subTest(old=old_name, new=new_name), self.assertRaises(
+                        ValueError
+                    ):
+                        Engine.rename_audio_history(old_name, new_name)
+                self.assertEqual(Engine.list_audio_history(), [entry])
+
+    def test_audio_history_rename_collision_keeps_existing_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.storage_patches(Path(tmp)):
+                base = {
+                    "provider": "omnivoice",
+                    "voice_name": "auto",
+                    "format": "wav",
+                    "text": "hello",
+                    "created_at": "2026-10-08T12:00:00+00:00",
+                }
+                Engine.record_audio_history(file_name="take.wav", **base)
+                Engine.record_audio_history(file_name="taken.wav", **base)
+
+                with self.assertRaises(sqlite3.IntegrityError):
+                    Engine.rename_audio_history("take.wav", "taken.wav")
+                self.assertEqual(
+                    [row["file_name"] for row in Engine.list_audio_history()],
+                    ["take.wav", "taken.wav"],
+                )
+
     def test_save_voice_copies_reference_and_persists_metadata(self):
         engine = Engine()
         engine._model = FakeModel()

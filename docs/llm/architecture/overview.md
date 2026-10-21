@@ -30,9 +30,11 @@ the Python worker as a Tauri sidecar and stores model/audio data locally.
   `src/lib/sidecar.ts` owns the sidecar process connection. Settings offers the
   optional Linux x64 NVIDIA runtime; Logs displays local errors and supports a
   user-triggered redacted diagnostics export.
-- Audio History uses `list_audio_history` and `delete_audio_history` sidecar
-  operations. It plays generated files, includes legacy WAV/MP3 files without
-  synthesis metadata, and asks for confirmation before deleting an output.
+- Audio History uses `list_audio_history`, `rename_audio_history`, and
+  `delete_audio_history` sidecar operations. It plays generated files, includes
+  legacy WAV/MP3 files without synthesis metadata, lets users rename an output
+  while keeping its extension, copies the output's local path, and asks for
+  confirmation before deleting it.
   Workspace separately retains only the five latest takes for the current app
   session; pruning that list does not delete files.
 - `apps/desktop/src/components/ui/` contains source-owned shadcn components
@@ -140,7 +142,7 @@ Desktop provider setup and synthesis are documented in
 | Voice profiles | `Engine.save_voice`, `save_design_voice`, `load_voice_profile`, `load_voice`, `list_voices`, and `delete_voice`; Clone and Design profiles share the desktop library |
 | MCP voice generation | `status`, `prepare_model`, `speak`, `clone`, and `list_voices` expose provider setup, VieNeu presets, and saved Clone/Design or external-reference workflows; MCP shares the app library when configured with the app-data path |
 | Seed profiles | `Engine.import_seed_voices`, the `import_seed_voices` sidecar request, and bundled seed manifests |
-| Audio history | `Engine.record_audio_history` and `list_audio_history`/`delete_audio_history` sidecar operations index files from `outputs`; React plays files and confirms deletion |
+| Audio history | `Engine.record_audio_history` and `list_audio_history`/`rename_audio_history`/`delete_audio_history` sidecar operations index files from `outputs`; React plays and renames files, copies their local path, and confirms deletion |
 | Desktop settings | `App.tsx` and `i18n.ts` expose General, Model, Storage, and MCP tabs; Linux x64 Model settings manage the optional NVIDIA sidecar, and Logs exports local diagnostics; MCP generates copyable client-specific setup for Codex CLI, Claude Code, Claude Desktop, Cursor, VS Code / GitHub Copilot, and Zed using the app-data path |
 | Desktop shell | React UI, Tauri plugins, JSONL sidecar, optional Linux CUDA worker, and target-matched audio.cpp CLI |
 | Public download site | `apps/web` serves English and Vietnamese product/download pages, resolves validated latest stable release assets on the Node.js server, and links directly to GitHub |
@@ -153,8 +155,11 @@ assets use `models/omnivoice`; VieNeu assets and speaker-embedding cache use
 MCP writes to each request's `output_path`. Audio History discovers regular
 WAV/MP3 files directly in `outputs` and stores synthesis metadata in the
 SQLite `audio_history` table using only each file's basename. Files without a
-metadata row remain visible with their file date; deleting a history item
-removes the selected output and its metadata. The SQLite database is `volo.db`.
+metadata row remain visible with their file date. Renaming an item moves the
+output without replacing an occupied filename and updates only its basename in
+`audio_history`, preserving the synthesis metadata; Copy path copies its local
+absolute path. Deleting a history item removes the selected output and its
+metadata. The SQLite database is `volo.db`.
 Voice metadata lives in `voice_profiles` and
 installed bundled seeds in `app_seeds`; Clone profiles keep copied reference
 audio and clone prompts under `voices/<profile-name>/`, while Design profiles
