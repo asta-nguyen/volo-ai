@@ -1,0 +1,44 @@
+src/tts_mcp/desktop.py
+  s_39270ae3bb7555::t_7a79b28e6529a7 20,43-67,916-924,1077-1082
+tests/test_desktop.py
+  s_39270ae3bb7555::t_7a79b28e6529a7 2154-2361
+docs/desktop-local-api.md
+  s_39270ae3bb7555::t_7a79b28e6529a7 1-68
+docs/agent-devkit/INDEX.md
+  s_39270ae3bb7555::t_7a79b28e6529a7 10
+docs/llm/architecture/overview.md
+  s_39270ae3bb7555::t_7a79b28e6529a7 22-23,101-104,149,205,210,238
+docs/llm/INDEX.md
+  s_39270ae3bb7555::t_7a79b28e6529a7 68-71,86,88,107
+docs/agent-devkit/changes/archive/2026-10-21-3-desktop-local-rest-api/design.md
+  s_39270ae3bb7555::t_7a79b28e6529a7 1-66
+tests/test_api.py
+  s_39270ae3bb7555::t_7a79b28e6529a7 1-506
+src/tts_mcp/api.py
+  s_39270ae3bb7555::t_7a79b28e6529a7 1-327
+apps/desktop/src/App.tsx
+  s_39270ae3bb7555::t_7a79b28e6529a7 66,97,187,1420-1425,1461-1466,1481,1484,1504-1511,1969-2056,3473-3497,4488-4493
+apps/desktop/src/lib/sidecar.ts
+  s_39270ae3bb7555::t_7a79b28e6529a7 157-163,346-356
+  s_39270ae3bb7555::t_da500541dd3761 357
+apps/desktop/src/lib/i18n.ts
+  s_39270ae3bb7555::t_7a79b28e6529a7 291-310,727-746,1157-1173
+docs/agent-devkit/changes/archive/2026-10-21-3-desktop-local-rest-api/tasks.md
+  s_39270ae3bb7555::t_7a79b28e6529a7 1-92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f2613635a7b13c44c350fcbec1595a3d85f6d0d5",
+  "prompts": {},
+  "sessions": {
+    "s_39270ae3bb7555": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15a40-3655-7e73-98c0-e06c51fe4bf7",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
