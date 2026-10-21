@@ -50,4 +50,4 @@ Let users rename generated audio files from Audio History and copy the exact loc
 
 ## Related context
 
-- [Architecture overview](../../../llm/architecture/overview.md)
+- [Architecture overview](../../../../llm/architecture/overview.md)

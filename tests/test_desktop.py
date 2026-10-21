@@ -751,6 +751,694 @@ class DesktopWorkerTests(unittest.TestCase):
             self.assertTrue(audio.exists())
             delete_metadata.assert_not_called()
 
+    def test_rename_audio_history_renames_file_and_updates_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(
+                    Engine, "rename_audio_history", return_value=True
+                ) as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "bản ghi mới",
+                    },
+                    Mock(),
+                )
+
+            self.assertTrue(response["ok"])
+            self.assertEqual(response["result"]["file_name"], "bản ghi mới.wav")
+            self.assertEqual(
+                Path(response["result"]["audio_path"]),
+                (output_dir / "bản ghi mới.wav").resolve(),
+            )
+            self.assertFalse(audio.exists())
+            self.assertTrue((output_dir / "bản ghi mới.wav").is_file())
+            rename_metadata.assert_called_once_with("take.wav", "bản ghi mới.wav")
+
+    def test_rename_audio_history_legacy_file_stays_file_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "legacy.mp3"
+            audio.write_bytes(b"audio")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(
+                    Engine, "rename_audio_history", return_value=False
+                ) as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "legacy.mp3",
+                        "new_name": "renamed",
+                    },
+                    Mock(),
+                )
+
+            self.assertTrue(response["ok"])
+            self.assertEqual(response["result"]["file_name"], "renamed.mp3")
+            self.assertFalse(audio.exists())
+            self.assertTrue((output_dir / "renamed.mp3").is_file())
+            rename_metadata.assert_called_once_with("legacy.mp3", "renamed.mp3")
+
+    def test_rename_audio_history_rejects_invalid_names_and_traversal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output_dir = root / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            outside = root / "outside.wav"
+            outside.write_bytes(b"keep")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(Engine, "rename_audio_history") as rename_metadata,
+            ):
+                for new_name in (
+                    "",
+                    "   ",
+                    ".",
+                    "..",
+                    "nested/take",
+                    "nested\\take",
+                    "take.",
+                    "CON",
+                    "lpt3",
+                    "ta*ke",
+                    'ta"ke',
+                    "ta?ke",
+                    "ta|ke",
+                    "ta\nke",
+                    "take\x7f",
+                ):
+                    with self.subTest(new_name=new_name):
+                        response = dispatch_request(
+                            {
+                                "id": "rename",
+                                "type": "rename_audio_history",
+                                "file_name": "take.wav",
+                                "new_name": new_name,
+                            },
+                            Mock(),
+                        )
+                        self.assertFalse(response["ok"])
+                        self.assertEqual(response["error"]["code"], "invalid_input")
+                traversal = dispatch_request(
+                    {
+                        "id": "traversal",
+                        "type": "rename_audio_history",
+                        "file_name": "../outside.wav",
+                        "new_name": "renamed",
+                    },
+                    Mock(),
+                )
+
+            self.assertFalse(traversal["ok"])
+            self.assertTrue(audio.exists())
+            self.assertTrue(outside.exists())
+            self.assertEqual(sorted(path.name for path in output_dir.iterdir()), ["take.wav"])
+            rename_metadata.assert_not_called()
+
+    def test_rename_audio_history_rejects_symlink_missing_and_collision(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output_dir = root / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            taken = output_dir / "taken.wav"
+            taken.write_bytes(b"taken")
+            outside = root / "outside.wav"
+            outside.write_bytes(b"keep")
+            link = output_dir / "link.wav"
+            try:
+                link.symlink_to(outside)
+            except OSError:
+                self.skipTest("symlink creation is unavailable")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(Engine, "rename_audio_history") as rename_metadata,
+            ):
+                symlink = dispatch_request(
+                    {
+                        "id": "symlink",
+                        "type": "rename_audio_history",
+                        "file_name": "link.wav",
+                        "new_name": "renamed",
+                    },
+                    Mock(),
+                )
+                missing = dispatch_request(
+                    {
+                        "id": "missing",
+                        "type": "rename_audio_history",
+                        "file_name": "missing.wav",
+                        "new_name": "renamed",
+                    },
+                    Mock(),
+                )
+                collision = dispatch_request(
+                    {
+                        "id": "collision",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "taken",
+                    },
+                    Mock(),
+                )
+
+            self.assertFalse(symlink["ok"])
+            self.assertFalse(missing["ok"])
+            self.assertEqual(missing["error"]["code"], "not_found")
+            self.assertFalse(collision["ok"])
+            self.assertEqual(collision["error"]["code"], "invalid_input")
+            self.assertEqual(audio.read_bytes(), b"audio")
+            self.assertEqual(taken.read_bytes(), b"taken")
+            self.assertTrue(outside.exists())
+            rename_metadata.assert_not_called()
+
+    def test_rename_audio_history_file_failure_keeps_source_and_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch("os.link", side_effect=OSError("disk error")),
+                patch.object(Engine, "rename_audio_history") as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "renamed",
+                    },
+                    Mock(),
+                )
+
+            self.assertFalse(response["ok"])
+            self.assertEqual(response["error"]["code"], "operation_failed")
+            self.assertTrue(audio.exists())
+            rename_metadata.assert_not_called()
+
+    def test_rename_audio_history_metadata_failure_restores_filename(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(
+                    Engine, "rename_audio_history", side_effect=OSError("database error")
+                ) as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "renamed",
+                    },
+                    Mock(),
+                )
+
+            self.assertFalse(response["ok"])
+            self.assertEqual(response["error"]["code"], "operation_failed")
+            self.assertTrue(audio.exists())
+            self.assertFalse((output_dir / "renamed.wav").exists())
+            rename_metadata.assert_called_once_with("take.wav", "renamed.wav")
+
+    def test_rename_audio_history_restore_failure_reports_actual_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            original_link = os.link
+
+            def fail_restore(source, target, *args, **kwargs):
+                if Path(target).name == "take.wav":
+                    raise OSError("restore denied")
+                return original_link(source, target, *args, **kwargs)
+
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch("os.link", fail_restore),
+                patch.object(
+                    Engine, "rename_audio_history", side_effect=OSError("database error")
+                ),
+                patch.object(Engine, "list_audio_history", return_value=[]),
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "renamed",
+                    },
+                    Mock(),
+                )
+                history = dispatch_request(
+                    {"id": "history", "type": "list_audio_history"}, Mock()
+                )
+
+            self.assertFalse(response["ok"])
+            self.assertEqual(response["error"]["code"], "operation_failed")
+            self.assertIn("renamed.wav", response["error"]["message"])
+            self.assertFalse(audio.exists())
+            renamed = output_dir / "renamed.wav"
+            self.assertTrue(renamed.is_file())
+            self.assertIn("renamed.wav", [item["id"] for item in history["result"]["items"]])
+
+    def test_rename_audio_history_same_name_leaves_file_untouched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch("os.link") as link,
+                patch.object(
+                    Engine, "rename_audio_history", return_value=True
+                ) as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": " take ",
+                    },
+                    Mock(),
+                )
+
+            self.assertTrue(response["ok"])
+            self.assertEqual(response["result"]["file_name"], "take.wav")
+            self.assertEqual(audio.read_bytes(), b"audio")
+            self.assertEqual([path.name for path in output_dir.iterdir()], ["take.wav"])
+            link.assert_not_called()
+            rename_metadata.assert_called_once_with("take.wav", "take.wav")
+
+    def test_rename_audio_history_target_taken_at_link_boundary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            original_link = os.link
+
+            def occupying_link(source, target, *args, **kwargs):
+                Path(target).write_bytes(b"existing output")
+                return original_link(source, target, *args, **kwargs)
+
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch("os.link", occupying_link),
+                patch.object(Engine, "rename_audio_history") as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "taken",
+                    },
+                    Mock(),
+                )
+
+            self.assertFalse(response["ok"])
+            self.assertEqual(response["error"]["code"], "invalid_input")
+            self.assertEqual(audio.read_bytes(), b"audio")
+            self.assertEqual((output_dir / "taken.wav").read_bytes(), b"existing output")
+            rename_metadata.assert_not_called()
+
+    def test_rename_audio_history_restore_target_taken_at_link_boundary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            original_link = os.link
+
+            def occupying_link(source, target, *args, **kwargs):
+                if Path(target).name == "take.wav":
+                    Path(target).write_bytes(b"existing output")
+                return original_link(source, target, *args, **kwargs)
+
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch("os.link", occupying_link),
+                patch.object(
+                    Engine, "rename_audio_history", side_effect=OSError("database error")
+                ),
+                patch.object(Engine, "list_audio_history", return_value=[]),
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "renamed",
+                    },
+                    Mock(),
+                )
+                history = dispatch_request(
+                    {"id": "history", "type": "list_audio_history"}, Mock()
+                )
+
+            self.assertFalse(response["ok"])
+            self.assertEqual(response["error"]["code"], "operation_failed")
+            self.assertIn("renamed.wav", response["error"]["message"])
+            self.assertEqual((output_dir / "take.wav").read_bytes(), b"existing output")
+            self.assertEqual((output_dir / "renamed.wav").read_bytes(), b"audio")
+            ids = [item["id"] for item in history["result"]["items"]]
+            self.assertIn("renamed.wav", ids)
+            self.assertIn("take.wav", ids)
+
+    def test_rename_audio_history_rejects_reserved_names_with_suffixes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(Engine, "rename_audio_history") as rename_metadata,
+            ):
+                for device in sorted(desktop_module._WINDOWS_DEVICE_NAMES):
+                    for new_name in (
+                        device,
+                        device.lower(),
+                        f"{device}.ext",
+                        f"{device.lower()}.ext",
+                    ):
+                        with self.subTest(new_name=new_name):
+                            response = dispatch_request(
+                                {
+                                    "id": "rename",
+                                    "type": "rename_audio_history",
+                                    "file_name": "take.wav",
+                                    "new_name": new_name,
+                                },
+                                Mock(),
+                            )
+                            self.assertFalse(response["ok"])
+                            self.assertEqual(
+                                response["error"]["code"], "invalid_input"
+                            )
+
+            self.assertEqual(
+                [path.name for path in output_dir.iterdir()], ["take.wav"]
+            )
+            rename_metadata.assert_not_called()
+
+    def test_rename_audio_history_case_only_rename_succeeds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(
+                    Engine, "rename_audio_history", return_value=True
+                ) as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "TAKE",
+                    },
+                    Mock(),
+                )
+
+            self.assertTrue(response["ok"])
+            self.assertEqual(response["result"]["file_name"], "TAKE.wav")
+            self.assertEqual(
+                [path.name for path in output_dir.iterdir()], ["TAKE.wav"]
+            )
+            self.assertEqual((output_dir / "TAKE.wav").read_bytes(), b"audio")
+            rename_metadata.assert_called_once_with("take.wav", "TAKE.wav")
+
+    def test_rename_audio_history_case_only_metadata_failure_restores_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(
+                    Engine, "rename_audio_history", side_effect=OSError("database error")
+                ) as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "TAKE",
+                    },
+                    Mock(),
+                )
+
+            self.assertFalse(response["ok"])
+            self.assertEqual(response["error"]["code"], "operation_failed")
+            self.assertEqual(
+                [path.name for path in output_dir.iterdir()], ["take.wav"]
+            )
+            self.assertEqual(audio.read_bytes(), b"audio")
+            rename_metadata.assert_called_once_with("take.wav", "TAKE.wav")
+
+    def test_rename_audio_history_case_only_temp_collision_preserves_contents(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            try:
+                case_variant = os.path.samefile(audio, output_dir / "TAKE.wav")
+            except OSError:
+                case_variant = False
+            if not case_variant:
+                self.skipTest(
+                    "case-only move requires a case-insensitive filesystem"
+                )
+            original_link = os.link
+            collider = output_dir / f".TAKE.wav.{os.getpid()}.tmp.wav"
+
+            def colliding_link(source, target, *args, **kwargs):
+                if Path(target).name == collider.name:
+                    collider.write_bytes(b"concurrent output")
+                return original_link(source, target, *args, **kwargs)
+
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch("os.link", colliding_link),
+                patch.object(
+                    Engine, "rename_audio_history", return_value=True
+                ) as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "TAKE",
+                    },
+                    Mock(),
+                )
+
+            self.assertTrue(response["ok"])
+            self.assertEqual(response["result"]["file_name"], "TAKE.wav")
+            self.assertEqual(collider.read_bytes(), b"concurrent output")
+            self.assertEqual((output_dir / "TAKE.wav").read_bytes(), b"audio")
+            self.assertEqual(
+                sorted(path.name for path in output_dir.iterdir()),
+                [collider.name, "TAKE.wav"],
+            )
+            rename_metadata.assert_called_once_with("take.wav", "TAKE.wav")
+
+    def test_rename_audio_history_case_only_stranded_temp_stays_discoverable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            try:
+                case_variant = os.path.samefile(audio, output_dir / "TAKE.wav")
+            except OSError:
+                case_variant = False
+            if not case_variant:
+                self.skipTest(
+                    "case-only move requires a case-insensitive filesystem"
+                )
+            original_link = os.link
+
+            def occupying_link(source, target, *args, **kwargs):
+                if Path(target).name == "TAKE.wav":
+                    Path(target).write_bytes(b"concurrent output")
+                return original_link(source, target, *args, **kwargs)
+
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch("os.link", occupying_link),
+                patch.object(Engine, "rename_audio_history") as rename_metadata,
+                patch.object(Engine, "list_audio_history", return_value=[]),
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "TAKE",
+                    },
+                    Mock(),
+                )
+                history = dispatch_request(
+                    {"id": "history", "type": "list_audio_history"}, Mock()
+                )
+
+            self.assertFalse(response["ok"])
+            self.assertEqual(response["error"]["code"], "operation_failed")
+            self.assertEqual((output_dir / "TAKE.wav").read_bytes(), b"concurrent output")
+            stranded = [
+                path
+                for path in output_dir.iterdir()
+                if path.name.endswith(".tmp.wav")
+            ]
+            self.assertEqual(len(stranded), 1)
+            self.assertEqual(stranded[0].read_bytes(), b"audio")
+            self.assertIn(stranded[0].name, response["error"]["message"])
+            self.assertIn(
+                stranded[0].name, [item["id"] for item in history["result"]["items"]]
+            )
+            rename_metadata.assert_not_called()
+
+    def test_rename_audio_history_case_only_rollback_stranded_temp_reports_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            try:
+                case_variant = os.path.samefile(audio, output_dir / "TAKE.wav")
+            except OSError:
+                case_variant = False
+            if not case_variant:
+                self.skipTest(
+                    "case-only move requires a case-insensitive filesystem"
+                )
+            original_link = os.link
+            blocking = {"enabled": False}
+
+            def blocked_link(source, target, *args, **kwargs):
+                if blocking["enabled"] and Path(target).name in {
+                    "take.wav",
+                    "TAKE.wav",
+                }:
+                    raise OSError("link blocked")
+                return original_link(source, target, *args, **kwargs)
+
+            def fail_metadata(*args, **kwargs):
+                blocking["enabled"] = True
+                raise OSError("database error")
+
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch("os.link", blocked_link),
+                patch.object(
+                    Engine, "rename_audio_history", side_effect=fail_metadata
+                ),
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "TAKE",
+                    },
+                    Mock(),
+                )
+
+            self.assertFalse(response["ok"])
+            self.assertEqual(response["error"]["code"], "operation_failed")
+            stranded = [
+                path
+                for path in output_dir.iterdir()
+                if path.name.endswith(".tmp.wav")
+            ]
+            self.assertEqual(len(stranded), 1)
+            self.assertEqual(stranded[0].read_bytes(), b"audio")
+            self.assertIn("could not be restored", response["error"]["message"])
+            self.assertIn(stranded[0].name, response["error"]["message"])
+
+    def test_rename_audio_history_case_only_staged_temp_unlink_failure_succeeds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            try:
+                case_variant = os.path.samefile(audio, output_dir / "TAKE.wav")
+            except OSError:
+                case_variant = False
+            if not case_variant:
+                self.skipTest(
+                    "case-only move requires a case-insensitive filesystem"
+                )
+            original_unlink = Path.unlink
+
+            def staged_unlink(path, *args, **kwargs):
+                if path.name.endswith(".tmp.wav"):
+                    raise OSError("cannot remove staged name")
+                return original_unlink(path, *args, **kwargs)
+
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(Path, "unlink", staged_unlink),
+                patch.object(
+                    Engine, "rename_audio_history", return_value=True
+                ) as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "TAKE",
+                    },
+                    Mock(),
+                )
+
+            self.assertTrue(response["ok"])
+            self.assertEqual(response["result"]["file_name"], "TAKE.wav")
+            self.assertEqual((output_dir / "TAKE.wav").read_bytes(), b"audio")
+            stranded = [
+                path
+                for path in output_dir.iterdir()
+                if path.name.endswith(".tmp.wav")
+            ]
+            self.assertEqual(len(stranded), 1)
+            self.assertEqual(stranded[0].read_bytes(), b"audio")
+            rename_metadata.assert_called_once_with("take.wav", "TAKE.wav")
+
     def test_history_write_failure_keeps_audio_discoverable(self):
         engine = Mock()
         engine.generate.return_value = object()

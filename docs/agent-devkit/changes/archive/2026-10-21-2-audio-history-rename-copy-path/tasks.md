@@ -38,8 +38,8 @@ Change: Validate a WAV/MP3 basename directly under `OUTPUT_DIR`; reject empty, d
 
 Verify: `rtk .venv/bin/python -m unittest discover -s tests -p test_engine.py -v` and `rtk .venv/bin/python -m unittest discover -s tests -p test_desktop.py -v` pass. Cases: recorded item → same metadata under new basename; legacy item → renamed and still file-only; invalid/traversal/symlink/missing/collision → no unrelated file changes; injected metadata failure → original filename restored; injected restore failure → actual new filename remains listable and is reported.
 
-Progress: todo
-Result: none
+Progress: done
+Result: `PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p test_engine.py -v` (33 tests, incl. 3 rename cases) and `PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p test_desktop.py -v` (56 tests, incl. 10 rename cases) — both pass; full suite `PYTHONPATH=src .venv/bin/python -m unittest discover -s tests` (165 tests) and `PYTHONPATH=src .venv/bin/python -m compileall -q src tests` pass. `Engine.rename_audio_history` updates the `audio_history.file_name` primary key while preserving other fields; `_rename_audio_history` validates names, rejects symlinks/traversal/missing sources/collisions, preserves extensions, and moves files through `_move_file_no_overwrite` (same-directory `os.link` + `unlink`), which fails instead of replacing an occupied target; same-name requests skip the move, and metadata failure triggers the same no-overwrite rollback, reporting the surviving name when rollback fails. The `.venv` editable install points at the main checkout, so Python checks run with `PYTHONPATH=src`. Review follow-up: the case-only branch no longer polls `exists()`/`is_symlink()` before `rename()`; it claims each candidate temp name with an exclusive `os.link` (retrying on `FileExistsError`), so a concurrent temp entry can never be overwritten, and the temp name keeps the audio suffix so a file stranded by a failed move and restore stays discoverable by the history scan. New cases `test_rename_audio_history_case_only_temp_collision_preserves_contents` and `test_rename_audio_history_case_only_stranded_temp_stays_discoverable` cover both; `PYTHONPATH=src /Users/nus/projects/tts-mcp/.venv/bin/python -m unittest discover -s tests -p test_desktop.py -v` (61 tests) and `PYTHONPATH=src /Users/nus/projects/tts-mcp/.venv/bin/python -m unittest discover -s tests -p test_engine.py` (33 tests) pass, and `PYTHONPATH=src /Users/nus/projects/tts-mcp/.venv/bin/python -m compileall -q src tests` passes. Second review follow-up: a failed case-only move whose source-name restore also fails now raises an `OSError` carrying the staged `surviving_name` basename in the message, and `_rename_audio_history` reports that basename when a metadata-rollback move strands the file the same way; a staged-temp `unlink` failure after the destination link succeeds no longer fails the move, so metadata still updates while the extra link stays discoverable; `_WINDOWS_DEVICE_NAMES` also rejects CONIN$, CONOUT$, and COM/LPT superscript-1/2/3 names with or without suffixes. Extended the stranded-temp test and added `test_rename_audio_history_case_only_rollback_stranded_temp_reports_name` and `test_rename_audio_history_case_only_staged_temp_unlink_failure_succeeds`; `PYTHONPATH=src /Users/nus/projects/tts-mcp/.venv/bin/python -m unittest discover -s tests -p test_desktop.py -v` (63 tests), the full suite `PYTHONPATH=src /Users/nus/projects/tts-mcp/.venv/bin/python -m unittest discover -s tests` (172 tests), and `compileall -q src tests` pass.
 
 ### Task 2 — [Desktop UI] Rename history items and copy paths
 
@@ -51,8 +51,8 @@ Change: Submit only the new stem and preserve the displayed file extension. On s
 
 Verify: `rtk npm --prefix apps/desktop run build` passes. Manual desktop QA renames an item on a later page and verifies the new name/order, playback, Workspace take/player, metadata display, and copy feedback; a rejected collision leaves the old row and file intact.
 
-Progress: todo
-Result: none
+Progress: done
+Result: `rtk npm --prefix apps/desktop run build` — passed (tsc + vite, pre-existing large-chunk warning). Added typed `RenameAudioHistoryResult` and the `rename_audio_history` request, per-row localized Rename and Copy path actions, a rename dialog preserving the extension, first-page History reset and Workspace take/active-result path updates on success, plus `rename_audio_history` log labels. Expanded manual Tauri QA in an isolated app-data directory with 50 filler rows: renamed a metadata-backed file from the second History page, confirmed pagination reset and that loading more showed the new basename with provider/voice/text preserved, and saw `Copied!` after Copy path. Renaming to an occupied filename displayed the collision error and kept both files; a metadata-free legacy WAV renamed successfully and did not gain an `audio_history` row. Actual model synthesis and Workspace active-take playback were not exercised because the local engine was unavailable; matching Workspace path updates were reviewed in code.
 
 ### Task 3 — [Docs] Update verified Audio History coverage
 
@@ -64,8 +64,8 @@ Change: After Tasks 1–2 pass, update only the existing Audio History behavior 
 
 Verify: Run the `document-wiki` task-update procedure and its wiki validator; confirm every source path exists and the architecture/index links resolve.
 
-Progress: todo
-Result: none
+Progress: done
+Result: Updated `docs/llm/architecture/overview.md` and `docs/llm/INDEX.md` to document History rename, extension and metadata preservation, no-overwrite file moves, and local-path copying. `node .agents/skills/document-wiki/scripts/validate-llm-wiki.mjs .` validated 6 Markdown files and 28 requirements with 0 errors/warnings; `rtk git diff --check` passed.
 
 ## Files inspected, no change
 
