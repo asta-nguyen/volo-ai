@@ -612,6 +612,26 @@ class Engine:
         audio_list = self.model.generate(**kwargs)
         return audio_list[0]  # np.ndarray shape (T,) at 24 kHz
 
+    def transcribe_with_timestamps(self, audio: tuple) -> dict[str, Any]:
+        """Return Whisper timestamped chunks using the loaded ASR pipeline.
+
+        Callers must verify ``model_status()`` first; accessing ``self.model``
+        triggers a lazy load and possible model download. The pipeline is the
+        one already loaded by OmniVoice — no duplicate ASR model is created.
+        """
+        import torch
+
+        pipe = getattr(self.model, "_asr_pipe", None)
+        if pipe is None:
+            raise RuntimeError("The loaded OmniVoice model has no Whisper ASR pipeline")
+        waveform, sample_rate = audio
+        with torch.inference_mode():
+            return pipe(
+                {"array": np.squeeze(np.asarray(waveform)), "sampling_rate": sample_rate},
+                chunk_length_s=30,
+                return_timestamps=True,
+            )
+
     # ── Voice profile management ──────────────────────────────────────
 
     @staticmethod

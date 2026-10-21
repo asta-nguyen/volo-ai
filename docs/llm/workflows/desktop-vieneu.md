@@ -270,7 +270,10 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
 - Reference files are normalized by FFmpeg to mono, 48 kHz PCM WAV in a
   temporary directory. The temporary file is removed after the CLI call.
 - Each VieNeu synthesis starts the bundled or configured CPU `audiocpp_cli`.
-  The desktop release stages the native binary beside the Python sidecar.
+  The desktop release stages the native binary beside the Python sidecar. The
+  frozen sidecar restores pre-launch library-path environment values at
+  startup so spawned helpers such as FFmpeg and `audiocpp_cli` resolve their
+  own libraries instead of the bundled ones.
 - Changed VieNeu sampler fields and an optional seed are passed through the
   request options interface; default sampler values are omitted so the CLI
   keeps its defaults.

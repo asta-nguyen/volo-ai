@@ -5,7 +5,7 @@ import unittest
 import wave
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 
@@ -1020,6 +1020,31 @@ class EngineTests(unittest.TestCase):
                 result = engine.import_seed_voices(str(seed_folder.parent))
                 self.assertEqual(len(result["errors"]), 1)
                 self.assertIn("inside its seed folder", result["errors"][0]["message"])
+
+    def test_transcribe_with_timestamps_reuses_loaded_asr_pipeline(self):
+        engine = Engine()
+        model = Mock()
+        model._asr_pipe.return_value = {
+            "text": "hello",
+            "chunks": [{"text": "hello", "timestamp": (0.0, 1.0)}],
+        }
+        with patch.object(engine, "_model", model):
+            result = engine.transcribe_with_timestamps((np.zeros(1600, dtype=np.float32), 16000))
+        self.assertEqual(result["text"], "hello")
+        model._asr_pipe.assert_called_once()
+        inputs, kwargs = model._asr_pipe.call_args
+        self.assertEqual(kwargs["return_timestamps"], True)
+        self.assertEqual(kwargs["chunk_length_s"], 30)
+        payload = inputs[0]
+        self.assertEqual(payload["sampling_rate"], 16000)
+        self.assertEqual(payload["array"].shape, (1600,))
+
+    def test_transcribe_with_timestamps_requires_loaded_pipeline(self):
+        engine = Engine()
+        model = Mock(spec=["generate"])  # no _asr_pipe attribute
+        with patch.object(engine, "_model", model):
+            with self.assertRaises(RuntimeError):
+                engine.transcribe_with_timestamps((np.zeros(8, dtype=np.float32), 16000))
 
 
 if __name__ == "__main__":

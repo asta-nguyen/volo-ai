@@ -4,6 +4,7 @@
 
 ## Archived changes
 
+- [YouTube-first Video Transcription to SRT (#6)](changes/archive/2026-10-21-facebook-video-srt/design.md) — [tasks](changes/archive/2026-10-21-facebook-video-srt/tasks.md), [wiki delta](changes/archive/2026-10-21-facebook-video-srt/delta.md)
 - [CPU-default Linux packages with optional NVIDIA runtime](changes/archive/2026-10-19-linux-optional-nvidia-runtime/design.md) — [tasks](changes/archive/2026-10-19-linux-optional-nvidia-runtime/tasks.md)
 - [Volo AI Website and Downloads](changes/archive/2026-10-18-web-download-site/design.md) — [tasks](changes/archive/2026-10-18-web-download-site/tasks.md)
 - [Desktop Release Target and Build Corrections](changes/archive/2026-10-18-desktop-release-build-fixes/design.md) — [tasks](changes/archive/2026-10-18-desktop-release-build-fixes/tasks.md), [decisions](changes/archive/2026-10-18-desktop-release-build-fixes/decisions.md)

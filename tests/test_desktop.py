@@ -9,7 +9,7 @@ import unittest
 import wave
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from tts_mcp import desktop as desktop_module
 from tts_mcp.desktop import dispatch_request, run_protocol
@@ -1417,6 +1417,85 @@ class DesktopWorkerTests(unittest.TestCase):
         self.assertTrue(responses["cancel"]["ok"])
         self.assertEqual(responses["install"]["error"]["code"], "cancelled")
 
+    def test_protocol_rejects_concurrent_transcriptions(self):
+        engine = Mock()
+        engine.model_status.return_value = {"ready": True}
+        release = threading.Event()
+        engine.transcribe_with_timestamps.side_effect = lambda _audio: (
+            release.wait(timeout=5)
+            and {"text": "hello", "chunks": [{"text": "hi", "timestamp": (0.0, 1.0)}]}
+        )
+        work_dirs = []
+
+        def fake_ydl(options):
+            work_dirs.append(Path(options["outtmpl"]).parent)
+            ydl = MagicMock()
+            ydl.__enter__.return_value = ydl
+            ydl.extract_info.return_value = {
+                "title": "Demo",
+                "duration": 60,
+                "availability": "public",
+            }
+
+            def download(info, download=True):
+                path = work_dirs[0] / "source.webm"
+                path.write_bytes(b"audio")
+                return {"requested_downloads": [{"filepath": str(path)}]}
+
+            ydl.process_ie_result.side_effect = download
+            return ydl
+
+        def fake_ffmpeg(command, **_kwargs):
+            with wave.open(command[-1], "wb") as audio:
+                audio.setnchannels(1)
+                audio.setsampwidth(2)
+                audio.setframerate(16000)
+                audio.writeframes(b"\x00\x00" * 160)
+            return Mock(returncode=0)
+
+        source = io.StringIO(
+            json.dumps(
+                {
+                    "id": "video-one",
+                    "type": "transcribe_video",
+                    "url": "https://www.youtube.com/watch?v=first",
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "id": "video-two",
+                    "type": "transcribe_video",
+                    "url": "https://youtu.be/second",
+                }
+            )
+            + "\n"
+        )
+        target = io.StringIO()
+        with (
+            patch("yt_dlp.YoutubeDL", side_effect=fake_ydl),
+            patch("subprocess.run", side_effect=fake_ffmpeg),
+            patch("tts_mcp.desktop._resolve_ffmpeg", return_value="/fake/ffmpeg"),
+        ):
+            worker = threading.Thread(
+                target=run_protocol, args=(source, target, engine), daemon=True
+            )
+            worker.start()
+            deadline = time.time() + 5
+            while '"busy"' not in target.getvalue() and time.time() < deadline:
+                time.sleep(0.01)
+            release.set()
+            worker.join(timeout=5)
+
+        self.assertFalse(worker.is_alive())
+        messages = [json.loads(line) for line in target.getvalue().splitlines()]
+        responses = {item["id"]: item for item in messages if "ok" in item}
+        self.assertEqual(responses["video-two"]["error"]["code"], "busy")
+        self.assertTrue(responses["video-one"]["ok"])
+        self.assertEqual(responses["video-one"]["result"]["platform"], "youtube")
+        self.assertTrue(work_dirs)
+        self.assertFalse(any(path.exists() for path in work_dirs))
+
     def test_startup_uses_cpu_when_cuda_executable_cannot_start(self):
         runtime_path = Path("/app-data/nvidia-runtime/runtime.bin")
         provider = Mock()
@@ -1462,6 +1541,407 @@ class DesktopWorkerTests(unittest.TestCase):
         by_id = {response["id"]: response for response in responses}
         self.assertTrue(by_id["cancel"]["ok"])
         self.assertEqual(by_id["prepare-vieneu"]["error"]["code"], "cancelled")
+
+
+class TranscribeVideoTests(unittest.TestCase):
+    """Unit coverage for the transcribe_video sidecar operation."""
+
+    YOUTUBE_URL = "https://www.youtube.com/watch?v=demo123"
+
+    def setUp(self):
+        self.engine = Mock()
+        self.engine.model_status.return_value = {"ready": True}
+        self.engine.transcribe_with_timestamps.return_value = {
+            "text": "hello world",
+            "chunks": [
+                {"text": "hello", "timestamp": (0.0, 1.5)},
+                {"text": "wörld", "timestamp": (1.5, 3.25)},
+            ],
+        }
+        self.work_dirs = []
+
+    def tearDown(self):
+        for path in self.work_dirs:
+            self.assertFalse(path.exists(), f"temporary media left behind: {path}")
+
+    def track_work_dir(self, options):
+        self.work_dirs.append(Path(options["outtmpl"]).parent)
+
+    def fake_ydl(self, options, info=None, downloaded=True):
+        self.track_work_dir(options)
+        ydl = MagicMock()
+        ydl.__enter__.return_value = ydl
+        info = (
+            {
+                "title": "Demo video",
+                "duration": 120,
+                "availability": "public",
+            }
+            if info is None
+            else info
+        )
+        ydl.extract_info.return_value = info
+
+        def download(result, download=True):
+            hook = options["progress_hooks"][0]
+            hook({"status": "downloading", "downloaded_bytes": 5, "total_bytes": 10})
+            source = Path(options["outtmpl"] % {"ext": "webm"})
+            source.write_bytes(b"audio")
+            return {"requested_downloads": [{"filepath": str(source)}]}
+
+        if downloaded:
+            ydl.process_ie_result.side_effect = download
+        return ydl
+
+    @staticmethod
+    def fake_ffmpeg(command, **_kwargs):
+        with wave.open(command[-1], "wb") as audio:
+            audio.setnchannels(1)
+            audio.setsampwidth(2)
+            audio.setframerate(16000)
+            audio.writeframes(b"\x00\x00" * 160)
+        return Mock(returncode=0)
+
+    def run_transcribe(self, request, ydl=None, info=None, **kwargs):
+        request.setdefault("id", "req-1")
+        request.setdefault("type", "transcribe_video")
+        request.setdefault("url", self.YOUTUBE_URL)
+        ydl_factory = ydl or (lambda options: self.fake_ydl(options, info=info))
+        with (
+            patch("yt_dlp.YoutubeDL", side_effect=ydl_factory),
+            patch("subprocess.run", side_effect=self.fake_ffmpeg),
+            patch("tts_mcp.desktop._resolve_ffmpeg", return_value="/fake/ffmpeg"),
+        ):
+            return dispatch_request(request, self.engine, **kwargs)
+
+    def test_success_returns_srt_and_progress_events(self):
+        progress = []
+        response = self.run_transcribe({}, emit=progress.append)
+        self.assertTrue(response["ok"])
+        result = response["result"]
+        self.assertEqual(result["platform"], "youtube")
+        self.assertEqual(result["title"], "Demo video")
+        self.assertEqual(result["duration_seconds"], 120.0)
+        self.assertEqual(result["transcript"], "hello world")
+        self.assertEqual(
+            result["srt"],
+            "1\n00:00:00,000 --> 00:00:01,500\nhello\n\n2\n00:00:01,500 --> 00:00:03,250\nwörld\n",
+        )
+        phases = [event["phase"] for event in progress]
+        self.assertEqual(phases, ["metadata", "fetch", "audio", "transcribe"])
+        self.assertEqual(progress[1]["progress"], 0.5)
+        self.assertTrue(all(event["id"] == "req-1" for event in progress))
+        self.engine.transcribe_with_timestamps.assert_called_once()
+
+    def test_facebook_url_reports_platform(self):
+        response = self.run_transcribe({"url": "https://www.facebook.com/watch?v=12345"})
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["result"]["platform"], "facebook")
+
+    def test_short_youtube_host_accepted(self):
+        response = self.run_transcribe({"url": "https://youtu.be/demo123"})
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["result"]["platform"], "youtube")
+
+    def assert_error(self, request, code):
+        response = self.run_transcribe(request)
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], code)
+        return response
+
+    def test_rejects_non_https_url(self):
+        self.assert_error({"url": "http://www.youtube.com/watch?v=x"}, "invalid_url")
+
+    def test_rejects_unsupported_host(self):
+        self.assert_error({"url": "https://vimeo.com/123"}, "invalid_url")
+        self.assert_error({"url": "https://www.youtube.com.evil.com/x"}, "invalid_url")
+
+    def test_rejects_malformed_and_empty_url(self):
+        for url in ("", "   ", "not a url", "https://", 123, None):
+            self.assert_error({"url": url}, "invalid_url")
+
+    def test_rejects_url_credentials(self):
+        self.assert_error({"url": "https://user:pass@www.youtube.com/watch?v=x"}, "invalid_url")
+
+    def test_rejects_playlist_urls(self):
+        for url in (
+            "https://www.youtube.com/playlist?list=PL123",
+            "https://www.youtube.com/watch?v=x&list=PL123",
+            "https://youtu.be/x?list=PL123",
+        ):
+            self.assert_error({"url": url}, "invalid_url")
+
+    def test_missing_url_field_is_invalid_input(self):
+        request = {"id": "req-x", "type": "transcribe_video"}
+        response = dispatch_request(request, self.engine)
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "invalid_input")
+
+    def test_model_not_ready_skips_download(self):
+        self.engine.model_status.return_value = {"ready": False}
+        downloads = []
+        response = self.run_transcribe({}, ydl=lambda options: downloads.append(options))
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "model_not_ready")
+        self.assertEqual(downloads, [])
+        self.engine.model_status.assert_called_once()
+        self.engine.transcribe_with_timestamps.assert_not_called()
+
+    def test_playlist_and_multi_result_rejected(self):
+        for info in (
+            {"_type": "playlist", "entries": [{"id": "a"}, {"id": "b"}]},
+            {"entries": [{"id": "a"}]},
+        ):
+
+            def ydl(options, info=info):
+                return self.fake_ydl(options, info=info)
+
+            response = self.run_transcribe({}, ydl=ydl)
+            self.assertFalse(response["ok"], info)
+            self.assertEqual(response["error"]["code"], "invalid_url", info)
+
+    def test_private_and_restricted_videos_rejected(self):
+        for info in (
+            {"title": "x", "duration": 10, "availability": "private"},
+            {"title": "x", "duration": 10, "availability": "needs_auth"},
+            {"title": "x", "duration": 10, "age_limit": 18},
+            {"title": "x", "duration": 10, "is_live": True},
+            {"title": "x", "duration": 10, "live_status": "is_upcoming"},
+            {"title": "x", "duration": 10, "live_status": "post_live"},
+        ):
+
+            def ydl(options, info=info):
+                return self.fake_ydl(options, info=info)
+
+            response = self.run_transcribe({}, ydl=ydl)
+            self.assertFalse(response["ok"], info)
+            self.assertEqual(response["error"]["code"], "video_unavailable", info)
+
+    def test_duration_limits(self):
+        for info, code in (
+            ({"title": "x", "duration": None}, "duration_limit"),
+            ({"title": "x"}, "duration_limit"),
+            ({"title": "x", "duration": 60 * 60 + 1}, "duration_limit"),
+            ({"title": "x", "duration": 0}, "duration_limit"),
+        ):
+
+            def ydl(options, info=info):
+                return self.fake_ydl(options, info=info)
+
+            response = self.run_transcribe({}, ydl=ydl)
+            self.assertFalse(response["ok"], info)
+            self.assertEqual(response["error"]["code"], code, info)
+
+    def test_download_error_maps_to_stable_codes(self):
+        import yt_dlp
+
+        for message, code in (
+            ("Unsupported URL: https://example.com", "invalid_url"),
+            ("Private video. Sign in if you've been granted access", "video_unavailable"),
+            ("HTTP Error 404", "video_unavailable"),
+        ):
+            ydl = MagicMock()
+            ydl.__enter__.return_value = ydl
+            ydl.extract_info.side_effect = yt_dlp.utils.DownloadError(message)
+
+            def factory(options, ydl=ydl):
+                self.track_work_dir(options)
+                return ydl
+
+            response = self.run_transcribe({}, ydl=factory)
+            self.assertFalse(response["ok"], message)
+            self.assertEqual(response["error"]["code"], code, message)
+
+    def test_audio_selector_is_strictly_audio_only(self):
+        captured = []
+        response = self.run_transcribe(
+            {},
+            ydl=lambda options: captured.append(options) or self.fake_ydl(options),
+        )
+        self.assertTrue(response["ok"])
+        self.assertEqual(len(captured), 1)
+        options = captured[0]
+        self.assertEqual(options["format"], "bestaudio")
+        for forbidden in (
+            "cookiefile",
+            "cookiesfrombrowser",
+            "usenetrc",
+            "username",
+            "password",
+            "extractor_args",
+            "remote_components",
+            "po_token",
+        ):
+            self.assertNotIn(forbidden, options)
+
+    def test_no_audio_only_stream_is_missing_audio(self):
+        import yt_dlp
+
+        def ydl_factory(options):
+            self.track_work_dir(options)
+            ydl = MagicMock()
+            ydl.__enter__.return_value = ydl
+            ydl.extract_info.return_value = {
+                "title": "Demo",
+                "duration": 60,
+                "availability": "public",
+            }
+            ydl.process_ie_result.side_effect = yt_dlp.utils.DownloadError(
+                "Requested format is not available"
+            )
+            return ydl
+
+        response = self.run_transcribe({}, ydl=ydl_factory)
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "missing_audio")
+
+    def test_missing_audio_when_nothing_downloaded(self):
+        def ydl(options):
+            return self.fake_ydl(options, downloaded=False)
+
+        response = self.run_transcribe({}, ydl=ydl)
+        # process_ie_result returns a MagicMock without requested_downloads
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "missing_audio")
+
+    def test_ffmpeg_missing_or_failing(self):
+        request = {"id": "r", "type": "transcribe_video", "url": self.YOUTUBE_URL}
+        with (
+            patch("yt_dlp.YoutubeDL", side_effect=lambda o: self.fake_ydl(o)),
+            patch("tts_mcp.desktop._resolve_ffmpeg", return_value=None),
+        ):
+            response = dispatch_request(dict(request), self.engine)
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "audio_prepare_failed")
+        with (
+            patch("yt_dlp.YoutubeDL", side_effect=lambda o: self.fake_ydl(o)),
+            patch("subprocess.run", return_value=Mock(returncode=1)),
+            patch("tts_mcp.desktop._resolve_ffmpeg", return_value="/fake/ffmpeg"),
+        ):
+            response = dispatch_request(dict(request), self.engine)
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "audio_prepare_failed")
+
+    def test_resolve_ffmpeg_falls_back_to_system_path(self):
+        with (
+            patch.dict("os.environ", {"TTS_MCP_FFMPEG_PATH": ""}),
+            patch("shutil.which", return_value="/usr/bin/ffmpeg"),
+        ):
+            self.assertEqual(desktop_module._resolve_ffmpeg(), "/usr/bin/ffmpeg")
+
+    def test_cancel_before_download(self):
+        response = self.run_transcribe({}, should_cancel=lambda: True)
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "cancelled")
+        self.engine.transcribe_with_timestamps.assert_not_called()
+
+    def test_ytdlp_download_cancelled_maps_to_cancelled(self):
+        import yt_dlp
+
+        def ydl_factory(options):
+            self.track_work_dir(options)
+            ydl = MagicMock()
+            ydl.__enter__.return_value = ydl
+            ydl.extract_info.return_value = {
+                "title": "Demo",
+                "duration": 60,
+                "availability": "public",
+            }
+            ydl.process_ie_result.side_effect = yt_dlp.utils.DownloadCancelled("stopped by user")
+            return ydl
+
+        response = self.run_transcribe({}, ydl=ydl_factory)
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "cancelled")
+
+    def test_cancel_during_download(self):
+        cancel = {"flag": False}
+
+        def ydl_factory(options):
+            self.track_work_dir(options)
+            ydl = self.fake_ydl(options)
+            hook = options["progress_hooks"][0]
+
+            def download(info, download=True):
+                cancel["flag"] = True
+                hook({"status": "downloading", "downloaded_bytes": 5, "total_bytes": 10})
+                return {"requested_downloads": []}
+
+            ydl.process_ie_result.side_effect = download
+            return ydl
+
+        response = self.run_transcribe({}, ydl=ydl_factory, should_cancel=lambda: cancel["flag"])
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "cancelled")
+
+    def test_asr_failures_and_empty_output(self):
+        cases = (
+            (RuntimeError("boom"), "transcription_failed"),
+            ({"text": "", "chunks": []}, "no_speech"),
+            ({"text": "x", "chunks": "nope"}, "transcription_failed"),
+            (
+                {"text": "x", "chunks": [{"text": "a", "timestamp": ("x", 1)}]},
+                "transcription_failed",
+            ),
+            (
+                {"text": "x", "chunks": [{"text": "a", "timestamp": (2.0, 1.0)}]},
+                "transcription_failed",
+            ),
+            ({"text": "x", "chunks": [{"text": "   ", "timestamp": (0, 1)}]}, "no_speech"),
+        )
+        for result, code in cases:
+            if isinstance(result, Exception):
+                self.engine.transcribe_with_timestamps.side_effect = result
+            else:
+                self.engine.transcribe_with_timestamps.side_effect = None
+                self.engine.transcribe_with_timestamps.return_value = result
+            response = self.run_transcribe({})
+            self.assertFalse(response["ok"], result)
+            self.assertEqual(response["error"]["code"], code, result)
+        self.engine.transcribe_with_timestamps.side_effect = None
+
+    def test_chunk_without_end_uses_duration(self):
+        self.engine.transcribe_with_timestamps.return_value = {
+            "text": "tail",
+            "chunks": [{"text": "tail", "timestamp": (5.0, None)}],
+        }
+        response = self.run_transcribe({})
+        self.assertTrue(response["ok"])
+        self.assertIn("00:00:05,000 --> 00:02:00,000", response["result"]["srt"])
+
+
+class LibraryPathEnvTests(unittest.TestCase):
+    def test_frozen_restores_original_values_and_drops_injected_paths(self):
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "DYLD_LIBRARY_PATH": "/meipass",
+                    "DYLD_LIBRARY_PATH_ORIG": "/user/lib",
+                    "LD_LIBRARY_PATH": "/meipass",
+                },
+                clear=False,
+            ),
+            patch.object(desktop_module.sys, "frozen", True, create=True),
+        ):
+            os.environ.pop("LD_LIBRARY_PATH_ORIG", None)
+            desktop_module._restore_library_path_env()
+            self.assertEqual(os.environ["DYLD_LIBRARY_PATH"], "/user/lib")
+            self.assertNotIn("DYLD_LIBRARY_PATH_ORIG", os.environ)
+            self.assertNotIn("LD_LIBRARY_PATH", os.environ)
+
+    def test_unfrozen_process_keeps_environment_untouched(self):
+        with (
+            patch.dict(
+                "os.environ",
+                {"DYLD_LIBRARY_PATH": "/meipass", "DYLD_LIBRARY_PATH_ORIG": "/user/lib"},
+                clear=False,
+            ),
+            patch.object(desktop_module.sys, "frozen", False, create=True),
+        ):
+            desktop_module._restore_library_path_env()
+            self.assertEqual(os.environ["DYLD_LIBRARY_PATH"], "/meipass")
+            self.assertEqual(os.environ["DYLD_LIBRARY_PATH_ORIG"], "/user/lib")
 
 
 if __name__ == "__main__":
