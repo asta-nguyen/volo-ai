@@ -75,6 +75,10 @@ the Python worker as a Tauri sidecar and stores model/audio data locally.
   server-rendered route, and a missing or unreadable file is an application
   error. The tagged root `release.md` remains the per-tag notes source for the
   release workflow.
+- The localized `/en/features` and `/vi/features` pages summarize the main
+  desktop and companion-tool capabilities. The route renders the English and
+  Vietnamese copy defined in `apps/web/lib/site-copy.ts` and links to the
+  existing localized download page.
 - The website includes localized macOS Gatekeeper guidance: an Apple-supported
   Open Anyway path for trusted official downloads, redownload/stop advice for
   a damaged-app warning, and a separate advanced disclosure explaining the
@@ -174,7 +178,7 @@ Desktop provider setup and synthesis are documented in
 | Audio history | `Engine.record_audio_history` and `list_audio_history`/`rename_audio_history`/`delete_audio_history` sidecar operations index files from `outputs`; React plays and renames files, copies their local path, and confirms deletion |
 | Desktop settings | `App.tsx` and `i18n.ts` expose General, Model, Storage, and MCP tabs; General supports manual stable-release checks, Linux x64 Model settings manage the optional NVIDIA sidecar, and Logs exports local diagnostics; MCP generates copyable client-specific setup for Codex CLI, Claude Code, Claude Desktop, Cursor, VS Code / GitHub Copilot, and Zed using the app-data path |
 | Desktop shell | React UI, Tauri plugins, JSONL sidecar, optional Linux CUDA worker, and target-matched audio.cpp CLI |
-| Public download site | `apps/web` serves English and Vietnamese product/download and changelog pages, reads versioned notes from the root `changelog.md`, resolves validated stable GitHub Releases, and links only to direct installer assets |
+| Public download site | `apps/web` serves English and Vietnamese product/download, feature overview, and changelog pages, reads versioned notes from the root `changelog.md`, resolves validated stable GitHub Releases, and exposes only direct installer URLs for downloads |
 
 ## Data and dependencies
 
@@ -272,6 +276,7 @@ synthesis target remains `volo-ai.synthesis-language`.
 - `apps/web/app/[locale]/layout.tsx`
 - `apps/web/app/[locale]/page.tsx`
 - `apps/web/app/[locale]/changelog/page.tsx`
+- `apps/web/app/[locale]/features/page.tsx`
 - `apps/web/app/globals.css`
 - `apps/web/lib/changelog.ts`
 - `apps/web/lib/releases.ts`

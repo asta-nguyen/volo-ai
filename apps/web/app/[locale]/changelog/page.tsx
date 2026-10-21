@@ -93,6 +93,7 @@ export default async function ChangelogPage({ params }: PageProps) {
 
         <nav className="main-navigation" aria-label={text.navigation}>
           <a href={`/${locale}`}>{text.homeLink}</a>
+          <a href={`/${locale}/features`}>{text.featuresLink}</a>
           <a href={`/${locale}/changelog`} aria-current="page">{text.changelogLink}</a>
         </nav>
 

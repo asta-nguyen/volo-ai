@@ -71,6 +71,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
         <nav className="main-navigation" aria-label={text.navigation}>
           <a href="#about">{text.aboutLink}</a>
           <a href="#downloads">{text.downloadLink}</a>
+          <a href={`/${locale}/features`}>{text.featuresLink}</a>
           <a href={`/${locale}/changelog`}>{text.changelogLink}</a>
           <a href={`https://github.com/${GITHUB_REPOSITORY}`}>GitHub <span aria-hidden="true">↗</span></a>
         </nav>
@@ -149,6 +150,11 @@ export default async function LocaleHomePage({ params }: PageProps) {
                 </div>
               </article>
             ))}
+            <p className="features-home-cta">
+              <a className="button button-secondary" href={`/${locale}/features`}>
+                {text.featuresCta} <span aria-hidden="true">→</span>
+              </a>
+            </p>
           </div>
         </section>
 

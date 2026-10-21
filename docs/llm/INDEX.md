@@ -22,8 +22,8 @@
 ## Feature inventory
 
 The desktop provider and MCP voice-library workflows have source-backed deep
-coverage below. The remaining behaviors are mapped in the architecture overview
-but do not yet have dedicated feature pages:
+coverage below. The remaining desktop behaviors are mapped in the architecture
+overview but do not yet have dedicated wiki feature pages:
 
 - [x] Desktop provider setup and offline synthesis — the desktop sidecar reports
   both providers, the first-run screen prepares all missing providers
@@ -65,14 +65,15 @@ but do not yet have dedicated feature pages:
   presets or Clone/reference voices, accept optional VieNeu sampler options
   such as `seed`, and keep OmniVoice as the default.
   MCP profile and shared-store behavior is in the workflow page.
-- [x] Public bilingual desktop downloads and release history — the Next.js
-  site serves English and Vietnamese pages, resolves validated latest stable
-  GitHub release assets for macOS ARM64, Windows x64, and Linux x64, and links
-  directly to the assets. Localized changelog pages read ordered version
+- [x] Public bilingual desktop downloads, feature overview, and release history
+  — the Next.js site serves English and Vietnamese pages, resolves validated
+  latest stable GitHub release assets for macOS ARM64, Windows x64, and Linux x64,
+  and links directly to the assets. Localized changelog pages read ordered version
   entries from the root `changelog.md`, link each version only to its exact
   tag's validated installer assets, and show a localized status when no
   verified installer is available. See the
-  [architecture overview](architecture/overview.md).
+  [architecture overview](architecture/overview.md), which also maps the
+  localized feature overview route.
 - [x] Desktop local REST API — Settings starts and stops an opt-in API bound to
   `127.0.0.1:8765`; it reuses the MCP tools and app data and stops with the
   desktop sidecar. See the [API reference](../desktop-local-api.md) for routes

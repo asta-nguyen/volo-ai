@@ -617,6 +617,7 @@ summary:focus-visible {
   color: var(--muted);
 }
 
+.release-copy h2,
 .release-copy h3 {
   margin: 0.28rem 0 0;
   font-size: 1.05rem;
@@ -1217,12 +1218,76 @@ summary:focus-visible {
   margin-bottom: 0;
 }
 
-.changelog-state .release-copy h2 {
-  margin: 0.28rem 0 0;
-  font-size: 1.05rem;
+.features-home-cta {
+  display: none;
+  margin: 0;
+}
+
+.feature-groups {
+  display: grid;
+  gap: clamp(2.5rem, 5vw, 4rem);
+}
+
+.feature-group {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.42fr) minmax(0, 1fr);
+  gap: clamp(1.8rem, 4vw, 4rem);
+  padding-top: clamp(1.8rem, 4vw, 3rem);
+  border-top: 1px solid var(--line);
+}
+
+.feature-group-index {
+  display: block;
+  color: var(--accent);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.15rem;
+  font-style: italic;
+}
+
+.feature-group-head h2 {
+  margin: 0.35rem 0 0;
+  font-size: clamp(1.5rem, 2.6vw, 2.2rem);
+  font-weight: 600;
+  letter-spacing: -0.055em;
+  line-height: 1.15;
+}
+
+.feature-group-intro {
+  margin: 0.7rem 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.7;
+}
+
+.feature-group-items {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+}
+
+.feature-card {
+  padding: 1.15rem 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--surface);
+}
+
+.feature-card h3 {
+  margin: 0;
+  font-size: 0.98rem;
   font-weight: 700;
-  letter-spacing: -0.04em;
-  line-height: 1.4;
+  letter-spacing: -0.03em;
+}
+
+.feature-card p {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.65;
+}
+
+.features-outro {
+  margin: clamp(2.5rem, 5vw, 4rem) 0 0;
 }
 
 @media (max-width: 960px) {
@@ -1359,6 +1424,21 @@ summary:focus-visible {
 
   .changelog-entry-head {
     flex-wrap: wrap;
+  }
+
+  .features-home-cta {
+    display: block;
+    margin-top: 1.4rem;
+  }
+
+  .features-home-cta .button {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .feature-group {
+    grid-template-columns: 1fr;
+    gap: 1.4rem;
   }
 
   .site-footer {
