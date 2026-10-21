@@ -231,6 +231,29 @@ export class SidecarClient {
     }
   }
 
+  private handleStopped(command: Command<string>, reason: SidecarError): void {
+    if (this.command !== command) return;
+    const stoppedAt = Date.now();
+    recordFrontendDiagnostic(
+      "sidecar_exit",
+      reason.code,
+      undefined,
+      "The local engine stopped unexpectedly.",
+    );
+    this.addLog({
+      id: `sidecar-exit-${stoppedAt}-${this.nextId++}`,
+      operation: "sidecar_exit",
+      status: "error",
+      startedAt: stoppedAt,
+      finishedAt: stoppedAt,
+      errorCode: reason.code,
+      errorMessage: "The local engine stopped unexpectedly.",
+    });
+    this.child = null;
+    this.command = null;
+    this.rejectAll(reason);
+  }
+
   private async spawn(): Promise<void> {
     if (!isTauriRuntime()) {
       throw new SidecarError(
@@ -254,26 +277,18 @@ export class SidecarClient {
         "The local engine reported an error.",
       ),
     );
-    const handleStopped = (reason: SidecarError) => {
-      if (this.command !== command) return;
-      recordFrontendDiagnostic(
-        "sidecar_exit",
-        reason.code,
-        undefined,
-        "The local engine stopped unexpectedly.",
-      );
-      this.child = null;
-      this.command = null;
-      this.rejectAll(reason);
-    };
     command.on("error", (message) =>
-      handleStopped(
+      this.handleStopped(
+        command,
         new SidecarError("sidecar_stopped", `The local TTS engine stopped: ${message}`),
       ),
     );
-    command.on("close", () => {
-      handleStopped(new SidecarError("sidecar_stopped", "The local TTS engine stopped"));
-    });
+    command.on("close", () =>
+      this.handleStopped(
+        command,
+        new SidecarError("sidecar_stopped", "The local TTS engine stopped"),
+      ),
+    );
     try {
       const child = await command.spawn();
       if (this.command !== command) {
@@ -497,7 +512,9 @@ export class SidecarClient {
   private async requestOnce<T>(id: string, payload: Omit<Request, "id">): Promise<T> {
     const child = this.child;
     const command = this.command;
-    if (!child) throw new Error("The local TTS engine is unavailable");
+    if (!child || !command) {
+      throw new SidecarError("sidecar_stopped", "The local TTS engine is unavailable");
+    }
     const request = JSON.stringify({ ...payload, id }) + "\n";
     const timeoutMs =
       payload.type === "prepare_model"
@@ -522,9 +539,7 @@ export class SidecarClient {
           `The local engine did not respond within ${Math.round(timeoutMs / 60000)} minutes`,
         );
         if (this.command === command) {
-          this.child = null;
-          this.command = null;
-          this.rejectAll(error);
+          this.handleStopped(command, error);
           void child.kill().catch(() => undefined);
         }
         reject(error);
@@ -535,11 +550,7 @@ export class SidecarClient {
     } catch (reason) {
       clearTimeout(timeout!);
       const error = new SidecarError("sidecar_stopped", "The local TTS engine stopped");
-      if (this.command === command) {
-        this.child = null;
-        this.command = null;
-        this.rejectAll(error);
-      }
+      if (this.command === command) this.handleStopped(command, error);
       throw error;
     }
     return response.finally(() => clearTimeout(timeout!));

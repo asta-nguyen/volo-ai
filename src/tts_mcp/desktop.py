@@ -1020,6 +1020,7 @@ def run_protocol(
     active: dict[str, threading.Event] = {}
     active_preparations: set[str] = set()
     active_seeds: set[str] = set()
+    active_seed_imports: set[str] = set()
     active_runtime_installs: set[str] = set()
     active_transcriptions: set[str] = set()
     workers: set[threading.Thread] = set()
@@ -1061,6 +1062,7 @@ def run_protocol(
             continue
         if operation in {
             "prepare_model",
+            "import_seed_voices",
             "seed_vieneu_voices",
             "install_nvidia_runtime",
             "transcribe_video",
@@ -1070,6 +1072,9 @@ def run_protocol(
                 provider_id = None
             if operation == "prepare_model" and active_seeds:
                 write(_error(request_id, "busy", "VieNeu voice seeding is already running"))
+                continue
+            if operation == "import_seed_voices" and active_seed_imports:
+                write(_error(request_id, "busy", "A bundled voice seed import is already running"))
                 continue
             if operation == "install_nvidia_runtime" and active_runtime_installs:
                 write(
@@ -1091,7 +1096,10 @@ def run_protocol(
                     continue
                 active_preparations.add(provider_id)
             cancel_event = threading.Event()
-            active[request_id] = cancel_event
+            if operation != "import_seed_voices":
+                active[request_id] = cancel_event
+            if operation == "import_seed_voices":
+                active_seed_imports.add(request_id)
             if operation == "seed_vieneu_voices":
                 active_seeds.add(request_id)
             if operation == "install_nvidia_runtime":
@@ -1119,6 +1127,7 @@ def run_protocol(
                     active.pop(request_id, None)
                     if provider_id is not None:
                         active_preparations.discard(provider_id)
+                    active_seed_imports.discard(request_id)
                     active_seeds.discard(request_id)
                     active_runtime_installs.discard(request_id)
                     active_transcriptions.discard(request_id)

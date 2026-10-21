@@ -2672,6 +2672,7 @@ function WorkspaceView({
   audioUrl,
   error,
   isGenerating,
+  isImportingSeed,
   takes,
   activeTakeId,
   onSelectTake,
@@ -2708,6 +2709,7 @@ function WorkspaceView({
   audioUrl: string | null;
   error: string | null;
   isGenerating: boolean;
+  isImportingSeed: boolean;
   takes: TakeItem[];
   activeTakeId: string | null;
   onSelectTake: (take: TakeItem) => void;
@@ -2728,6 +2730,11 @@ function WorkspaceView({
     ? voices.filter((voice) => voice.kind !== "vieneu_preset" || Boolean(voice.ref_audio))
     : // VieNeu preset profiles duplicate the preset entries listed above them.
       voices.filter((voice) => voice.kind === "clone");
+  if (isOmniVoice) {
+    visibleVoices.sort(
+      (left, right) => Number(right.language === language) - Number(left.language === language),
+    );
+  }
   const selectedSource = isOmniVoice
     ? mode === "profile"
       ? `profile:${selectedVoice}`
@@ -3453,13 +3460,22 @@ function WorkspaceView({
             {!isOmniVoice && vieneuAdvancedError && (
               <ErrorMessage>{vieneuAdvancedError}</ErrorMessage>
             )}
-            <Button size="lg" className="w-full" onClick={onSynthesize} disabled={isGenerating}>
-              {isGenerating ? (
+            <Button
+              size="lg"
+              className="w-full"
+              onClick={onSynthesize}
+              disabled={isGenerating || isImportingSeed}
+            >
+              {isGenerating || isImportingSeed ? (
                 <LoaderCircle className="size-4 animate-spin" />
               ) : (
                 <Play className="size-4 fill-current" />
               )}
-              {isGenerating ? copy.rendering : copy.renderSpeech}
+              {isGenerating
+                ? copy.rendering
+                : isImportingSeed
+                  ? copy.importingSeedFolder
+                  : copy.renderSpeech}
             </Button>
           </CardContent>
         </Card>
@@ -3705,6 +3721,7 @@ function App() {
   const vieneuAutoSeedStarted = useRef(false);
   const renderCancelled = useRef(false);
   const lastView = useRef<AppView>(view);
+  const sidecarStopped = useRef(false);
 
   useEffect(() => {
     applyTheme(theme);
@@ -3718,7 +3735,7 @@ function App() {
   const appLanguage: AppLanguage = translator.language === "vi" ? "vi" : "en";
   const copy: UiCopy = createUiCopy(t);
   const queryClient = useQueryClient();
-  const statusQuery = useQuery({
+  const statusQuery = useQuery<StatusResult | null>({
     queryKey: STATUS_QUERY_KEY,
     queryFn: () => client.request<StatusResult>({ type: "status" }),
   });
@@ -4013,7 +4030,22 @@ function App() {
         setModelProgress((current) => ({ ...current, [target]: event }));
       }
     });
-    const unsubscribeLogs = client.onLog(() => setLogs(client.getLogs()));
+    const unsubscribeLogs = client.onLog((entry) => {
+      setLogs(client.getLogs());
+      if (entry.operation === "sidecar_exit" && entry.id.startsWith("sidecar-exit-")) {
+        sidecarStopped.current = true;
+        queryClient.setQueryData<StatusResult | null>(STATUS_QUERY_KEY, null);
+      } else if (
+        sidecarStopped.current &&
+        entry.status === "success" &&
+        /^\d+$/.test(entry.id)
+      ) {
+        sidecarStopped.current = false;
+        if (entry.operation !== "status") {
+          void queryClient.invalidateQueries({ queryKey: STATUS_QUERY_KEY });
+        }
+      }
+    });
     return () => {
       unsubscribe();
       unsubscribeLogs();
@@ -5197,6 +5229,7 @@ function App() {
                     audioUrl={audioUrl}
                     error={error}
                     isGenerating={isGenerating}
+                    isImportingSeed={isImportingSeed}
                     takes={takes}
                     activeTakeId={activeTakeId}
                     onSelectTake={handleSelectTake}
