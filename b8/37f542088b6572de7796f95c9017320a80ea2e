@@ -1,0 +1,44 @@
+apps/desktop/src/App.tsx
+  s_e586c3b8293fd3::t_8c927e974cadb2 235-236,3705,4068,4143,4397,4407,4410,4416-4427
+  s_e586c3b8293fd3::t_b07c531f69b8d6 4066,4069
+  s_e586c3b8293fd3::t_7d8130d590a447 2729-2730,2747-2750,4778-4780,4788-4799
+  s_e586c3b8293fd3::t_33410c29253d71 4428,4538-4539,4541-4547
+apps/web/package.json
+  s_e586c3b8293fd3::t_1420f790cd892f 18-19,26
+apps/web/components/hero-scene.tsx
+  s_e586c3b8293fd3::t_25100a07f07863 118-119
+  s_e586c3b8293fd3::t_b3bd1d0e6496a5 1-117,120-197
+apps/web/app/globals.css
+  s_e586c3b8293fd3::t_e4b5d41ad32376 137-153,845-864
+  s_e586c3b8293fd3::t_6bcf25b1513aa4 1749
+  s_e586c3b8293fd3::t_25100a07f07863 276,279-280,283-284,287,291-298
+  s_e586c3b8293fd3::t_9ee6deeb6cd5e6 1807-1812
+  s_e586c3b8293fd3::t_27882c4cb237ef 1524
+  s_e586c3b8293fd3::t_09e35191df69a6 270-271,277-278,281-282,285-286,288-290,299-302,865,1726-1748,1750-1806,1813-1850
+  s_e586c3b8293fd3::t_cc4f966e818a11 866,1851
+apps/web/components/platform-hint.tsx
+  s_e586c3b8293fd3::t_6537087f2573fc 1-33
+apps/web/app/[locale]/page.tsx
+  s_e586c3b8293fd3::t_e4b5d41ad32376 18,197,210,219
+  s_e586c3b8293fd3::t_416d82de7e57f2 17,87,113
+apps/web/lib/site-copy.ts
+  s_e586c3b8293fd3::t_e4b5d41ad32376 211,449
+apps/web/package-lock.json
+  s_e586c3b8293fd3::t_4225b6b40e05f8 14-15,22,43-49,1025-1031,1062-1090,1188-1194,1535-1541,1828-1833
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b837f542088b6572de7796f95c9017320a80ea2e",
+  "prompts": {},
+  "sessions": {
+    "s_e586c3b8293fd3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "270c9d9e-d348-4bba-bb6a-166126f1fa5e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
