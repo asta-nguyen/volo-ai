@@ -1,0 +1,26 @@
+apps/desktop/src/lib/sidecar.ts
+  s_1ba26a6b36bf30::t_5184ca33e51059 286-291
+  s_1ba26a6b36bf30::t_20b65650327c1c 234-256,281-282,542,553
+  s_1ba26a6b36bf30::t_0c4b13419fdf70 515-517
+apps/desktop/src/App.tsx
+  s_1ba26a6b36bf30::t_ad4b2b140a7953 2675,2712,2733-2737,3463-3469,3474-3478,3724,3738,4033-4037,4043-4048,5232
+  s_1ba26a6b36bf30::t_5184ca33e51059 4038-4042
+src/tts_mcp/desktop.py
+  s_1ba26a6b36bf30::t_ad4b2b140a7953 1023,1065,1076-1078,1099-1102,1130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "47e9b32232badb104b3c40735ed7215b2f4ce6f9",
+  "prompts": {},
+  "sessions": {
+    "s_1ba26a6b36bf30": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15e26-cda5-7032-9cbe-b6e6edc45568",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
