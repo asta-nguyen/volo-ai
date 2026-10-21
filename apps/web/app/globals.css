@@ -134,6 +134,23 @@ summary:focus-visible {
   display: none;
 }
 
+/* Desktop keeps the navigation in reach while scrolling the long downloads list.
+   The spread shadow paints the paper background edge to edge without a wrapper. */
+@media (min-width: 961px) {
+  html {
+    scroll-padding-top: 6.5rem;
+  }
+
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: var(--paper);
+    box-shadow: 0 0 0 100vmax var(--paper);
+    clip-path: inset(0 -100vmax);
+  }
+}
+
 .brand {
   display: inline-flex;
   width: max-content;
@@ -250,11 +267,39 @@ summary:focus-visible {
 }
 
 .hero {
+  position: relative;
+  isolation: isolate;
   display: grid;
   grid-template-columns: minmax(0, 1.04fr) minmax(0, 0.96fr);
   align-items: center;
   gap: clamp(3rem, 6.5vw, 7.5rem);
-  padding-block: clamp(5rem, 9vw, 8rem);
+  padding-block: clamp(5rem, 9vw, 8rem) clamp(10rem, 19vw, 16rem);
+}
+
+/* Three.js waveform band along the bottom of the hero, below the copy; fades in
+   once the first frame is drawn. */
+.hero-scene {
+  position: absolute;
+  bottom: 0;
+  left: -4%;
+  z-index: -1;
+  width: 108%;
+  height: clamp(10rem, 19vw, 16rem);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 1.4s ease;
+  -webkit-mask-image:
+    linear-gradient(to right, transparent, #000 18%, #000 82%, transparent),
+    linear-gradient(to bottom, transparent, #000 35%, #000 70%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to right, transparent, #000 18%, #000 82%, transparent),
+    linear-gradient(to bottom, transparent, #000 35%, #000 70%, transparent);
+  mask-composite: intersect;
+}
+
+.hero-scene[data-ready] {
+  opacity: 1;
 }
 
 .eyebrow {
@@ -795,6 +840,28 @@ summary:focus-visible {
 
 .platform-copy {
   min-width: 0;
+}
+
+.platform-recommended {
+  display: none;
+  width: fit-content;
+  margin-top: 0.45rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.platform-row[data-recommended] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.platform-row[data-recommended] .platform-recommended {
+  display: block;
 }
 
 .platform-copy h3 {
@@ -1454,7 +1521,7 @@ details[open] > summary .disclosure-icon {
   .hero {
     grid-template-columns: 1fr;
     gap: 3rem;
-    padding-block: 4rem 4.5rem;
+    padding-block: 4rem 10rem;
   }
 
   .workflow-panel {
@@ -1653,6 +1720,132 @@ details[open] > summary .disclosure-icon {
 
   .release-notes {
     margin-left: 54px;
+  }
+}
+
+/* Motion. Everything here is skipped when the visitor prefers reduced motion. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+}
+
+@keyframes speak {
+  from {
+    transform: scaleY(0.32);
+  }
+}
+
+@keyframes pulse {
+  50% {
+    box-shadow: 0 0 0 7px rgb(213 141 108 / 0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero-copy > *,
+  .workflow-panel,
+  .changelog-head > * {
+    animation: rise 800ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+
+  .hero-copy > :nth-child(2),
+  .changelog-head > :nth-child(2) {
+    animation-delay: 80ms;
+  }
+
+  .hero-copy > :nth-child(3),
+  .changelog-head > :nth-child(3) {
+    animation-delay: 160ms;
+  }
+
+  .hero-copy > :nth-child(4) {
+    animation-delay: 240ms;
+  }
+
+  .hero-copy > :nth-child(5) {
+    animation-delay: 320ms;
+  }
+
+  .workflow-panel {
+    animation-delay: 220ms;
+    animation-duration: 1000ms;
+  }
+
+  /* The panel's bars breathe like a level meter; negative delays desync them. */
+  .waveform span {
+    animation: speak 1.25s ease-in-out infinite alternate;
+    animation-delay: calc(var(--bar, 0) * -137ms);
+  }
+
+  .waveform span:nth-child(3n) {
+    animation-duration: 0.9s;
+  }
+
+  .waveform span:nth-child(4n + 1) {
+    animation-duration: 1.6s;
+  }
+
+  .workflow-status span {
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+
+  .feature-card,
+  .platform-row,
+  .changelog-entry {
+    transition: transform 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+  }
+
+  .feature-card:hover,
+  .platform-row:hover,
+  .changelog-entry:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 18px 40px rgb(20 26 22 / 0.12);
+  }
+
+  .platform-row[data-recommended]:hover {
+    box-shadow:
+      0 0 0 1px var(--accent),
+      0 18px 40px rgb(20 26 22 / 0.12);
+  }
+
+  /* Sections rise into place as they scroll in; unsupported browsers just show them. */
+  @supports (animation-timeline: view()) {
+    .section-heading,
+    .feature-item,
+    .feature-group,
+    .feature-card,
+    .downloads-heading,
+    .release-banner,
+    .platform-row,
+    .changelog-entry {
+      animation: rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 55%;
+    }
+  }
+
+  /* Smoothly expand the macOS help disclosures where the browser supports it. */
+  @supports selector(::details-content) {
+    .help-disclosure,
+    .advanced-disclosure {
+      interpolate-size: allow-keywords;
+    }
+
+    .help-disclosure::details-content,
+    .advanced-disclosure::details-content {
+      block-size: 0;
+      overflow: hidden;
+      transition:
+        block-size 320ms ease,
+        content-visibility 320ms allow-discrete;
+    }
+
+    .help-disclosure[open]::details-content,
+    .advanced-disclosure[open]::details-content {
+      block-size: auto;
+    }
   }
 }
 

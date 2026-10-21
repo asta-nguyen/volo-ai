@@ -232,6 +232,8 @@ function buildMcpConfig(clientId: McpClientId, dataDir: string): string {
 }
 
 const BUNDLED_SEED_DIRECTORY = "resources/seed-voices";
+// Set once VieNeu presets were seeded as profiles, so voices the user deletes stay deleted.
+const VIENEU_SEEDED_KEY = "volo-ai.vieneu-presets-seeded";
 type SeedImportResult = {
   imported: Array<{ id: string; name: string; language: string }>;
   skipped: Array<{ id: string; name: string; reason: string }>;
@@ -2724,7 +2726,8 @@ function WorkspaceView({
   const isOmniVoice = provider === "omnivoice";
   const visibleVoices = isOmniVoice
     ? voices.filter((voice) => voice.kind !== "vieneu_preset" || Boolean(voice.ref_audio))
-    : voices.filter((voice) => voice.kind !== "design");
+    : // VieNeu preset profiles duplicate the preset entries listed above them.
+      voices.filter((voice) => voice.kind === "clone");
   const selectedSource = isOmniVoice
     ? mode === "profile"
       ? `profile:${selectedVoice}`
@@ -2741,7 +2744,10 @@ function WorkspaceView({
     ...(!isOmniVoice ? [{ value: "file", label: copy.referenceFile }] : []),
     ...visibleVoices.map((voice) => ({
       value: `profile:${voice.name}`,
-      label: `${voice.name}${voice.kind === "vieneu_preset" ? (isOmniVoice && voice.ref_audio ? " · OmniVoice WAV" : ` · ${copy.providerVieNeu}`) : ` · ${voice.language?.toUpperCase() ?? ""}`}${voice.is_default ? ` · ${copy.defaultVoice}` : ""}`,
+      label:
+        voice.kind === "vieneu_preset"
+          ? (presetVoices.find((preset) => preset.id === voice.preset_id)?.label ?? voice.name)
+          : `${voice.name} · ${voice.language?.toUpperCase() ?? ""}${voice.is_default ? ` · ${copy.defaultVoice}` : ""}`,
     })),
   ];
   const speedPresets = [0.8, 1.0, 1.25, 1.5];
@@ -3696,6 +3702,7 @@ function App() {
     "none" | "current" | "unavailable"
   >("none");
   const bundledSeedImportStarted = useRef(false);
+  const vieneuAutoSeedStarted = useRef(false);
   const renderCancelled = useRef(false);
   const lastView = useRef<AppView>(view);
 
@@ -4056,13 +4063,10 @@ function App() {
     client.hydrateDiagnostics([...(engineStatus.diagnostics ?? []), ...getFrontendDiagnostics()]);
   }, [engineStatus]);
 
+  // Bundled OmniVoice seeds import whichever provider is selected.
   useEffect(() => {
-    if (!engineStatus) return;
-    const selectedReady = engineStatus.providers
-      ? providerIsReady(engineStatus.providers[provider])
-      : provider === "omnivoice" && engineStatus.model_ready;
-    if (selectedReady && provider === "omnivoice") void importBundledSeedVoices();
-  }, [engineStatus, provider]);
+    if (omniVoiceReady) void importBundledSeedVoices();
+  }, [omniVoiceReady]);
 
   useEffect(() => {
     const loadedVoices = voicesQuery.data?.voices;
@@ -4136,7 +4140,7 @@ function App() {
       requested.map(async (target) => {
         try {
           await prepareMutation.mutateAsync(target);
-          if (target === "omnivoice" && target === provider) {
+          if (target === "omnivoice") {
             await importBundledSeedVoices();
           } else if (target === provider) {
             await queryClient.invalidateQueries({ queryKey: VOICES_QUERY_KEY });
@@ -4263,7 +4267,6 @@ function App() {
     if (next === "omnivoice") {
       setMode("auto");
       setSelectedVoice("auto");
-      if (omniVoiceReady) void importBundledSeedVoices();
     } else {
       setMode("preset");
       setSelectedVoice(engineStatus?.providers?.vieneu?.default_voice ?? "");
@@ -4391,7 +4394,7 @@ function App() {
     }
   }
 
-  async function seedVieNeuVoices() {
+  async function seedVieNeuVoices(): Promise<SeedVieNeuResult | null> {
     setIsCancellingSeed(false);
     setSeedProgress(null);
     setSeedResult(null);
@@ -4401,12 +4404,27 @@ function App() {
     try {
       const result = await seedVieNeuMutation.mutateAsync();
       setSeedResult(result);
+      return result;
     } catch (reason) {
       setSeedError(reason instanceof Error ? reason.message : copy.seedVieNeuFailed);
+      return null;
     } finally {
       setIsCancellingSeed(false);
     }
   }
+
+  // Once both models are ready, turn every VieNeu preset into a profile that
+  // OmniVoice can also clone, so a fresh install starts with a voice library.
+  useEffect(() => {
+    if (!allProvidersReady || vieneuAutoSeedStarted.current) return;
+    if (localStorage.getItem(VIENEU_SEEDED_KEY)) return;
+    vieneuAutoSeedStarted.current = true;
+    void seedVieNeuVoices().then((result) => {
+      if (result && !result.cancelled && !result.failed.length && !result.unfinished.length) {
+        localStorage.setItem(VIENEU_SEEDED_KEY, "1");
+      }
+    });
+  }, [allProvidersReady]);
 
   async function cancelSeedVieNeuVoices() {
     setIsCancellingSeed(true);
@@ -4517,11 +4535,16 @@ function App() {
       renderCancelled.current = false;
       const response = await synthesisMutation.mutateAsync(request);
       setResult(response);
-      const activeVoiceLabel =
-        mode === "profile"
+      const presetId =
+        mode === "preset"
           ? selectedVoice
-          : mode === "preset"
-            ? (presetVoices.find((p) => p.id === selectedVoice)?.name ?? selectedVoice)
+          : voices.find((voice) => voice.name === selectedVoice && voice.kind === "vieneu_preset")
+              ?.preset_id;
+      const activeVoiceLabel =
+        presetId
+          ? (presetVoices.find((p) => p.id === presetId)?.name ?? selectedVoice)
+          : mode === "profile"
+            ? selectedVoice
             : refAudio
               ? fileName(refAudio)
               : copy.autoVoice;
@@ -4752,7 +4775,9 @@ function App() {
       setError(copy.vieneuDesignUnsupported);
       return;
     }
-    if (profile?.kind === "vieneu_preset" && !profile.ref_audio && provider !== "vieneu") {
+    const switchToVieNeu =
+      profile?.kind === "vieneu_preset" && !profile.ref_audio && provider !== "vieneu";
+    if (switchToVieNeu) {
       setProvider("vieneu");
       localStorage.setItem("volo-ai.provider", "vieneu");
       setError(null);
@@ -4760,8 +4785,18 @@ function App() {
       setRefAudio(null);
       void queryClient.invalidateQueries({ queryKey: VOICES_QUERY_KEY });
     }
-    setSelectedVoice(name);
-    setMode("profile");
+    if (
+      profile?.kind === "vieneu_preset" &&
+      profile.preset_id &&
+      (switchToVieNeu || provider === "vieneu")
+    ) {
+      // VieNeu lists presets directly, so select the preset this profile stands for.
+      setSelectedVoice(profile.preset_id);
+      setMode("preset");
+    } else {
+      setSelectedVoice(name);
+      setMode("profile");
+    }
     navigateTo("workspace");
     setProfileError(null);
   }

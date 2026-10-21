@@ -14,6 +14,8 @@ import {
   IconSpark,
   IconWindows,
 } from "@/components/icons";
+import { HeroScene } from "@/components/hero-scene";
+import { PlatformHint } from "@/components/platform-hint";
 import { SiteFooter, SiteHeader } from "@/components/site-chrome";
 import { formatBytes, getLatestRelease, GITHUB_REPOSITORY, PLATFORM_KEYS, type PlatformKey, type ReleaseAsset } from "@/lib/releases";
 import { copy, isLocale, type Locale } from "@/lib/site-copy";
@@ -82,6 +84,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
 
       <main id="main-content">
         <section className="hero page-shell" aria-labelledby="hero-title">
+          <HeroScene />
           <div className="hero-copy flex flex-col items-start">
             <p className="eyebrow"><span className="eyebrow-mark" aria-hidden="true" />{text.heroEyebrow}</p>
             <h1 id="hero-title">
@@ -107,7 +110,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
             </div>
             <div className="waveform" aria-hidden="true">
               {workflowBars.map((height, index) => (
-                <span key={index} style={{ height: `${height}%` }} />
+                <span key={index} style={{ height: `${height}%`, "--bar": index } as React.CSSProperties} />
               ))}
             </div>
             <div className="workflow-steps">
@@ -191,6 +194,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
               )}
             </div>
 
+            <PlatformHint />
             <div className="platform-list grid">
               {PLATFORM_KEYS.map((key) => {
                 const PlatformIcon = platformIcons[key];
@@ -203,7 +207,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
                     : text.unableToCheck;
 
                 return (
-                  <article className="platform-row" key={key}>
+                  <article className="platform-row" key={key} data-platform={key}>
                     <div className="platform-main">
                       <div className="platform-heading">
                         <span className="platform-marker" aria-hidden="true">
@@ -212,6 +216,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
                         <div className="platform-copy">
                           <h3>{platform.name}</h3>
                           <p>{platform.architecture}</p>
+                          <span className="platform-recommended">{text.recommendedPlatform}</span>
                         </div>
                       </div>
                       <div className="platform-assets grid">
