@@ -1,0 +1,52 @@
+docs/llm/architecture/overview.md
+  s_e586c3b8293fd3::t_0d80eb323d841d 139-141
+  s_e586c3b8293fd3::t_efc3836d5344d6 145-149
+  s_e586c3b8293fd3::t_113f2d26df7c28 142-144
+  s_e586c3b8293fd3::t_e4876670ffb3d2 102-105
+docs/llm/workflows/mcp-voice-library.md
+  s_e586c3b8293fd3::t_f9ce367a6aad17 324
+  s_e586c3b8293fd3::t_e4876670ffb3d2 325-329
+tests/test_engine.py
+  s_e586c3b8293fd3::t_355d827b68d26f 1116-1117
+  s_e586c3b8293fd3::t_ee4ee9e608d2f8 1112-1115,1118-1122,1125-1127,1132-1134,1138-1152
+  s_e586c3b8293fd3::t_164724abff2d0e 1106-1107
+  s_e586c3b8293fd3::t_709fc3fa5daacb 1135-1137
+  s_e586c3b8293fd3::t_8657745207fcee 1123-1124,1128-1131
+  s_e586c3b8293fd3::t_0817c39cf2f6a5 1153
+src/tts_mcp/engine.py
+  s_e586c3b8293fd3::t_cd817256e33e51 634-635
+  s_e586c3b8293fd3::t_8615a21c9c3ae2 452-455,616-618,636,790-794
+changelog.md
+  s_e586c3b8293fd3::t_b6041d1b3dcfc0 11-13
+src/tts_mcp/server.py
+  s_e586c3b8293fd3::t_c6231ecd320f06 10,15,34-54,77,106,118,191,313,351,378,403
+src/tts_mcp/transcribe.py
+  s_e586c3b8293fd3::t_12178affa9e1ce 271-290,332
+  s_e586c3b8293fd3::t_1a05142f927b13 76-82
+tests/test_desktop.py
+  s_e586c3b8293fd3::t_388772c7996dae 2653-2658
+  s_e586c3b8293fd3::t_729463c48605dd 2532-2546
+tests/test_server.py
+  s_e586c3b8293fd3::t_527577ba29b7d2 574,577-585
+  s_e586c3b8293fd3::t_5c67ab59e5816f 586
+docs/llm/workflows/desktop-video-transcription.md
+  s_e586c3b8293fd3::t_10737d0a0fa737 207-209
+  s_e586c3b8293fd3::t_ced64d8ce6d6f5 200-204
+  s_e586c3b8293fd3::t_4e4bec48dc6f38 266-268
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d81ec09132d3c4cc9f66fab7e1b210509316650e",
+  "prompts": {},
+  "sessions": {
+    "s_e586c3b8293fd3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "270c9d9e-d348-4bba-bb6a-166126f1fa5e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
