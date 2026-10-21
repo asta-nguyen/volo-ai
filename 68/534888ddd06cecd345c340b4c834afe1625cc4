@@ -1,0 +1,122 @@
+docs/agent-devkit/changes/archive/2026-10-21-4-desktop-update-notice/tasks.md
+  s_39270ae3bb7555::t_4db81c7cfe005b 41-42,46,54-55,67-68,70-72
+docs/llm/architecture/overview.md
+  s_39270ae3bb7555::t_e47a747a973a76 109
+  s_1ea7435944294c::t_7e1c7b317d1841 110-113
+  s_39270ae3bb7555::t_982612090c4478 106-108,152,232
+apps/desktop/src/App.tsx
+  s_b2c5776e6fbc87::t_cc2530ac8fe8f0 49
+  s_b2c5776e6fbc87::t_8701f2a4c36e05 3371-3374
+  s_b2c5776e6fbc87::t_931f3982597cf4 3409-3412,3414-3417
+  s_b2c5776e6fbc87::t_6f64294b8b36bb 445-471,473-478
+  s_b2c5776e6fbc87::t_07f9c127b91228 1455-1456,1466
+  s_b2c5776e6fbc87::t_f9ea07352a3a59 3139-3146
+  s_b2c5776e6fbc87::t_ccc3ffb015aefe 71
+  s_b2c5776e6fbc87::t_3606824ea97186 15
+  s_39270ae3bb7555::t_80a610e3f8ca88 3413,3567-3568
+  s_b2c5776e6fbc87::t_bc828204cbcec5 3563-3566,3569-3572,3574,3578-3600
+  s_16c132e153211c::t_f64894a24c3a46 3573,3575-3577
+  s_b2c5776e6fbc87::t_fd41e2ed3de131 4181-4182
+  s_b2c5776e6fbc87::t_b4a2f0d5ce2020 4334-4336
+  s_b2c5776e6fbc87::t_007c4af76257e5 472
+  s_b2c5776e6fbc87::t_e35ab4c5799b94 4167-4180
+  s_b2c5776e6fbc87::t_9b9b35c20aae31 81
+  s_16c132e153211c::t_cc12c567291fbe 114
+  s_b2c5776e6fbc87::t_9fe8443092e7eb 111-113,115-119
+  s_b2c5776e6fbc87::t_28554ff8777b83 4279-4286
+  s_b2c5776e6fbc87::t_9bb97c79bbd24f 4153-4166
+  s_b2c5776e6fbc87::t_21c7e9a32edfe2 1493-1494,1504
+  s_b2c5776e6fbc87::t_4117f7a25e6e1d 1649-1681
+  s_40482f44189743::t_b3453d90297bd8 3408
+apps/desktop/src-tauri/capabilities/default.json
+  s_b2c5776e6fbc87::t_78171159375c7a 27-28
+apps/desktop/src-tauri/Cargo.toml
+  s_1ea7435944294c::t_a35abffefaa128 16
+apps/desktop/src-tauri/tauri.conf.json
+  s_b2c5776e6fbc87::t_962162ab6e270f 25
+  s_1ea7435944294c::t_73727bda890c70 38-42
+docs/llm/INDEX.md
+  s_39270ae3bb7555::t_982612090c4478 56-57,93
+  s_39270ae3bb7555::t_e47a747a973a76 58-60
+apps/desktop/src/lib/i18n.ts
+  s_b2c5776e6fbc87::t_2d815a54f1913b 340-354
+  s_b2c5776e6fbc87::t_a72d7285e001bb 761-775
+  s_b2c5776e6fbc87::t_14368a1d5e5e69 1173-1183
+docs/agent-devkit/changes/archive/2026-10-21-4-desktop-update-notice/design.md
+  s_39270ae3bb7555::t_0f424b2fc2313f 1-53
+apps/desktop/src/lib/update-check.ts
+  s_6aab080b75cce4::t_cda8fb333b61ca 3-4
+  s_b2c5776e6fbc87::t_007c4af76257e5 11
+  s_3b98798d200cf9::t_4a0aca745d2adc 20
+  s_16c132e153211c::t_35020311b31145 46-51
+  s_3b98798d200cf9::t_d5bbdec22c0923 57-59
+  s_b2c5776e6fbc87::t_92f6b77668d497 1-2,5-10,12-19,21-45,52-56,60-118
+docs/agent-devkit/INDEX.md
+  s_39270ae3bb7555::t_7690d32b0ed89c 11
+apps/desktop/src-tauri/Cargo.lock
+  s_39270ae3bb7555::t_069c6a6e4168c9 3996
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "68534888ddd06cecd345c340b4c834afe1625cc4",
+  "prompts": {},
+  "sessions": {
+    "s_16c132e153211c": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "befitting-cabbage",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_1ea7435944294c": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "nosy-pyroraptor",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_39270ae3bb7555": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15a40-3655-7e73-98c0-e06c51fe4bf7",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_3b98798d200cf9": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "zesty-aardwolf",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_40482f44189743": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a158e1-cb44-7020-aa8f-5329933881f3",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_6aab080b75cce4": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "orchid-cowbell",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_b2c5776e6fbc87": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "congruous-aftershave",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
