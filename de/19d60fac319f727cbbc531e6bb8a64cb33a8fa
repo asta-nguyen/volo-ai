@@ -1,0 +1,41 @@
+docs/llm/architecture/overview.md
+  s_39270ae3bb7555::t_401f77f7c0e017 113-120,160,245
+docs/llm/INDEX.md
+  s_39270ae3bb7555::t_401f77f7c0e017 57-61,100
+docs/agent-devkit/changes/archive/2026-10-21-4-desktop-update-notice/tasks.md
+  s_39270ae3bb7555::t_401f77f7c0e017 1-93
+apps/desktop/src-tauri/capabilities/default.json
+  s_39270ae3bb7555::t_401f77f7c0e017 27-28
+apps/desktop/src-tauri/tauri.conf.json
+  s_39270ae3bb7555::t_401f77f7c0e017 25,38-42
+apps/desktop/src/lib/update-check.ts
+  s_39270ae3bb7555::t_401f77f7c0e017 1-118
+apps/desktop/src/App.tsx
+  s_39270ae3bb7555::t_401f77f7c0e017 15,56,80,90,122-130,457-490,1473-1474,1484,1517-1518,1528,1683-1715,3410-3417,3694-3697,3731-3740,3886-3923,4488-4517,4614-4621,4675-4677
+apps/desktop/src/lib/i18n.ts
+  s_39270ae3bb7555::t_401f77f7c0e017 368-382,818-832,1255-1265
+docs/agent-devkit/changes/archive/2026-10-21-4-desktop-update-notice/design.md
+  s_39270ae3bb7555::t_401f77f7c0e017 1-53
+docs/agent-devkit/INDEX.md
+  s_39270ae3bb7555::t_86d5fd36c2c144 9
+apps/desktop/src-tauri/Cargo.toml
+  s_39270ae3bb7555::t_401f77f7c0e017 16
+apps/desktop/src-tauri/Cargo.lock
+  s_39270ae3bb7555::t_d93157153e2254 3996
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "de19d60fac319f727cbbc531e6bb8a64cb33a8fa",
+  "prompts": {},
+  "sessions": {
+    "s_39270ae3bb7555": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15a40-3655-7e73-98c0-e06c51fe4bf7",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
