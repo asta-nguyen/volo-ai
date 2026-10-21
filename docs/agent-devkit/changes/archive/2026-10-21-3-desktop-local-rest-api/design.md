@@ -61,6 +61,6 @@ Let local scripts and applications call Volo AI's existing TTS and voice-profile
 
 ## Related context
 
-- [Architecture overview](../../../llm/architecture/overview.md)
-- [MCP voice library](../../../llm/workflows/mcp-voice-library.md)
-- [Desktop speech providers](../../../llm/workflows/desktop-vieneu.md)
+- [Architecture overview](../../../../llm/architecture/overview.md)
+- [MCP voice library](../../../../llm/workflows/mcp-voice-library.md)
+- [Desktop speech providers](../../../../llm/workflows/desktop-vieneu.md)

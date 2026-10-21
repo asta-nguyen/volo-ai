@@ -19,7 +19,8 @@ the Python worker as a Tauri sidecar and stores model/audio data locally.
   `status` reports OmniVoice and VieNeu readiness; `prepare_model` and
   `synthesize` require an explicit provider ID. It also reports Linux x64
   optional NVIDIA runtime state and serves runtime install/remove and
-  diagnostics export/clear requests. OmniVoice retains auto, file,
+  diagnostics export/clear requests. It owns the opt-in loopback REST API
+  lifecycle; the API delegates to the existing MCP tools. OmniVoice retains auto, file,
   saved-profile, and voice-design synthesis. VieNeu supports manifest presets,
   saved Clone profiles, and one-off reference files.
 - `apps/desktop/src/main.tsx` mounts the React UI; `App.tsx` owns the desktop
@@ -95,6 +96,10 @@ voice assets, and CAM++ encoder; it uses Python for SEA-G2P and speaker
 embeddings and calls the configured or bundled CPU audio.cpp CLI for synthesis.
 Both the MCP server and desktop sidecar use this provider; the CLI remains
 OmniVoice-only.
+The desktop sidecar can start a JSON REST API on `127.0.0.1:8765` from Settings
+> MCP. It is off by default, shares the existing MCP operations and app data,
+and stops with the sidecar. It has no token; the API reference documents the
+accepted same-machine process trust boundary and route contract.
 `convert.py` writes WAV, FLAC, OGG, or MP3 output; VieNeu WAV/MP3 output keeps
 48 kHz, while OmniVoice generates at 24 kHz. MP3 requires FFmpeg and pydub,
 while unsupported output extensions are rejected.
@@ -139,6 +144,7 @@ Desktop provider setup and synthesis are documented in
 | Model lifecycle | `Engine.model_status`/`ensure_model` and `VieNeuProvider.status`/`ensure_model` serve MCP and desktop readiness and setup |
 | Voice profiles | `Engine.save_voice`, `save_design_voice`, `load_voice_profile`, `load_voice`, `list_voices`, and `delete_voice`; Clone and Design profiles share the desktop library |
 | MCP voice generation | `status`, `prepare_model`, `speak`, `clone`, and `list_voices` expose provider setup, VieNeu presets, and saved Clone/Design or external-reference workflows; MCP shares the app library when configured with the app-data path |
+| Desktop local API | Optional `127.0.0.1:8765` REST server delegates status, preparation, synthesis, and voice-profile operations to the existing MCP tools; Settings owns start/stop and the sidecar stops it on exit |
 | Seed profiles | `Engine.import_seed_voices`, the `import_seed_voices` sidecar request, and bundled seed manifests |
 | Audio history | `Engine.record_audio_history` and `list_audio_history`/`delete_audio_history` sidecar operations index files from `outputs`; React plays files and confirms deletion |
 | Desktop settings | `App.tsx` and `i18n.ts` expose General, Model, Storage, and MCP tabs; Linux x64 Model settings manage the optional NVIDIA sidecar, and Logs exports local diagnostics; MCP generates copyable client-specific setup for Codex CLI, Claude Code, Claude Desktop, Cursor, VS Code / GitHub Copilot, and Zed using the app-data path |
@@ -191,10 +197,12 @@ synthesis target remains `volo-ai.synthesis-language`.
 - `tests/test_engine.py`
 - `README.md`
 - `src/tts_mcp/desktop.py`
+- `src/tts_mcp/api.py`
 - `src/tts_mcp/desktop_runtime.py`
 - `src/tts_mcp/desktop_diagnostics.py`
 - `src/tts_mcp/desktop_vieneu.py`
 - `tests/test_desktop.py`
+- `tests/test_api.py`
 - `tests/test_desktop_vieneu.py`
 - `tests/test_build_sidecar.py`
 - `tests/test_package_cuda_runtime.py`
@@ -222,6 +230,7 @@ synthesis target remains `volo-ai.synthesis-language`.
 - `apps/desktop/src-tauri/resources/seed-voices/tony-hoang/manifest.json`
 - `apps/desktop/src/lib/i18n.ts`
 - `apps/desktop/src/lib/sidecar.ts`
+- `docs/desktop-local-api.md`
 - `apps/desktop/src/lib/diagnostics.ts`
 - `.github/workflows/release.yml`
 - `release.md`

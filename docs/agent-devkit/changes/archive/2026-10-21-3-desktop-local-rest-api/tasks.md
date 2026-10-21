@@ -39,8 +39,8 @@ Change: Use a separate standard-library threaded HTTP listener on `127.0.0.1` an
 
 Verify: `rtk .venv/bin/python -m unittest discover -s tests -p test_api.py -v` passes. Each MCP-equivalent route returns its expected result; malformed JSON, invalid arguments, oversized body, unknown route, and operation errors return structured non-2xx JSON; bad Host, any Origin, and unsupported body content type never call the tool function; successful calls invoke the matching existing function once.
 
-Progress: todo
-Result: none
+Progress: done
+Result: Focused API suite — 29 tests passed, including missing/malformed Host regressions and shutdown/server-close retry cases; full Python suite — 187 passed. Python compile check, desktop production build, Cargo check (with temporary target-named sidecar stubs), wiki validator (6 Markdown files/28 requirements, 0 errors or warnings), and `git diff --check` passed. Manual Tauri QA confirmed Start/Stop and listener shutdown; the new raw HTTP regression proved missing Host was accepted before the fix and returns 403 afterward. Coverage includes all routes, argument forwarding/validation, structured errors, 1 MiB limit, Host/Origin/content-type rejection, lifecycle, and port conflict.
 
 ### Task 2 — [Sidecar lifecycle] Start and stop the local API from Settings
 
@@ -52,8 +52,8 @@ Change: Keep one server per sidecar process. Start only on user action, make Sto
 
 Verify: `rtk .venv/bin/python -m unittest discover -s tests -p test_desktop.py -v` and `rtk npm --prefix apps/desktop run build` pass. Lifecycle tests verify off-by-default, start, repeated stop, port conflict, and shutdown; manual curl check verifies API calls work after Start and fail after Stop/app shutdown.
 
-Progress: todo
-Result: none
+Progress: done
+Result: `PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p test_desktop.py -v` — 50 tests passed including off-by-default status, single-server start/status/idempotent stop, port-conflict error, and shutdown stop; desktop production build passed (existing large-chunk warning only). In a Tauri app with isolated app data, Settings > MCP Start showed Running and `/api/v1/status` returned HTTP 200; Stop showed Stopped, curl failed to connect, and no process listened on port 8765. Restarting the API and quitting the app also closed the listener. Separate sidecar JSONL smoke verified start, status/voices, structured validation errors, Origin rejection, stop, and EOF shutdown. No model preparation or synthesis was triggered.
 
 ### Task 3 — [Docs] Document local API callers and verified architecture
 
@@ -65,8 +65,8 @@ Change: After Tasks 1–2 pass, document only behavior established by implementa
 
 Verify: Run the `document-wiki` task-update procedure and its wiki validator. Confirm all route examples match the live handlers and all internal links/source paths resolve.
 
-Progress: todo
-Result: none
+Progress: done
+Result: Added `docs/desktop-local-api.md` route table and examples, linked it from the codebase index, and updated architecture boundaries/domains. Wiki validator reported 6 Markdown files, 28 requirements, 0 errors/warnings; `git diff --check` passed and documented routes were checked against handlers.
 
 ## Files inspected, no change
 
