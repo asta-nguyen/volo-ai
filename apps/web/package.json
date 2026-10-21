@@ -12,7 +12,7 @@
     "test": "node --experimental-strip-types --test test/changelog.test.mjs"
   },
   "dependencies": {
-    "markdown-it": "15.0.2",
+    "markdown-it": "15.0.3",
     "next": "16.4.2",
     "react": "19.3.1",
     "react-dom": "19.3.1"
