@@ -150,6 +150,10 @@ export const copy = {
             title: "Recent takes at hand",
             body: "Workspace keeps the five latest takes of the session ready for replay.",
           },
+          {
+            title: "Video to subtitles",
+            body: "Paste a public YouTube or Facebook link of up to 60 minutes in Transcribe to get a timestamped .srt file, transcribed locally with Whisper.",
+          },
         ],
       },
       {
@@ -382,6 +386,10 @@ export const copy = {
           {
             title: "Các lần tạo gần đây",
             body: "Workspace giữ sẵn năm lần tạo mới nhất của phiên làm việc để phát lại.",
+          },
+          {
+            title: "Video thành phụ đề",
+            body: "Dán link YouTube hoặc Facebook công khai dài tối đa 60 phút vào mục Chép lời để nhận tệp .srt có mốc thời gian, chép lời ngay trên máy bằng Whisper.",
           },
         ],
       },

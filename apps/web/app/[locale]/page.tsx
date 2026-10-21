@@ -1,13 +1,29 @@
 import { notFound } from "next/navigation";
+import {
+  IconAlert,
+  IconApple,
+  IconArrowRight,
+  IconChevronDown,
+  IconClock,
+  IconDownload,
+  IconExternal,
+  IconGithub,
+  IconInfo,
+  IconLinux,
+  IconRelease,
+  IconSpark,
+  IconWindows,
+} from "@/components/icons";
+import { SiteFooter, SiteHeader } from "@/components/site-chrome";
 import { formatBytes, getLatestRelease, GITHUB_REPOSITORY, PLATFORM_KEYS, type PlatformKey, type ReleaseAsset } from "@/lib/releases";
 import { copy, isLocale, type Locale } from "@/lib/site-copy";
 
 type PageProps = { params: Promise<{ locale: string }> };
 
-const platformMarkers: Record<PlatformKey, string> = {
-  macos_arm64: "MAC",
-  windows_x64: "WIN",
-  linux_x64: "LIN",
+const platformIcons: Record<PlatformKey, typeof IconApple> = {
+  macos_arm64: IconApple,
+  windows_x64: IconWindows,
+  linux_x64: IconLinux,
 };
 
 const workflowBars = [20, 36, 28, 58, 42, 70, 48, 82, 55, 96, 62, 76, 43, 88, 54, 72, 34, 64, 41, 80, 52, 68, 30, 48, 24, 56, 34, 66, 39, 58, 26, 44];
@@ -33,7 +49,7 @@ function PlatformAssetLink({
         <span className="asset-size">{formatBytes(asset.size, locale)}</span>
       </span>
       <span className="asset-action">
-        {downloadLabel} <span aria-hidden="true">↓</span>
+        {downloadLabel} <IconDownload />
       </span>
     </a>
   );
@@ -62,29 +78,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
         {locale === "vi" ? "Chuyển đến nội dung chính" : "Skip to main content"}
       </a>
 
-      <header className="site-header page-shell">
-        <a className="brand" href={`/${locale}`} aria-label="Volo AI home">
-          <span className="brand-mark" aria-hidden="true">v</span>
-          <span className="brand-name">volo<span>ai</span></span>
-        </a>
-
-        <nav className="main-navigation" aria-label={text.navigation}>
-          <a href="#about">{text.aboutLink}</a>
-          <a href="#downloads">{text.downloadLink}</a>
-          <a href={`/${locale}/features`}>{text.featuresLink}</a>
-          <a href={`/${locale}/changelog`}>{text.changelogLink}</a>
-          <a href={`https://github.com/${GITHUB_REPOSITORY}`}>GitHub <span aria-hidden="true">↗</span></a>
-        </nav>
-
-        <div className="header-actions">
-          <div className="language-switch" aria-label={text.languageLabel}>
-            <a href="/en" lang="en" aria-current={locale === "en" ? "page" : undefined}>EN</a>
-            <span aria-hidden="true">/</span>
-            <a href="/vi" lang="vi" aria-current={locale === "vi" ? "page" : undefined}>VI</a>
-          </div>
-          <a className="header-download" href="#downloads">{text.downloadLink}</a>
-        </div>
-      </header>
+      <SiteHeader locale={locale} text={text} />
 
       <main id="main-content">
         <section className="hero page-shell" aria-labelledby="hero-title">
@@ -97,13 +91,13 @@ export default async function LocaleHomePage({ params }: PageProps) {
             <p className="hero-description">{text.heroBody}</p>
             <div className="hero-actions">
               <a className="button button-primary" href="#downloads">
-                {text.heroAction} <span aria-hidden="true">↘</span>
+                {text.heroAction} <IconDownload />
               </a>
               <a className="button button-secondary" href={`https://github.com/${GITHUB_REPOSITORY}`}>
-                {text.sourceAction} <span aria-hidden="true">↗</span>
+                <IconGithub /> {text.sourceAction}
               </a>
             </div>
-            <p className="hero-footnote"><span aria-hidden="true">↳</span>{text.heroFootnote}</p>
+            <p className="hero-footnote"><IconInfo />{text.heroFootnote}</p>
           </div>
 
           <div className="workflow-panel" role="group" aria-label={text.workflowLabel}>
@@ -121,7 +115,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
                 <span className="step-label">{text.workflowInput}</span>
                 <p>{text.workflowQuote}</p>
               </div>
-              <div className="workflow-connector" aria-hidden="true">→</div>
+              <div className="workflow-connector" aria-hidden="true"><IconArrowRight /></div>
               <div className="workflow-step workflow-step-output">
                 <span className="step-label">{text.workflowModel}</span>
                 <p>{text.workflowModels}</p>
@@ -129,7 +123,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
                 <p className="output-format">{text.workflowFormats}</p>
               </div>
             </div>
-            <p className="workflow-footer"><span aria-hidden="true">✳</span>{text.workflowFootnote}</p>
+            <p className="workflow-footer"><IconSpark />{text.workflowFootnote}</p>
             <span className="workflow-index" aria-hidden="true">01—03</span>
           </div>
         </section>
@@ -152,7 +146,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
             ))}
             <p className="features-home-cta">
               <a className="button button-secondary" href={`/${locale}/features`}>
-                {text.featuresCta} <span aria-hidden="true">→</span>
+                {text.featuresCta} <IconArrowRight />
               </a>
             </p>
           </div>
@@ -172,24 +166,26 @@ export default async function LocaleHomePage({ params }: PageProps) {
             <div className={`release-banner release-${release.kind}`} aria-live="polite">
               {release.kind === "available" ? (
                 <>
-                  <div className="release-mark" aria-hidden="true">↗</div>
+                  <div className="release-mark" aria-hidden="true"><IconRelease /></div>
                   <div className="release-copy">
                     <p className="release-label">{text.latestRelease}</p>
                     <h3>{release.tag}</h3>
                     <p>{text.publishedOn} <time dateTime={release.publishedAt}>{releaseDate}</time></p>
                   </div>
-                  <a className="release-notes" href={release.notesUrl}>{text.releaseNotes}<span aria-hidden="true"> ↗</span></a>
+                  <a className="release-notes" href={release.notesUrl}>{text.releaseNotes}<IconExternal /></a>
                 </>
               ) : (
                 <>
-                  <div className="release-mark" aria-hidden="true">{release.kind === "no-release" ? "…" : "!"}</div>
+                  <div className="release-mark" aria-hidden="true">
+                    {release.kind === "no-release" ? <IconClock /> : <IconAlert />}
+                  </div>
                   <div className="release-copy">
                     <p className="release-label">{text.downloadsEyebrow}</p>
                     <h3>{release.kind === "no-release" ? text.noReleaseTitle : text.unavailableTitle}</h3>
                     <p>{release.kind === "no-release" ? text.noReleaseBody : text.unavailableBody}</p>
                   </div>
                   <a className="release-notes" href={`https://github.com/${GITHUB_REPOSITORY}/releases`}>
-                    {text.releasesLink}<span aria-hidden="true"> ↗</span>
+                    {text.releasesLink}<IconExternal />
                   </a>
                 </>
               )}
@@ -197,6 +193,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
 
             <div className="platform-list grid">
               {PLATFORM_KEYS.map((key) => {
+                const PlatformIcon = platformIcons[key];
                 const assets = release.kind === "available" ? release.platforms[key] : [];
                 const platform = text.platforms[key];
                 const emptyMessage = release.kind === "no-release"
@@ -209,7 +206,9 @@ export default async function LocaleHomePage({ params }: PageProps) {
                   <article className="platform-row" key={key}>
                     <div className="platform-main">
                       <div className="platform-heading">
-                        <span className="platform-marker" aria-hidden="true">{platformMarkers[key]}</span>
+                        <span className="platform-marker" aria-hidden="true">
+                          <PlatformIcon />
+                        </span>
                         <div className="platform-copy">
                           <h3>{platform.name}</h3>
                           <p>{platform.architecture}</p>
@@ -230,22 +229,22 @@ export default async function LocaleHomePage({ params }: PageProps) {
 
                     {key === "macos_arm64" && (
                       <div className="mac-help">
-                        <p className="mac-warning"><span aria-hidden="true">!</span>{text.macWarning}</p>
+                        <p className="mac-warning"><span aria-hidden="true"><IconAlert /></span>{text.macWarning}</p>
                         <details className="help-disclosure">
-                          <summary>{text.macHelpTitle}</summary>
+                          <summary>{text.macHelpTitle}<span className="disclosure-icon" aria-hidden="true"><IconChevronDown /></span></summary>
                           <div className="help-content">
                             <p className="help-caution">{text.macTrustNotice}</p>
                             <ol>
                               <li>{text.openStepOne}</li>
                               <li>{text.openStepTwo}</li>
                             </ol>
-                            <a className="help-source" href="https://support.apple.com/en-ie/102445">{text.appleSafetyLink}<span aria-hidden="true"> ↗</span></a>
+                            <a className="help-source" href="https://support.apple.com/en-ie/102445">{text.appleSafetyLink}<IconExternal /></a>
                             <div className="damaged-note">
                               <h4>{text.damagedTitle}</h4>
                               <p>{text.damagedBody}</p>
                             </div>
                             <details className="advanced-disclosure">
-                              <summary>{text.advancedTitle}</summary>
+                              <summary>{text.advancedTitle}<span className="disclosure-icon" aria-hidden="true"><IconChevronDown /></span></summary>
                               <div className="advanced-content">
                                 <p>{text.advancedReason}</p>
                                 <p className="advanced-risk">{text.advancedRisk}</p>
@@ -264,7 +263,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
                                   </li>
                                 </ol>
                                 <p className="admin-password">{text.adminPassword}</p>
-                                <a className="help-source" href="https://help.apple.com/xcode/mac/current/en.lproj/dev9b7736b0e.html">{text.appleCommandLink}<span aria-hidden="true"> ↗</span></a>
+                                <a className="help-source" href="https://help.apple.com/xcode/mac/current/en.lproj/dev9b7736b0e.html">{text.appleCommandLink}<IconExternal /></a>
                               </div>
                             </details>
                           </div>
@@ -278,23 +277,13 @@ export default async function LocaleHomePage({ params }: PageProps) {
 
             <div className="download-footer">
               <span>{locale === "vi" ? "Không tìm thấy bản phù hợp?" : "Need a different build?"}</span>
-              <a href={`https://github.com/${GITHUB_REPOSITORY}/releases`}>{text.releasesLink}<span aria-hidden="true"> ↗</span></a>
+              <a href={`https://github.com/${GITHUB_REPOSITORY}/releases`}>{text.releasesLink}<IconExternal /></a>
             </div>
           </div>
         </section>
       </main>
 
-      <footer className="site-footer page-shell">
-        <a className="brand footer-brand" href={`/${locale}`} aria-label="Volo AI home">
-          <span className="brand-mark" aria-hidden="true">v</span>
-          <span className="brand-name">volo<span>ai</span></span>
-        </a>
-        <p>{text.footerText}</p>
-        <div className="footer-meta">
-          <span>{text.footerNote}</span>
-          <a href={`https://github.com/${GITHUB_REPOSITORY}`}>GitHub <span aria-hidden="true">↗</span></a>
-        </div>
-      </footer>
+      <SiteFooter locale={locale} text={text} />
     </>
   );
 }

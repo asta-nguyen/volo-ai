@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { IconClock, IconDownload } from "@/components/icons";
+import { SiteFooter, SiteHeader } from "@/components/site-chrome";
 import { getChangelogEntries, renderChangelogMarkdown } from "@/lib/changelog";
 import { formatBytes, getReleaseForTag, PLATFORM_KEYS, type PlatformKey, type ReleaseAsset, type TagRelease } from "@/lib/releases";
 import { copy, isLocale, type Locale } from "@/lib/site-copy";
@@ -60,7 +62,7 @@ function ChangelogDownloads({
               >
                 <span className="changelog-download-name">{asset.name}</span>
                 <span className="changelog-download-size">{formatBytes(asset.size, locale)}</span>
-                <span aria-hidden="true">↓</span>
+                <IconDownload />
               </a>
             ))}
           </div>
@@ -85,27 +87,7 @@ export default async function ChangelogPage({ params }: PageProps) {
         {locale === "vi" ? "Chuyển đến nội dung chính" : "Skip to main content"}
       </a>
 
-      <header className="site-header page-shell">
-        <a className="brand" href={`/${locale}`} aria-label="Volo AI home">
-          <span className="brand-mark" aria-hidden="true">v</span>
-          <span className="brand-name">volo<span>ai</span></span>
-        </a>
-
-        <nav className="main-navigation" aria-label={text.navigation}>
-          <a href={`/${locale}`}>{text.homeLink}</a>
-          <a href={`/${locale}/features`}>{text.featuresLink}</a>
-          <a href={`/${locale}/changelog`} aria-current="page">{text.changelogLink}</a>
-        </nav>
-
-        <div className="header-actions">
-          <div className="language-switch" aria-label={text.languageLabel}>
-            <a href="/en/changelog" lang="en" aria-current={locale === "en" ? "page" : undefined}>EN</a>
-            <span aria-hidden="true">/</span>
-            <a href="/vi/changelog" lang="vi" aria-current={locale === "vi" ? "page" : undefined}>VI</a>
-          </div>
-          <a className="header-download" href={`/${locale}#downloads`}>{text.downloadLink}</a>
-        </div>
-      </header>
+      <SiteHeader locale={locale} text={text} kind="changelog" />
 
       <main id="main-content">
         <section className="changelog-section page-shell" aria-labelledby="changelog-title">
@@ -147,7 +129,7 @@ export default async function ChangelogPage({ params }: PageProps) {
             </ol>
           ) : (
             <div className="release-banner changelog-state release-no-release" aria-live="polite">
-              <div className="release-mark" aria-hidden="true">…</div>
+              <div className="release-mark" aria-hidden="true"><IconClock /></div>
               <div className="release-copy">
                 <p className="release-label">{text.changelogEyebrow}</p>
                 <h2>{text.changelogEmptyTitle}</h2>
@@ -158,16 +140,7 @@ export default async function ChangelogPage({ params }: PageProps) {
         </section>
       </main>
 
-      <footer className="site-footer page-shell">
-        <a className="brand footer-brand" href={`/${locale}`} aria-label="Volo AI home">
-          <span className="brand-mark" aria-hidden="true">v</span>
-          <span className="brand-name">volo<span>ai</span></span>
-        </a>
-        <p>{text.footerText}</p>
-        <div className="footer-meta">
-          <span>{text.footerNote}</span>
-        </div>
-      </footer>
+      <SiteFooter locale={locale} text={text} />
     </>
   );
 }
