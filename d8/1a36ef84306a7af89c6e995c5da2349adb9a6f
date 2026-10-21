@@ -1,0 +1,126 @@
+apps/web/app/[locale]/page.tsx
+  s_dd813e739d5ffa::t_7596b5819fcb6a 2
+  s_b9fffc454e1604::t_b71a961739a050 74
+docs/agent-devkit/changes/archive/2026-10-21-5-web-changelog-page/tasks.md
+  s_39270ae3bb7555::t_52e5c3cdd15756 11-16,20,22-32,34,36-40,44,46,48-49,51,53,57,59,61-62,64,68-98,100,102-103,105,107,109-110,112-114,119,127
+docs/agent-devkit/changes/archive/2026-10-21-5-web-changelog-page/design.md
+  s_39270ae3bb7555::t_bb307c8cbfc567 7,11-16,20-25,29-34,38-43,47-49
+apps/web/test/mock-github.mjs
+  s_afadbf8a394a7b::t_9c46096c2cd1e1 2-3,9-12,15,24-25,28,31-44,46,53,57,67-75,80-81
+  s_d9bf0f9a62fb96::t_985f6c5bdc9882 6-8
+  s_dd813e739d5ffa::t_7258c6353bb70b 1,4-5,13-14,16-23,26-27,29-30,45,47-52,54-56,58-66
+  s_d9bf0f9a62fb96::t_2ccca06692fc23 76-79
+apps/web/app/[locale]/changelog/page.tsx
+  s_dd813e739d5ffa::t_40a054c9b52c83 46
+  s_dd813e739d5ffa::t_02d6d8de80ff33 3,22-25,28-45,47-70,73,79-80,96,101,103,120-127,129-146,148-149,152-153
+  s_dd813e739d5ffa::t_a66a9d6ffe0e32 4
+  s_b9fffc454e1604::t_fd5c7f3809f3b1 1-2,5-21,26-27,71-72,74-78,81-95,97-100,102,104-119,128,147,150-151,154-172
+docs/llm/architecture/overview.md
+  s_39270ae3bb7555::t_2b791f104fd5a0 251
+  s_dd813e739d5ffa::t_84206035a01a1c 253,255-258
+  s_dd813e739d5ffa::t_dfaffe7825a85b 161
+  s_dd813e739d5ffa::t_5da722b6e22a04 187-189
+  s_dd813e739d5ffa::t_0229d273b8b03b 60-74
+apps/web/lib/site-copy.ts
+  s_dd813e739d5ffa::t_9ccec825a99fe8 65,70,72-74
+  s_b9fffc454e1604::t_064dec7ccc3d28 61-64,66-69,71
+  s_b9fffc454e1604::t_669f79381e3360 168-171,173-176,178
+  s_dd813e739d5ffa::t_7f8752f6424be9 172,177,179-181
+docs/llm/INDEX.md
+  s_39270ae3bb7555::t_e76697205f23d0 69
+  s_39270ae3bb7555::t_2b791f104fd5a0 62-64
+  s_dd813e739d5ffa::t_f23e9f2d67220f 65-68
+  s_dd813e739d5ffa::t_d4a51364080f61 99-101
+apps/web/test/changelog.test.mjs
+  s_c8a7e4a11abcbe::t_e74209c74b5e66 240-248
+  s_c8a7e4a11abcbe::t_67bbd661501243 99-101,106,113-116
+  s_dd813e739d5ffa::t_932a8912343b0f 1-98,102-105,107-112,117-152,154-239,249-270,272-279
+  s_c8a7e4a11abcbe::t_8235e73f3ca181 153
+  s_dd813e739d5ffa::t_7cd5bc33da9df1 271
+apps/web/app/globals.css
+  s_b9fffc454e1604::t_94510b79ddaa8e 1008-1151,1158-1159,1161-1163,1165-1166,1174-1175,1177-1178,1181-1187,1189-1190,1197-1198,1200-1201,1226-1227
+  s_dd813e739d5ffa::t_8ed575619a9cb9 1152-1157,1160,1164,1167-1173,1176,1179-1180,1188,1191-1196,1199,1202-1225
+  s_b9fffc454e1604::t_86dac917e08a47 1360-1363
+apps/web/next.config.ts
+  s_dd813e739d5ffa::t_dd663d4acd0ee5 1-11
+apps/web/package.json
+  s_afadbf8a394a7b::t_009bf4efcc4945 11
+  s_b9fffc454e1604::t_d41853db19b810 15
+  s_dd813e739d5ffa::t_e58cff25dd2656 12
+docs/agent-devkit/INDEX.md
+  s_39270ae3bb7555::t_cc45cbf0b9740a 11
+apps/web/lib/changelog.ts
+  s_c8a7e4a11abcbe::t_1b0fd58cd3e88d 12
+  s_dd813e739d5ffa::t_a135aaae223173 1-11,13-54
+apps/web/lib/releases.ts
+  s_b9fffc454e1604::t_350f9e0c890f3d 26-27,30-32
+  s_b9fffc454e1604::t_d7e87449f1d701 191,194-195,197-198,200,202-203,205-206,209-211,213-224,226-229
+  s_dd813e739d5ffa::t_b53e3f441380ee 169,174
+  s_dd813e739d5ffa::t_0262dab7e49488 33-46
+  s_dd813e739d5ffa::t_58f0a443aa984b 25,28-29,48-49
+  s_c8a7e4a11abcbe::t_c61cc64272b9e9 50
+  s_dd813e739d5ffa::t_f0304f54017a57 192-193,196,199,201,204,207-208,212,225
+  s_dd813e739d5ffa::t_670db940dee34e 113-127,138
+changelog.md
+  s_dd813e739d5ffa::t_5eae99f4d85961 1-18
+docs/desktop-development.md
+  s_dd813e739d5ffa::t_eb5e59beddf530 135-139
+apps/web/package-lock.json
+  s_39270ae3bb7555::t_e24f95ec4838c8 11,1046-1061,1131-1142,1421-1439,1450-1482,1617-1625,1789-1794
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d81a36ef84306a7af89c6e995c5da2349adb9a6f",
+  "prompts": {},
+  "sessions": {
+    "s_39270ae3bb7555": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15a40-3655-7e73-98c0-e06c51fe4bf7",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_afadbf8a394a7b": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "successful-galley",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_b9fffc454e1604": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "pentagonal-stem",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_c8a7e4a11abcbe": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "noiseless-lyric",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_d9bf0f9a62fb96": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "warp-umbra",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_dd813e739d5ffa": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "shiny-airboat",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
