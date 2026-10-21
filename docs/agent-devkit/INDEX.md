@@ -2,10 +2,9 @@
 
 ## Changes
 
-- [Website Changelog Page](changes/2026-10-21-5-web-changelog-page/design.md) — [tasks](changes/2026-10-21-5-web-changelog-page/tasks.md)
-
 ## Archived changes
 
+- [Website Changelog Page](changes/archive/2026-10-21-5-web-changelog-page/design.md) — [tasks](changes/archive/2026-10-21-5-web-changelog-page/tasks.md)
 - [Desktop Update Notice](changes/archive/2026-10-21-4-desktop-update-notice/design.md) — [tasks](changes/archive/2026-10-21-4-desktop-update-notice/tasks.md)
 - [Desktop Local REST API](changes/archive/2026-10-21-3-desktop-local-rest-api/design.md) — [tasks](changes/archive/2026-10-21-3-desktop-local-rest-api/tasks.md)
 - [Audio History Rename and Copy Path](changes/archive/2026-10-21-2-audio-history-rename-copy-path/design.md) — [tasks](changes/archive/2026-10-21-2-audio-history-rename-copy-path/tasks.md)
