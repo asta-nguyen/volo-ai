@@ -103,6 +103,14 @@ model preparation and seeding a one-hour timeout, and optional runtime
 installation a three-hour timeout. Runtime downloads emit progress and support
 cancellation. Startup checks the exact app version and performs a CUDA health
 check; a stale or unusable runtime leaves CPU synthesis available.
+The React UI also checks GitHub's latest stable release at startup without
+blocking rendering, with a five-second timeout and a 24-hour automatic-check
+cooldown. A newer version appears in an in-app banner; Settings > General can
+check manually, and a manual check can resurface a dismissed release. Dismissals
+are stored by release tag. The Tauri shell-open scope accepts only the exact
+`https://github.com/az-forge/volo-ai/releases/tag/vMAJOR.MINOR.PATCH` URL (strict
+SemVer, no leading-zero components); the app opens only that validated release
+URL and does not download or install updates.
 The React root provides one in-memory TanStack Query client. `App.tsx` queries
 sidecar status and voice profiles, and loads cursor-paginated Audio History
 only while that view is active. Successful profile and preparation mutations
@@ -141,7 +149,7 @@ Desktop provider setup and synthesis are documented in
 | MCP voice generation | `status`, `prepare_model`, `speak`, `clone`, and `list_voices` expose provider setup, VieNeu presets, and saved Clone/Design or external-reference workflows; MCP shares the app library when configured with the app-data path |
 | Seed profiles | `Engine.import_seed_voices`, the `import_seed_voices` sidecar request, and bundled seed manifests |
 | Audio history | `Engine.record_audio_history` and `list_audio_history`/`delete_audio_history` sidecar operations index files from `outputs`; React plays files and confirms deletion |
-| Desktop settings | `App.tsx` and `i18n.ts` expose General, Model, Storage, and MCP tabs; Linux x64 Model settings manage the optional NVIDIA sidecar, and Logs exports local diagnostics; MCP generates copyable client-specific setup for Codex CLI, Claude Code, Claude Desktop, Cursor, VS Code / GitHub Copilot, and Zed using the app-data path |
+| Desktop settings | `App.tsx` and `i18n.ts` expose General, Model, Storage, and MCP tabs; General supports manual stable-release checks, Linux x64 Model settings manage the optional NVIDIA sidecar, and Logs exports local diagnostics; MCP generates copyable client-specific setup for Codex CLI, Claude Code, Claude Desktop, Cursor, VS Code / GitHub Copilot, and Zed using the app-data path |
 | Desktop shell | React UI, Tauri plugins, JSONL sidecar, optional Linux CUDA worker, and target-matched audio.cpp CLI |
 | Public download site | `apps/web` serves English and Vietnamese product/download pages, resolves validated latest stable release assets on the Node.js server, and links directly to GitHub |
 
@@ -221,6 +229,7 @@ synthesis target remains `volo-ai.synthesis-language`.
 - `apps/desktop/src-tauri/tauri.conf.json`
 - `apps/desktop/src-tauri/resources/seed-voices/tony-hoang/manifest.json`
 - `apps/desktop/src/lib/i18n.ts`
+- `apps/desktop/src/lib/update-check.ts`
 - `apps/desktop/src/lib/sidecar.ts`
 - `apps/desktop/src/lib/diagnostics.ts`
 - `.github/workflows/release.yml`

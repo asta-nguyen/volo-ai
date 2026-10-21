@@ -38,12 +38,12 @@ Change: Fetch the latest stable release with a five-second timeout. Validate str
 
 Verify: `rtk npm --prefix apps/desktop run build` passes. Manual controlled responses verify older/current/newer tag comparison, malformed/draft/prerelease payloads, unsafe URL rejection, timeout/offline state, automatic cooldown, and manual bypass. No external link opens for invalid data.
 
-Progress: todo
-Result: none
+Progress: done
+Result: The desktop build passed with the pre-existing large-chunk warning. The final Node 22 response matrix (node /tmp/update-check-matrix.ts) passed 76/76 checks, including strict SemVer leading-zero rejection, exact BigInt ordering for large versions, malformed/draft/prerelease payloads, unsafe URL rejection, API errors, offline/timeout handling, cooldown, dismissal persistence, and storage failures. connect-src allows the GitHub API plus the app/asset and Tauri IPC origins; ipc: and http://ipc.localhost are required for Tauri v2 IPC on Linux.
 
 ### Task 2 — [Desktop UI] Show and dismiss localized update banner
 
-Files: `apps/desktop/src/App.tsx::App`, `apps/desktop/src/App.tsx::SettingsView`, `apps/desktop/src/lib/i18n.ts::createUiCopy`, `apps/desktop/src-tauri/capabilities/default.json::default`
+Files: `apps/desktop/src/App.tsx::App`, `apps/desktop/src/App.tsx::SettingsView`, `apps/desktop/src/lib/i18n.ts::createUiCopy`, `apps/desktop/src-tauri/capabilities/default.json::default`, `apps/desktop/src-tauri/tauri.conf.json::plugins.shell.open`, `apps/desktop/src-tauri/Cargo.toml`
 
 Interfaces: Add the non-blocking startup query, localized banner and manual Settings check. Open the validated release page through the installed shell plugin and grant only the needed shell-open capability.
 
@@ -51,8 +51,8 @@ Change: Render the in-app banner independently from provider readiness; show the
 
 Verify: `rtk npm --prefix apps/desktop run build` passes. Manual QA in English and Vietnamese verifies the banner on a newer release, no banner for current/equal version, dismiss persistence, redisplay for a later tag, manual retry, offline feedback, correct external link opening, and no install action.
 
-Progress: todo
-Result: none
+Progress: done
+Result: The desktop build and cargo check passed; cargo check used the existing QA target and temporary target-named sidecar stubs. The 19-check i18n matrix passed EN/VI copy and language switching; Prettier passed. In a real Tauri window, Settings > General rendered and the live GitHub check reported installed v0.1.1 as current. Separate Tauri QA verified EN/VI banner rendering, dismissal persistence, manual re-display, and opening the exact v0.1.1 release page in the system browser; no download/install started. Final review scoped Tauri shell open to the exact HTTPS release-tag path with strict SemVer (27 accept/reject cases); serde_json was added because Tauri's generate_context! output references it when plugin config is present. The 76-case response matrix passed, including strict tags and storage edge cases.
 
 ### Task 3 — [Docs] Update verified release-check behavior
 
@@ -64,10 +64,12 @@ Change: After Tasks 1–2 pass, document the stable-release check, cooldown, in-
 
 Verify: Run the `document-wiki` task-update procedure and wiki validator; confirm all sources and internal links resolve.
 
-Progress: todo
-Result: none
+Progress: done
+Result: docs/llm/architecture/overview.md and docs/llm/INDEX.md document startup/manual stable-release checks, the 24-hour cooldown, localized in-app banner, dismissal behavior, and no-auto-install behavior. The wiki validator passed (6 Markdown files, 28 requirements, 0 errors/warnings), git diff --check passed, the 76-case release matrix passed, and the full Python suite (152 tests), compileall, desktop build, and cargo check passed.
 
-## Files inspected, no change
+## Files inspected during planning
+
+These files were inspected before implementation; files later changed are listed under the tasks above.
 
 - `docs/llm/architecture/overview.md` — current release workflow and website download behavior.
 - `apps/web/lib/releases.ts` — current validated stable-release source and tag/link contract.

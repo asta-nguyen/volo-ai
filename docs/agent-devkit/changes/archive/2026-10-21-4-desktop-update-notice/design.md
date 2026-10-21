@@ -50,4 +50,4 @@ Tell users when a newer stable Volo AI desktop release is available and give the
 
 ## Related context
 
-- [Architecture overview](../../../llm/architecture/overview.md)
+- [Architecture overview](../../../../llm/architecture/overview.md)
