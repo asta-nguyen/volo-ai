@@ -365,6 +365,21 @@ const resources = {
         storageDescription:
           "Models, saved voice profiles, and generated audio stay inside this local directory.",
       },
+      update: {
+        section: "APP UPDATES",
+        title: "App updates",
+        description:
+          "Volo AI checks for a newer stable release at startup, at most once a day. Nothing downloads or installs.",
+        checkNow: "Check for updates",
+        checking: "Checking…",
+        current: "Volo AI is up to date.",
+        unavailable: "Could not check for updates. Try again.",
+        bannerTitle: "Version {{version}} is available.",
+        bannerDescription:
+          "Get the latest stable Volo AI release on GitHub. Nothing downloads or installs.",
+        viewRelease: "View release",
+        dismiss: "Dismiss",
+      },
       errors: {
         enterText: "Enter some text before generating audio.",
         profileNameRequired: "Enter a profile name first.",
@@ -800,6 +815,21 @@ const resources = {
         storageDescription:
           "Model, hồ sơ giọng và âm thanh đã tạo được lưu trong thư mục cục bộ này.",
       },
+      update: {
+        section: "CẬP NHẬT ỨNG DỤNG",
+        title: "Cập nhật ứng dụng",
+        description:
+          "Volo AI kiểm tra bản phát hành ổn định mới khi khởi động, tối đa mỗi ngày một lần. Ứng dụng không tự tải hay cài đặt.",
+        checkNow: "Kiểm tra cập nhật",
+        checking: "Đang kiểm tra…",
+        current: "Volo AI đã là bản mới nhất.",
+        unavailable: "Không thể kiểm tra cập nhật. Hãy thử lại.",
+        bannerTitle: "Đã có phiên bản {{version}}.",
+        bannerDescription:
+          "Nhận bản phát hành ổn định mới nhất của Volo AI trên GitHub. Ứng dụng không tự tải hay cài đặt.",
+        viewRelease: "Xem bản phát hành",
+        dismiss: "Ẩn",
+      },
       errors: {
         enterText: "Nhập nội dung trước khi tạo âm thanh.",
         profileNameRequired: "Hãy nhập tên hồ sơ trước.",
@@ -1222,6 +1252,17 @@ export function createUiCopy(t: TFunction) {
     appDataDirectory: t("settings.appDataDirectory"),
     loadingDataPath: t("settings.loadingDataPath"),
     storageDescription: t("settings.storageDescription"),
+    updateSection: t("update.section"),
+    updateTitle: t("update.title"),
+    updateDescription: t("update.description"),
+    updateCheckNow: t("update.checkNow"),
+    updateChecking: t("update.checking"),
+    updateCurrent: t("update.current"),
+    updateUnavailable: t("update.unavailable"),
+    updateBannerTitle: (version: string) => t("update.bannerTitle", { version }),
+    updateBannerDescription: t("update.bannerDescription"),
+    updateViewRelease: t("update.viewRelease"),
+    updateDismiss: t("update.dismiss"),
     enterText: t("errors.enterText"),
     profileNameRequired: t("errors.profileNameRequired"),
     chooseReferenceError: t("errors.chooseReference"),

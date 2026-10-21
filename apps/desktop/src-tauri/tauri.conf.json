@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' asset: http://asset.localhost; media-src 'self' asset: http://asset.localhost blob:",
+      "csp": "default-src 'self' asset: http://asset.localhost; connect-src 'self' asset: http://asset.localhost ipc: http://ipc.localhost https://api.github.com; media-src 'self' asset: http://asset.localhost blob:",
       "assetProtocol": {
         "enable": true,
         "scope": ["$APPDATA/**"]
@@ -35,5 +35,10 @@
     "icon": ["icons/icon.png", "icons/icon.ico"],
     "resources": ["resources/seed-voices"],
     "externalBin": ["binaries/tts-sidecar", "binaries/audiocpp-cli"]
+  },
+  "plugins": {
+    "shell": {
+      "open": "https://github\\.com/az-forge/volo-ai/releases/tag/v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)"
+    }
   }
 }

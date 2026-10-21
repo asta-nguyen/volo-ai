@@ -12,6 +12,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { appDataDir, resolveResource } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { copyFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "motion/react";
 import {
   AlertDialog,
@@ -52,6 +53,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   AlertCircle,
+  ArrowUpRight,
   AudioLines,
   Check,
   CheckCircle2,
@@ -75,6 +77,7 @@ import {
   Pencil,
   Play,
   Plus,
+  RefreshCw,
   RotateCcw,
   Search,
   Settings2,
@@ -84,6 +87,7 @@ import {
   Sun,
   Trash2,
   Wand2,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -115,6 +119,15 @@ import {
   recordFrontendDiagnostic,
 } from "./lib/diagnostics";
 import { createUiCopy, setAppLanguage, type AppLanguage, type UiCopy } from "./lib/i18n";
+import {
+  automaticCheckDue,
+  checkLatestRelease,
+  clearDismissedTag,
+  dismissUpdateTag,
+  readDismissedTag,
+  recordAutomaticCheck,
+  type UpdateCheckResult,
+} from "./lib/update-check";
 import { cn } from "./lib/utils";
 import { AudioPlayer, InlineAudioPreview } from "./components/AudioPlayer";
 
@@ -437,6 +450,40 @@ function ErrorMessage({ children }: { children: React.ReactNode }) {
     >
       <AlertCircle className="mt-0.5 size-4 shrink-0" />
       <span>{children}</span>
+    </div>
+  );
+}
+
+function UpdateBanner({
+  copy,
+  tag,
+  onOpenRelease,
+  onDismiss,
+}: {
+  copy: UiCopy;
+  tag: string;
+  onOpenRelease: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      role="status"
+      className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-(--border) bg-(--surface) px-4 py-3"
+    >
+      <Sparkles className="size-5 shrink-0 text-(--accent)" />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold">{copy.updateBannerTitle(tag)}</p>
+        <p className="text-xs leading-5 text-(--muted-foreground)">
+          {copy.updateBannerDescription}
+        </p>
+      </div>
+      <Button size="sm" onClick={onOpenRelease}>
+        <ArrowUpRight className="size-4" />
+        {copy.updateViewRelease}
+      </Button>
+      <Button size="icon-sm" variant="ghost" onClick={onDismiss} aria-label={copy.updateDismiss}>
+        <X className="size-4" />
+      </Button>
     </div>
   );
 }
@@ -1423,6 +1470,8 @@ function SettingsView({
   isStoppingLocalApi,
   onStartLocalApi,
   onStopLocalApi,
+  isCheckingUpdates,
+  manualUpdateFeedback,
   onChangeLanguage,
   onChangeTheme,
   onSelectProvider,
@@ -1432,6 +1481,7 @@ function SettingsView({
   onInstallRuntime,
   onCancelRuntime,
   onRemoveRuntime,
+  onCheckForUpdates,
   onBack,
 }: {
   copy: UiCopy;
@@ -1464,6 +1514,8 @@ function SettingsView({
   isStoppingLocalApi: boolean;
   onStartLocalApi: () => void;
   onStopLocalApi: () => void;
+  isCheckingUpdates: boolean;
+  manualUpdateFeedback: "none" | "current" | "unavailable";
   onChangeLanguage: (language: AppLanguage) => void;
   onChangeTheme: (theme: ThemeMode) => void;
   onSelectProvider: (provider: ProviderId) => void;
@@ -1473,6 +1525,7 @@ function SettingsView({
   onInstallRuntime: () => void;
   onCancelRuntime: () => void;
   onRemoveRuntime: () => void;
+  onCheckForUpdates: () => void;
   onBack: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("model");
@@ -1624,6 +1677,39 @@ function SettingsView({
                         </ToggleGroupItem>
                       ))}
                     </ToggleGroup>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="lg:col-span-2">
+                <CardHeader>
+                  <div>
+                    <SectionLabel>{copy.updateSection}</SectionLabel>
+                    <CardTitle className="mt-2">{copy.updateTitle}</CardTitle>
+                  </div>
+                  <ArrowUpRight className="size-5 text-(--accent)" />
+                </CardHeader>
+                <CardContent>
+                  <CardDescription>{copy.updateDescription}</CardDescription>
+                  <div className="mt-5 flex flex-wrap items-center gap-3">
+                    <Button
+                      variant="secondary"
+                      onClick={onCheckForUpdates}
+                      disabled={isCheckingUpdates}
+                    >
+                      {isCheckingUpdates ? (
+                        <LoaderCircle className="size-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="size-4" />
+                      )}
+                      {isCheckingUpdates ? copy.updateChecking : copy.updateCheckNow}
+                    </Button>
+                    {manualUpdateFeedback === "current" && (
+                      <p className="text-sm text-(--muted-foreground)">{copy.updateCurrent}</p>
+                    )}
+                    {manualUpdateFeedback === "unavailable" && (
+                      <p className="text-sm text-(--destructive)">{copy.updateUnavailable}</p>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -3321,6 +3407,14 @@ function App() {
   const [theme, setTheme] = useState<ThemeMode>(readTheme);
   const [takes, setTakes] = useState<TakeItem[]>([]);
   const [activeTakeId, setActiveTakeId] = useState<string | null>(null);
+  const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
+  const [dismissedUpdateTag, setDismissedUpdateTag] = useState<string | null>(() =>
+    readDismissedTag(),
+  );
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+  const [manualUpdateFeedback, setManualUpdateFeedback] = useState<
+    "none" | "current" | "unavailable"
+  >("none");
   const bundledSeedImportStarted = useRef(false);
   const lastView = useRef<AppView>(view);
 
@@ -3597,6 +3691,10 @@ function App() {
     : Boolean(engineStatus?.model_ready);
   const presetVoices = engineStatus?.providers?.vieneu?.preset_voices ?? [];
   const audioUrl = useMemo(() => (result ? convertFileSrc(result.audio_path) : null), [result]);
+  const visibleUpdate =
+    updateResult?.kind === "available" && updateResult.tag !== dismissedUpdateTag
+      ? updateResult
+      : null;
 
   async function importBundledSeedVoices() {
     if (bundledSeedImportStarted.current) return;
@@ -3628,6 +3726,16 @@ function App() {
       unsubscribeLogs();
       void client.stop();
     };
+  }, []);
+
+  useEffect(() => {
+    if (!automaticCheckDue()) return;
+    recordAutomaticCheck();
+    void getVersion()
+      .catch(() => null)
+      .then((version) => checkLatestRelease(version))
+      .then(setUpdateResult)
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -3773,6 +3881,44 @@ function App() {
 
   async function refreshModelStatus() {
     await statusQuery.refetch();
+  }
+
+  async function checkForUpdatesManually() {
+    if (isCheckingUpdates) return;
+    setIsCheckingUpdates(true);
+    setManualUpdateFeedback("none");
+    const installedVersion = await getVersion().catch(() => null);
+    const result = await checkLatestRelease(installedVersion);
+    setUpdateResult(result);
+    setIsCheckingUpdates(false);
+    if (result.kind === "unavailable") {
+      setManualUpdateFeedback("unavailable");
+    } else if (result.kind !== "available") {
+      setManualUpdateFeedback("current");
+    } else if (result.tag === dismissedUpdateTag) {
+      clearDismissedTag();
+      setDismissedUpdateTag(null);
+    }
+  }
+
+  function dismissUpdateBanner() {
+    if (!visibleUpdate) return;
+    dismissUpdateTag(visibleUpdate.tag);
+    setDismissedUpdateTag(visibleUpdate.tag);
+  }
+
+  async function openUpdateRelease() {
+    if (!visibleUpdate) return;
+    try {
+      await shellOpen(visibleUpdate.url);
+    } catch {
+      recordFrontendDiagnostic(
+        "frontend_error",
+        "release_link_open_failed",
+        undefined,
+        "Could not open the release page.",
+      );
+    }
   }
 
   async function cancelModelPreparation() {
@@ -4339,22 +4485,36 @@ function App() {
 
   if (!allProvidersReady && view !== "profiles" && view !== "history" && view !== "settings")
     return (
-      <SetupScreen
-        copy={copy}
-        providers={providerStatuses}
-        progressEvents={modelProgress}
-        providerErrors={modelPreparationErrors}
-        preparingProviders={preparingProviders}
-        isPreparing={isPreparing}
-        isCancelling={isCancelling}
-        setupError={setupError ?? modelStatusError}
-        canPrepare={canPrepareAllModels}
-        onPrepareAll={() => void prepareBothModels()}
-        onCancel={() => void cancelModelPreparation()}
-        onOpenProfiles={() => navigateTo("profiles")}
-        onOpenHistory={() => navigateTo("history")}
-        onOpenSettings={() => navigateTo("settings")}
-      />
+      <>
+        {visibleUpdate && (
+          <div className="bg-(--background) px-6 pt-6">
+            <div className="mx-auto max-w-4xl">
+              <UpdateBanner
+                copy={copy}
+                tag={visibleUpdate.tag}
+                onOpenRelease={() => void openUpdateRelease()}
+                onDismiss={dismissUpdateBanner}
+              />
+            </div>
+          </div>
+        )}
+        <SetupScreen
+          copy={copy}
+          providers={providerStatuses}
+          progressEvents={modelProgress}
+          providerErrors={modelPreparationErrors}
+          preparingProviders={preparingProviders}
+          isPreparing={isPreparing}
+          isCancelling={isCancelling}
+          setupError={setupError ?? modelStatusError}
+          canPrepare={canPrepareAllModels}
+          onPrepareAll={() => void prepareBothModels()}
+          onCancel={() => void cancelModelPreparation()}
+          onOpenProfiles={() => navigateTo("profiles")}
+          onOpenHistory={() => navigateTo("history")}
+          onOpenSettings={() => navigateTo("settings")}
+        />
+      </>
     );
 
   const transition = { duration: prefersReducedMotion ? 0 : 0.22, ease: "easeOut" as const };
@@ -4451,6 +4611,14 @@ function App() {
         </aside>
         <section className="min-w-0 flex-1 overflow-auto">
           <div className="mx-auto w-full max-w-[1440px] px-5 py-6 sm:px-8 sm:py-8 lg:px-10">
+            {visibleUpdate && (
+              <UpdateBanner
+                copy={copy}
+                tag={visibleUpdate.tag}
+                onOpenRelease={() => void openUpdateRelease()}
+                onDismiss={dismissUpdateBanner}
+              />
+            )}
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={view}
@@ -4504,6 +4672,9 @@ function App() {
                     }}
                     onCancelRuntime={cancelRuntimeInstall}
                     onRemoveRuntime={() => runtimeRemoveMutation.mutate()}
+                    isCheckingUpdates={isCheckingUpdates}
+                    manualUpdateFeedback={manualUpdateFeedback}
+                    onCheckForUpdates={() => void checkForUpdatesManually()}
                     onBack={() => navigateTo("workspace")}
                   />
                 ) : view === "logs" ? (

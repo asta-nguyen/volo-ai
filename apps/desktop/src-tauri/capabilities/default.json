@@ -24,6 +24,7 @@
       ]
     },
     "shell:allow-kill",
-    "shell:allow-stdin-write"
+    "shell:allow-stdin-write",
+    "shell:allow-open"
   ]
 }

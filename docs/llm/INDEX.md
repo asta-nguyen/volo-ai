@@ -54,6 +54,11 @@ but do not yet have dedicated feature pages:
   output directory, including older files without synthesis metadata; it can
   rename an output while preserving its extension and metadata, copy its local
   path, confirm deletion, and keep the five latest session takes in Workspace.
+- [x] Desktop update notices — startup checks the latest stable GitHub release
+  without blocking app startup, at most once per 24 hours; Settings supports a
+  manual check that can resurface a dismissed update, and a localized banner
+  links to the validated release page without downloading or installing it. See
+  the [architecture overview](architecture/overview.md).
 - [ ] CLI generation and profile management — `tts_mcp/cli.py`.
 - [x] MCP provider setup and voice generation — `status` and `prepare_model`
   report/prepare OmniVoice and VieNeu; `speak` and `clone` select VieNeu
@@ -92,6 +97,7 @@ but do not yet have dedicated feature pages:
 - `tests/test_desktop_diagnostics.py`
 - `tests/test_package_cuda_runtime.py`
 - `apps/desktop/src/App.tsx`
+- `apps/desktop/src/lib/update-check.ts`
 - `apps/desktop/src/main.tsx`
 - `apps/desktop/src/components/ui/button.tsx`
 - `apps/desktop/src/components/ui/tabs.tsx`
