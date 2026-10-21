@@ -59,11 +59,14 @@ but do not yet have dedicated feature pages:
   presets or Clone/reference voices, accept optional VieNeu sampler options
   such as `seed`, and keep OmniVoice as the default.
   MCP profile and shared-store behavior is in the workflow page.
-- [x] Public bilingual desktop downloads — the Next.js site serves English and
-  Vietnamese pages, resolves validated latest stable GitHub release assets for
-  macOS ARM64, Windows x64, and Linux x64, and links directly to the assets;
-  unavailable release and platform states are localized. See the
-  [architecture overview](architecture/overview.md).
+- [x] Public bilingual desktop downloads and release history — the Next.js
+  site serves English and Vietnamese pages, resolves validated latest stable
+  GitHub release assets for macOS ARM64, Windows x64, and Linux x64, and links
+  directly to the assets. Localized changelog pages read ordered version
+  entries from the root `changelog.md`, link each version only to its exact
+  tag's validated installer assets, and show a localized status when no
+  verified installer is available. See
+  the [architecture overview](architecture/overview.md).
 - [x] Desktop NVIDIA runtime and diagnostics — Linux x64 uses CPU PyTorch by
   default and can install a version-matched NVIDIA sidecar from Settings;
   failed GPU checks fall back to CPU. Logs retains bounded local diagnostics
@@ -93,6 +96,9 @@ but do not yet have dedicated feature pages:
 - `apps/desktop/src/lib/i18n.ts`
 - `apps/desktop/src/lib/sidecar.ts`
 - `apps/desktop/src/lib/diagnostics.ts`
+- `changelog.md`
+- `apps/web/lib/changelog.ts`
+- `apps/web/test/changelog.test.mjs`
 - `scripts/package_cuda_runtime.py`
 - `requirements-linux-cpu.txt`
 - `requirements-linux-cuda.txt`

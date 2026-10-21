@@ -22,9 +22,32 @@ export type LatestRelease =
   | { kind: "no-release" }
   | { kind: "unavailable" };
 
+export type TagRelease =
+  | {
+      kind: "available";
+      tag: string;
+      platforms: Record<PlatformKey, ReleaseAsset[]>;
+    }
+  | { kind: "unavailable" };
+
+export function formatBytes(bytes: number, locale: "en" | "vi"): string {
+  const localeCode = locale === "vi" ? "vi-VN" : "en-US";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let size = bytes;
+  let unit = 0;
+
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+
+  return `${new Intl.NumberFormat(localeCode, { maximumFractionDigits: 1 }).format(size)} ${units[unit]}`;
+}
+
 export const GITHUB_REPOSITORY = "az-forge/volo-ai";
-const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest`;
-const RELEASE_TAG_PATTERN = /^v\d+\.\d+\.\d+$/;
+const LATEST_RELEASE_API = `https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest`;
+const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPOSITORY}/releases`;
+const RELEASE_TAG_PATTERN = /^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/;
 const ASSET_FORMATS = new Set([
   ".app.tar.gz",
   ".msixbundle",
@@ -87,6 +110,21 @@ function parseRelease(value: unknown): LatestRelease {
     return { kind: "unavailable" };
   }
 
+  const platforms = collectPlatforms(value.assets, tag);
+
+  return {
+    kind: "available",
+    tag,
+    publishedAt,
+    notesUrl: value.html_url,
+    platforms,
+  };
+}
+
+function collectPlatforms(
+  assets: unknown[],
+  tag: string,
+): Record<PlatformKey, ReleaseAsset[]> {
   const assetPattern = new RegExp(
     `^volo-ai_${escapeRegExp(tag)}_(macos_arm64|windows_x64|linux_x64)(\\.[a-z0-9]+(?:\\.[a-z0-9]+)*)$`,
     "i",
@@ -97,7 +135,7 @@ function parseRelease(value: unknown): LatestRelease {
     linux_x64: [],
   };
 
-  for (const asset of value.assets) {
+  for (const asset of assets) {
     if (!isRecord(asset)) continue;
     const { name, size, browser_download_url: url } = asset;
     if (
@@ -128,18 +166,12 @@ function parseRelease(value: unknown): LatestRelease {
     platforms[key].sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  return {
-    kind: "available",
-    tag,
-    publishedAt,
-    notesUrl: value.html_url,
-    platforms,
-  };
+  return platforms;
 }
 
 export async function getLatestRelease(): Promise<LatestRelease> {
   try {
-    const response = await fetch(RELEASES_API, {
+    const response = await fetch(LATEST_RELEASE_API, {
       headers: {
         accept: "application/vnd.github+json",
         "user-agent": "volo-ai-download-site",
@@ -152,6 +184,45 @@ export async function getLatestRelease(): Promise<LatestRelease> {
     if (!response.ok) return { kind: "unavailable" };
 
     return parseRelease(await response.json());
+  } catch {
+    return { kind: "unavailable" };
+  }
+}
+
+function parseTagRelease(value: unknown, tag: string): TagRelease {
+  if (!isRecord(value)) return { kind: "unavailable" };
+
+  if (
+    value.tag_name !== tag ||
+    value.draft !== false ||
+    value.prerelease !== false ||
+    !Array.isArray(value.assets)
+  ) {
+    return { kind: "unavailable" };
+  }
+
+  return { kind: "available", tag, platforms: collectPlatforms(value.assets, tag) };
+}
+
+export async function getReleaseForTag(tag: string): Promise<TagRelease> {
+  if (!RELEASE_TAG_PATTERN.test(tag)) return { kind: "unavailable" };
+
+  try {
+    const response = await fetch(
+      `${RELEASES_API}/tags/${encodeURIComponent(tag)}`,
+      {
+        headers: {
+          accept: "application/vnd.github+json",
+          "user-agent": "volo-ai-download-site",
+        },
+        next: { revalidate: 300 },
+        signal: AbortSignal.timeout(5_000),
+      },
+    );
+
+    if (!response.ok) return { kind: "unavailable" };
+
+    return parseTagRelease(await response.json(), tag);
   } catch {
     return { kind: "unavailable" };
   }

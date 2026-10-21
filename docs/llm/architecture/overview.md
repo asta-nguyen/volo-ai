@@ -57,6 +57,21 @@ the Python worker as a Tauri sidecar and stores model/audio data locally.
   failures, and platforms without a matching asset have separate localized
   states; valid links point directly to GitHub installer assets. Its asset-name
   filter ignores the auxiliary CUDA manifest and payload parts.
+- The website also serves localized `/en/changelog` and `/vi/changelog` pages
+  whose entries come from the repository-root `changelog.md`. Strict
+  `## vMAJOR.MINOR.PATCH` headings delimit entries in file order; invalid
+  headings are ignored and a duplicate version keeps only its first entry. For
+  each entry tag, the server queries the GitHub Releases API for that exact tag
+  with a five-second timeout and five-minute cache, requires a stable
+  non-draft release, and validates installer asset names, formats, sizes, and
+  direct GitHub asset URLs. Notes render Markdown with raw HTML, authored
+  links, and images disabled, so the only outbound links on the page are
+  version-matched installer downloads; a missing release, an empty asset list,
+  or an API failure keeps the notes visible with a localized no-installer
+  status. Next.js output tracing ships `changelog.md` with the
+  server-rendered route, and a missing or unreadable file is an application
+  error. The tagged root `release.md` remains the per-tag notes source for the
+  release workflow.
 - The website includes localized macOS Gatekeeper guidance: an Apple-supported
   Open Anyway path for trusted official downloads, redownload/stop advice for
   a damaged-app warning, and a separate advanced disclosure explaining the
@@ -143,7 +158,7 @@ Desktop provider setup and synthesis are documented in
 | Audio history | `Engine.record_audio_history` and `list_audio_history`/`delete_audio_history` sidecar operations index files from `outputs`; React plays files and confirms deletion |
 | Desktop settings | `App.tsx` and `i18n.ts` expose General, Model, Storage, and MCP tabs; Linux x64 Model settings manage the optional NVIDIA sidecar, and Logs exports local diagnostics; MCP generates copyable client-specific setup for Codex CLI, Claude Code, Claude Desktop, Cursor, VS Code / GitHub Copilot, and Zed using the app-data path |
 | Desktop shell | React UI, Tauri plugins, JSONL sidecar, optional Linux CUDA worker, and target-matched audio.cpp CLI |
-| Public download site | `apps/web` serves English and Vietnamese product/download pages, resolves validated latest stable release assets on the Node.js server, and links directly to GitHub |
+| Public download site | `apps/web` serves English and Vietnamese product/download and changelog pages, reads versioned notes from the root `changelog.md`, resolves validated stable GitHub Releases, and links only to direct installer assets |
 
 ## Data and dependencies
 
@@ -169,6 +184,9 @@ installed users do not need Python, Node.js, or FFmpeg; those runtimes are only
 development/build requirements.
 The tagged release workflow requires the root `release.md` to be committed with
 the tag; that per-release summary becomes the published release description.
+The website's changelog instead reads the cumulative repository-root
+`changelog.md`, which release preparation updates alongside `release.md` with a
+new `## vX.Y.Z` entry per release.
 Installers exclude model weights and app data, which are prepared on first use.
 Linux installers bundle CPU-only PyTorch; the optional CUDA sidecar downloads
 from the same versioned release and is installed below app data after a user
@@ -230,7 +248,13 @@ synthesis target remains `volo-ai.synthesis-language`.
 - `apps/web/app/(default)/page.tsx`
 - `apps/web/app/[locale]/layout.tsx`
 - `apps/web/app/[locale]/page.tsx`
+- `apps/web/app/[locale]/changelog/page.tsx`
 - `apps/web/app/globals.css`
+- `apps/web/lib/changelog.ts`
 - `apps/web/lib/releases.ts`
+- `apps/web/next.config.ts`
+- `apps/web/test/changelog.test.mjs`
+- `apps/web/test/mock-github.mjs`
+- `changelog.md`
 - `apps/web/lib/site-copy.ts`
 - `apps/web/postcss.config.mjs`

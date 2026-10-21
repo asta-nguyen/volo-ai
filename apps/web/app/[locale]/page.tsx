@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getLatestRelease, GITHUB_REPOSITORY, PLATFORM_KEYS, type PlatformKey, type ReleaseAsset } from "@/lib/releases";
+import { formatBytes, getLatestRelease, GITHUB_REPOSITORY, PLATFORM_KEYS, type PlatformKey, type ReleaseAsset } from "@/lib/releases";
 import { copy, isLocale, type Locale } from "@/lib/site-copy";
 
 type PageProps = { params: Promise<{ locale: string }> };
@@ -13,20 +13,6 @@ const platformMarkers: Record<PlatformKey, string> = {
 const workflowBars = [20, 36, 28, 58, 42, 70, 48, 82, 55, 96, 62, 76, 43, 88, 54, 72, 34, 64, 41, 80, 52, 68, 30, 48, 24, 56, 34, 66, 39, 58, 26, 44];
 
 export const runtime = "nodejs";
-
-function formatBytes(bytes: number, locale: Locale): string {
-  const localeCode = locale === "vi" ? "vi-VN" : "en-US";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let size = bytes;
-  let unit = 0;
-
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024;
-    unit += 1;
-  }
-
-  return `${new Intl.NumberFormat(localeCode, { maximumFractionDigits: 1 }).format(size)} ${units[unit]}`;
-}
 
 function PlatformAssetLink({
   asset,
@@ -85,6 +71,7 @@ export default async function LocaleHomePage({ params }: PageProps) {
         <nav className="main-navigation" aria-label={text.navigation}>
           <a href="#about">{text.aboutLink}</a>
           <a href="#downloads">{text.downloadLink}</a>
+          <a href={`/${locale}/changelog`}>{text.changelogLink}</a>
           <a href={`https://github.com/${GITHUB_REPOSITORY}`}>GitHub <span aria-hidden="true">↗</span></a>
         </nav>
 

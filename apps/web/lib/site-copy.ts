@@ -58,6 +58,20 @@ export const copy = {
     unavailableBody:
       "GitHub did not return the latest release. Try again later or check GitHub Releases directly.",
     releasesLink: "View GitHub Releases",
+    homeLink: "Home",
+    changelogLink: "Changelog",
+    changelogMetadataTitle: "Volo AI — Changelog",
+    changelogMetadataDescription:
+      "Every stable Volo AI release, with notes and direct installer downloads for each version.",
+    changelogEyebrow: "RELEASE HISTORY",
+    changelogTitle: "Every stable release,",
+    changelogAccent: "on the record.",
+    changelogIntro:
+      "Release notes from the project changelog, with direct installer downloads for each version.",
+    changelogEmptyTitle: "No stable release has been published yet.",
+    changelogEmptyBody: "Published releases will appear here.",
+    changelogDownloadUnavailable:
+      "No verified installer is available for this version.",
     platforms: {
       macos_arm64: { name: "macOS", architecture: "Apple Silicon · ARM64" },
       windows_x64: { name: "Windows", architecture: "64-bit · x64" },
@@ -151,6 +165,20 @@ export const copy = {
     unavailableBody:
       "GitHub chưa trả về bản mới nhất. Hãy thử lại sau hoặc xem trực tiếp GitHub Releases.",
     releasesLink: "Xem GitHub Releases",
+    homeLink: "Trang chủ",
+    changelogLink: "Nhật ký thay đổi",
+    changelogMetadataTitle: "Volo AI — Nhật ký thay đổi",
+    changelogMetadataDescription:
+      "Mọi bản phát hành ổn định của Volo AI, kèm ghi chú và liên kết tải trực tiếp bộ cài cho từng phiên bản.",
+    changelogEyebrow: "LỊCH SỬ PHÁT HÀNH",
+    changelogTitle: "Mọi bản ổn định,",
+    changelogAccent: "đều được ghi lại.",
+    changelogIntro:
+      "Ghi chú phát hành từ tệp nhật ký thay đổi của dự án, kèm liên kết tải trực tiếp bộ cài cho từng phiên bản.",
+    changelogEmptyTitle: "Chưa có bản ổn định nào được phát hành.",
+    changelogEmptyBody: "Các bản phát hành sẽ xuất hiện tại đây.",
+    changelogDownloadUnavailable:
+      "Chưa có bộ cài đã xác minh cho phiên bản này.",
     platforms: {
       macos_arm64: { name: "macOS", architecture: "Apple Silicon · ARM64" },
       windows_x64: { name: "Windows", architecture: "64-bit · x64" },
