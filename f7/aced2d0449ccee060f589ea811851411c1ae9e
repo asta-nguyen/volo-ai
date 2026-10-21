@@ -1,0 +1,48 @@
+apps/web/app/[locale]/page.tsx
+  s_d1faf5f38fb010::t_7f929af5911493 153-157
+  s_d1faf5f38fb010::t_05f27998711547 74
+docs/llm/INDEX.md
+  s_39270ae3bb7555::t_f0d92f94532dbd 68,75-76
+  s_39270ae3bb7555::t_b8c156586583fc 25-26,69-71
+docs/llm/architecture/overview.md
+  s_39270ae3bb7555::t_f0d92f94532dbd 78-81,279
+  s_39270ae3bb7555::t_20aa9a1d9c15ad 181
+apps/web/lib/site-copy.ts
+  s_39270ae3bb7555::t_8407acfdb4afb6 132,365
+  s_39270ae3bb7555::t_b8c156586583fc 425
+  s_39270ae3bb7555::t_f0d92f94532dbd 84,112,166,181,192-193,317,345,399,414,426
+  s_d1faf5f38fb010::t_d12f5ee568918e 308-316,318-344,346-364,366-398,400-413,415-424,427-433
+  s_d1faf5f38fb010::t_ddfa4ee290dac7 75-83,85-111,113-131,133-165,167-180,182-191,194-200
+apps/web/app/[locale]/changelog/page.tsx
+  s_d1faf5f38fb010::t_f31b8fe15c921c 96
+apps/web/app/[locale]/features/page.tsx
+  s_d1faf5f38fb010::t_69700008df7bdf 1-118
+apps/web/app/globals.css
+  s_d1faf5f38fb010::t_63edd76586b5f8 1429-1443
+  s_d1faf5f38fb010::t_1cc91f0329cfcc 1221-1277,1279-1290
+  s_d1faf5f38fb010::t_412f07a1965023 620
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f7aced2d0449ccee060f589ea811851411c1ae9e",
+  "prompts": {},
+  "sessions": {
+    "s_39270ae3bb7555": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15a40-3655-7e73-98c0-e06c51fe4bf7",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_d1faf5f38fb010": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "chill-mandevilla",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
