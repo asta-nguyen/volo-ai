@@ -1,0 +1,120 @@
+tests/test_desktop.py
+  s_3e7f9ffe953658::t_e7570780c09df8 1229-1246,1248-1318,1320-1327,1329-1333
+  s_352b09d862564e::t_dcc43a037ead3c 938
+  s_625f2d32fb8226::t_2f5c9a39801e1c 1143-1148
+  s_3e7f9ffe953658::t_8c46073e447e23 1247
+  s_039469d8cb024c::t_f32456b2656047 754-778,781-937,939-989,991,993-994,996-998,1000-1025
+  s_625f2d32fb8226::t_321627c7206b75 1334-1441
+  s_039469d8cb024c::t_8dfc22ff9367bc 779-780
+  s_137e7927307aa0::t_edcfc468294dab 1132-1142,1149-1228
+  s_625f2d32fb8226::t_9edb27f9fea2c2 1319,1328
+  s_352b09d862564e::t_b10fccdf65f879 1026-1131
+  s_352b09d862564e::t_3c53c453726862 990,992,995,999
+apps/desktop/src/lib/sidecar.ts
+  s_039469d8cb024c::t_1b60d99df7be48 152-156
+src/tts_mcp/engine.py
+  s_039469d8cb024c::t_e645f9ffd6b99f 1370-1382
+src/tts_mcp/desktop.py
+  s_625f2d32fb8226::t_42e10e93960033 384-385,387,389
+  s_039469d8cb024c::t_372e044ad5cc6f 365,376-383,386,388,390-400,402-412,487-498,500,504,511-513,523-526
+  s_625f2d32fb8226::t_537e203bca376a 518,521
+  s_039469d8cb024c::t_d3d8f4ca10b1e7 876-884
+  s_352b09d862564e::t_35e6ae2c6bc835 425,475-486,499,501-503,505-510,514-517,519-520,522
+  s_137e7927307aa0::t_60d605a5bdd7fa 426-431,436,439,442,454-455,457-459,465-467,474
+  s_625f2d32fb8226::t_74de55a0b72afe 456,460-464,468-473
+  s_3e7f9ffe953658::t_0290e7451d3fe0 432-435,437-438,440-441,443-453
+  s_39270ae3bb7555::t_c2216ee73ae54b 401,527-528
+apps/desktop/src/lib/i18n.ts
+  s_039469d8cb024c::t_a029f83d5a4713 645-651
+  s_039469d8cb024c::t_d00c4cdb85ef21 659
+  s_039469d8cb024c::t_31b1d7635cf653 1078
+  s_039469d8cb024c::t_44b041b699e368 406
+  s_039469d8cb024c::t_719bdedf0948e0 243
+  s_039469d8cb024c::t_cb43b706083194 1065-1070
+  s_039469d8cb024c::t_ee6ae0d2fe5a36 1219
+  s_039469d8cb024c::t_dcbe72102830a0 229-235
+  s_039469d8cb024c::t_610f23519c0cb9 821
+apps/desktop/src/App.tsx
+  s_039469d8cb024c::t_386bb668794c79 2041,2045,2056,2060,2063-2067,2069,2072-2114
+  s_039469d8cb024c::t_af3a5c33634d82 2336
+  s_039469d8cb024c::t_7a11ef489c9da7 100
+  s_039469d8cb024c::t_6857298a38e57f 3660,3667,3675
+  s_039469d8cb024c::t_f5454eab5a04cb 2148-2153
+  s_039469d8cb024c::t_ffe8c6f3bff8c7 2300-2335,2337-2353
+  s_039469d8cb024c::t_a8e0e0e214b0fa 4157-4165
+  s_039469d8cb024c::t_dcadcca6fbe5c8 2217,2223-2256,2263
+  s_039469d8cb024c::t_0ae5918f534d75 74
+  s_039469d8cb024c::t_a135a582c0dd93 30-37
+  s_039469d8cb024c::t_94edd5a4efe355 3185
+  s_039469d8cb024c::t_157af8e94358ba 3401-3423,3429-3437
+  s_039469d8cb024c::t_0e1f6e93e7ac13 4387,4391
+  s_39270ae3bb7555::t_dd489c3fabad06 2115
+tests/test_engine.py
+  s_039469d8cb024c::t_3b76e9372f97b0 773-841
+docs/llm/architecture/overview.md
+  s_39270ae3bb7555::t_7932c5c910cc45 33-37,145,158-162
+docs/llm/INDEX.md
+  s_39270ae3bb7555::t_7932c5c910cc45 53-56
+docs/agent-devkit/INDEX.md
+  s_39270ae3bb7555::t_61823480807a95 11-12
+docs/agent-devkit/changes/archive/2026-10-21-2-audio-history-rename-copy-path/design.md
+  s_39270ae3bb7555::t_2c483173cf4262 53
+docs/agent-devkit/changes/archive/2026-10-21-2-audio-history-rename-copy-path/tasks.md
+  s_39270ae3bb7555::t_25bc582b099ec5 41-42,54-55,67-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e0864c4d126451b752d5380d35cd678c08f45cab",
+  "prompts": {},
+  "sessions": {
+    "s_039469d8cb024c": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "aeolian-submarine",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_137e7927307aa0": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "titanium-crowd",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_352b09d862564e": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "brief-fuchsia",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_39270ae3bb7555": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15a40-3655-7e73-98c0-e06c51fe4bf7",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_3e7f9ffe953658": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "sunrise-century",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_625f2d32fb8226": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "playful-throne",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
