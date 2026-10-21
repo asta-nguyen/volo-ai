@@ -20,9 +20,14 @@ the Python worker as a Tauri sidecar and stores model/audio data locally.
   `synthesize` require an explicit provider ID. It also reports Linux x64
   optional NVIDIA runtime state and serves runtime install/remove and
   diagnostics export/clear requests. It owns the opt-in loopback REST API
-  lifecycle; the API delegates to the existing MCP tools. OmniVoice retains auto, file,
-  saved-profile, and voice-design synthesis. VieNeu supports manifest presets,
-  saved Clone profiles, and one-off reference files.
+  lifecycle; the API delegates to the existing MCP tools. OmniVoice retains
+  auto, file, saved-profile, and voice-design synthesis. VieNeu supports
+  manifest presets, saved Clone profiles, and one-off reference files.
+  `transcribe_video`
+  accepts one public HTTPS video link on the approved YouTube/Facebook host
+  allowlists, downloads its audio with yt-dlp into a temporary directory,
+  normalizes it with bundled FFmpeg, and returns a plain transcript and
+  timestamped SRT from the loaded Whisper pipeline.
 - `apps/desktop/src/main.tsx` mounts the React UI; `App.tsx` owns the desktop
   provider selection, explicit model preparation, synthesis flow,
   OmniVoice voice-profile library, and Audio History view. The library includes
@@ -30,7 +35,9 @@ the Python worker as a Tauri sidecar and stores model/audio data locally.
   `src/lib/i18n.ts` owns the English/Vietnamese UI resources, and
   `src/lib/sidecar.ts` owns the sidecar process connection. Settings offers the
   optional Linux x64 NVIDIA runtime; Logs displays local errors and supports a
-  user-triggered redacted diagnostics export.
+  user-triggered redacted diagnostics export. The Transcribe view pastes a
+  public video link, previews the returned transcript and SRT, and writes the
+  `.srt` through the native save dialog.
 - Audio History uses `list_audio_history`, `rename_audio_history`, and
   `delete_audio_history` sidecar operations. It plays generated files, includes
   legacy WAV/MP3 files without synthesis metadata, lets users rename an output
@@ -126,7 +133,7 @@ accepted same-machine process trust boundary and route contract.
 while unsupported output extensions are rejected.
 The frontend `SidecarClient` gives ordinary requests a five-minute timeout,
 model preparation and seeding a one-hour timeout, and optional runtime
-installation a three-hour timeout. Runtime downloads emit progress and support
+installation and video transcription a three-hour timeout. Runtime downloads emit progress and support
 cancellation. Startup checks the exact app version and performs a CUDA health
 check; a stale or unusable runtime leaves CPU synthesis available.
 The React UI also checks GitHub's latest stable release at startup without
@@ -164,6 +171,8 @@ and shared-store effects are documented in
 [MCP voice library](../workflows/mcp-voice-library.md).
 Desktop provider setup and synthesis are documented in
 [Desktop speech providers](../workflows/desktop-vieneu.md).
+Public video-link transcription to SRT is documented in
+[Desktop video transcription](../workflows/desktop-video-transcription.md).
 
 ## Domains
 
@@ -177,6 +186,7 @@ Desktop provider setup and synthesis are documented in
 | Seed profiles | `Engine.import_seed_voices`, the `import_seed_voices` sidecar request, and bundled seed manifests |
 | Audio history | `Engine.record_audio_history` and `list_audio_history`/`rename_audio_history`/`delete_audio_history` sidecar operations index files from `outputs`; React plays and renames files, copies their local path, and confirms deletion |
 | Desktop settings | `App.tsx` and `i18n.ts` expose General, Model, Storage, and MCP tabs; General supports manual stable-release checks, Linux x64 Model settings manage the optional NVIDIA sidecar, and Logs exports local diagnostics; MCP generates copyable client-specific setup for Codex CLI, Claude Code, Claude Desktop, Cursor, VS Code / GitHub Copilot, and Zed using the app-data path |
+| Video transcription | `transcribe_video` validates approved public video hosts, fetches audio with yt-dlp into a temporary directory, normalizes with bundled FFmpeg, reuses `Engine.transcribe_with_timestamps` on the loaded Whisper pipeline, and returns transcript + SRT for the Transcribe view's native save flow |
 | Desktop shell | React UI, Tauri plugins, JSONL sidecar, optional Linux CUDA worker, and target-matched audio.cpp CLI |
 | Public download site | `apps/web` serves English and Vietnamese product/download, feature overview, and changelog pages, reads versioned notes from the root `changelog.md`, resolves validated stable GitHub Releases, and exposes only direct installer URLs for downloads |
 
@@ -213,7 +223,10 @@ new `## vX.Y.Z` entry per release.
 Installers exclude model weights and app data, which are prepared on first use.
 Linux installers bundle CPU-only PyTorch; the optional CUDA sidecar downloads
 from the same versioned release and is installed below app data after a user
-action. Desktop diagnostic history is stored locally in bounded files/browser
+action. `yt-dlp` is a packaged runtime dependency for video transcription;
+downloaded media stays in temporary storage outside app data and is removed
+after each handled request, and neither source URLs nor transcripts are
+persisted. Desktop diagnostic history is stored locally in bounded files/browser
 storage; a user-triggered report redacts the home path and excludes request and
 generated content.
 Release packages are unsigned and are not notarized.
@@ -233,6 +246,7 @@ synthesis target remains `volo-ai.synthesis-language`.
 - `README.md`
 - `src/tts_mcp/desktop.py`
 - `src/tts_mcp/api.py`
+- `src/tts_mcp/transcribe.py`
 - `src/tts_mcp/desktop_runtime.py`
 - `src/tts_mcp/desktop_diagnostics.py`
 - `src/tts_mcp/desktop_vieneu.py`

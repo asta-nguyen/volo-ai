@@ -80,6 +80,10 @@ python scripts/build_sidecar.py \
   --target <rust-target-triple>
 ```
 
+The script first verifies that the environment satisfies the declared
+`[mp3,desktop-vieneu]` extras (for example `vieneu>=3.8.3,<4`) and aborts
+before packaging when it does not.
+
 Check out audio.cpp at `v0.9.0` and build its CPU backend on the matching host.
 For macOS (Apple Silicon or Intel), run from that checkout:
 

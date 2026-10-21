@@ -10,6 +10,10 @@
 - [Desktop speech providers](workflows/desktop-vieneu.md) — provider selection,
   on-demand asset setup, provider-aware saved VieNeu profiles, batch preset
   seeding, and synthesis through the native audio.cpp CLI.
+- [Desktop video transcription](workflows/desktop-video-transcription.md) —
+  public YouTube-first (Facebook secondary) video links fetched with yt-dlp,
+  normalized through bundled FFmpeg, transcribed locally into timestamped SRT,
+  and saved through the native dialog.
 
 ## Requirement prefixes
 
@@ -17,6 +21,7 @@
 | --- | --- |
 | DSET | Desktop settings and diagnostics |
 | DVP | Desktop voice providers |
+| DVT | Desktop video transcription |
 | VLIB | MCP and shared voice profiles |
 
 ## Feature inventory
@@ -59,6 +64,15 @@ overview but do not yet have dedicated wiki feature pages:
   manual check that can resurface a dismissed update, and a localized banner
   links to the validated release page without downloading or installing it. See
   the [architecture overview](architecture/overview.md).
+- [x] Desktop video transcription — the Transcribe view accepts one public
+  HTTPS YouTube link (Facebook secondary), streams progress through the
+  sidecar, previews the transcript and timestamped SRT, and saves the SRT
+  through the native dialog. The sidecar validates hosts, rejects
+  playlists, over-60-minute or unavailable sources, downloads audio-only to
+  a temporary directory with yt-dlp, normalizes it with bundled FFmpeg, and
+  reuses the loaded Whisper pipeline. Transcribe requires OmniVoice/Whisper
+  readiness; synthesis still requires both providers. See
+  [Desktop video transcription](workflows/desktop-video-transcription.md).
 - [ ] CLI generation and profile management — `tts_mcp/cli.py`.
 - [x] MCP provider setup and voice generation — `status` and `prepare_model`
   report/prepare OmniVoice and VieNeu; `speak` and `clone` select VieNeu
@@ -88,6 +102,7 @@ overview but do not yet have dedicated wiki feature pages:
 
 - `src/tts_mcp/engine.py`
 - `src/tts_mcp/desktop.py`
+- `src/tts_mcp/transcribe.py`
 - `src/tts_mcp/desktop_runtime.py`
 - `src/tts_mcp/desktop_diagnostics.py`
 - `src/tts_mcp/cli.py`

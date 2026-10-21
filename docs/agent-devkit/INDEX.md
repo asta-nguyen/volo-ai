@@ -4,6 +4,7 @@
 
 ## Archived changes
 
+- [YouTube-first Video Transcription to SRT (#6)](changes/archive/2026-10-21-facebook-video-srt/design.md) — [tasks](changes/archive/2026-10-21-facebook-video-srt/tasks.md), [wiki delta](changes/archive/2026-10-21-facebook-video-srt/delta.md)
 - [Website Changelog Page](changes/archive/2026-10-21-5-web-changelog-page/design.md) — [tasks](changes/archive/2026-10-21-5-web-changelog-page/tasks.md)
 - [Desktop Update Notice](changes/archive/2026-10-21-4-desktop-update-notice/design.md) — [tasks](changes/archive/2026-10-21-4-desktop-update-notice/tasks.md)
 - [Desktop Local REST API](changes/archive/2026-10-21-3-desktop-local-rest-api/design.md) — [tasks](changes/archive/2026-10-21-3-desktop-local-rest-api/tasks.md)
