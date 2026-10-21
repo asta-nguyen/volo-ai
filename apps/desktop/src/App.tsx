@@ -63,6 +63,7 @@ import {
   FileAudio,
   FileText,
   FolderOpen,
+  Globe,
   HardDrive,
   History,
   Languages,
@@ -93,6 +94,7 @@ import {
   type AudioFormat,
   type GenerationConfig,
   type Language,
+  type LocalApiState,
   type NvidiaRuntimeStatus,
   type ProviderId,
   type ProviderStatus,
@@ -182,6 +184,7 @@ const SAMPLE_SCRIPTS = {
 const client = new SidecarClient();
 const STATUS_QUERY_KEY = ["sidecar", "status"] as const;
 const VOICES_QUERY_KEY = ["sidecar", "voices"] as const;
+const API_STATE_QUERY_KEY = ["sidecar", "local-api"] as const;
 const AUDIO_HISTORY_QUERY_KEY = ["sidecar", "audio-history"] as const;
 type AppView = "workspace" | "profiles" | "history" | "settings" | "logs";
 type SettingsTab = "general" | "model" | "storage" | "mcp";
@@ -1414,6 +1417,12 @@ function SettingsView({
   isRefreshingStatus,
   isPreparing,
   preparingProviders,
+  localApi,
+  localApiError,
+  isStartingLocalApi,
+  isStoppingLocalApi,
+  onStartLocalApi,
+  onStopLocalApi,
   onChangeLanguage,
   onChangeTheme,
   onSelectProvider,
@@ -1449,6 +1458,12 @@ function SettingsView({
   isRefreshingStatus: boolean;
   isPreparing: boolean;
   preparingProviders: ProviderId[];
+  localApi: LocalApiState | null;
+  localApiError: string | null;
+  isStartingLocalApi: boolean;
+  isStoppingLocalApi: boolean;
+  onStartLocalApi: () => void;
+  onStopLocalApi: () => void;
   onChangeLanguage: (language: AppLanguage) => void;
   onChangeTheme: (theme: ThemeMode) => void;
   onSelectProvider: (provider: ProviderId) => void;
@@ -1463,8 +1478,10 @@ function SettingsView({
   const [activeTab, setActiveTab] = useState<SettingsTab>("model");
   const [copiedDataDir, setCopiedDataDir] = useState(false);
   const [copiedMcpConfig, setCopiedMcpConfig] = useState(false);
+  const [copiedApiUrl, setCopiedApiUrl] = useState(false);
   const [mcpClient, setMcpClient] = useState<McpClientId>("codex");
   const mcpSetupConfig = dataDir ? buildMcpConfig(mcpClient, dataDir) : copy.loadingDataPath;
+  const localApiUrl = localApi?.url ?? "http://127.0.0.1:8765";
 
   const handleCopyDataDir = async () => {
     if (!dataDir) return;
@@ -1481,6 +1498,14 @@ function SettingsView({
       await navigator.clipboard.writeText(mcpSetupConfig);
       setCopiedMcpConfig(true);
       setTimeout(() => setCopiedMcpConfig(false), 2000);
+    } catch {}
+  };
+
+  const handleCopyApiUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(localApiUrl);
+      setCopiedApiUrl(true);
+      setTimeout(() => setCopiedApiUrl(false), 2000);
     } catch {}
   };
 
@@ -1936,6 +1961,94 @@ function SettingsView({
                 <div className="mt-4 rounded-xl border border-(--border) bg-(--surface-muted) p-4">
                   <p className="text-sm leading-6 text-(--muted-foreground)">
                     {copy.mcpVieNeuHelp}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          {activeTab === "mcp" && (
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <div>
+                  <SectionLabel>{copy.apiSection}</SectionLabel>
+                  <CardTitle className="mt-2">{copy.apiTitle}</CardTitle>
+                  <CardDescription className="mt-2">{copy.apiDescription}</CardDescription>
+                </div>
+                <Globe className="size-5 text-(--accent)" />
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <SectionLabel>{copy.apiStatusLabel}</SectionLabel>
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <span
+                      className={`size-2 rounded-full ${localApi?.running ? "bg-(--success)" : "bg-(--muted-foreground)"}`}
+                    />
+                    {localApi?.running ? copy.apiStatusRunning : copy.apiStatusStopped}
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <SectionLabel>{copy.apiBaseUrlLabel}</SectionLabel>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleCopyApiUrl}
+                      className="gap-1.5"
+                    >
+                      {copiedApiUrl ? (
+                        <>
+                          <Check className="size-3.5 text-(--success)" />
+                          <span className="text-(--success)">{copy.apiUrlCopied}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="size-3.5" />
+                          <span>{copy.copyApiUrl}</span>
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      variant={localApi?.running ? "secondary" : "default"}
+                      size="sm"
+                      onClick={localApi?.running ? onStopLocalApi : onStartLocalApi}
+                      disabled={!localApi || isStartingLocalApi || isStoppingLocalApi}
+                      className="gap-1.5"
+                    >
+                      {isStartingLocalApi || isStoppingLocalApi ? (
+                        <>
+                          <LoaderCircle className="size-3.5 animate-spin" />
+                          <span>
+                            {isStartingLocalApi ? copy.apiStarting : copy.apiStopping}
+                          </span>
+                        </>
+                      ) : localApi?.running ? (
+                        <>
+                          <CircleStop className="size-3.5" />
+                          <span>{copy.apiStop}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Play className="size-3.5" />
+                          <span>{copy.apiStart}</span>
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+                <code className="mt-3 block overflow-x-auto rounded-xl border border-(--border) bg-(--surface-muted) p-3.5 font-mono text-xs text-(--foreground)">
+                  {localApiUrl}
+                </code>
+                {localApiError && (
+                  <p className="mt-3 rounded-xl border border-(--destructive-border) bg-(--destructive-surface) px-3.5 py-3 text-sm leading-5 text-(--destructive)">
+                    {localApiError}
+                  </p>
+                )}
+                <p className="mt-3 text-sm leading-6 text-(--muted-foreground)">
+                  {copy.apiHelp}
+                </p>
+                <div className="mt-4 rounded-xl border border-(--border) bg-(--surface-muted) p-4">
+                  <p className="text-sm leading-6 text-(--muted-foreground)">
+                    {copy.apiTrustWarning}
                   </p>
                 </div>
               </CardContent>
@@ -3357,6 +3470,31 @@ function App() {
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: VOICES_QUERY_KEY }),
   });
+  const apiStateQuery = useQuery({
+    queryKey: API_STATE_QUERY_KEY,
+    queryFn: () => client.apiStatus(),
+    enabled: view === "settings" && engineOnline,
+  });
+  const localApi = apiStateQuery.data ?? null;
+  const [localApiError, setLocalApiError] = useState<string | null>(null);
+  const apiStartMutation = useMutation({
+    mutationFn: () => client.startLocalApi(),
+    onSuccess: (state) => {
+      setLocalApiError(null);
+      queryClient.setQueryData(API_STATE_QUERY_KEY, state);
+    },
+    onError: (reason) =>
+      setLocalApiError(reason instanceof Error ? reason.message : copy.apiStartFailed),
+  });
+  const apiStopMutation = useMutation({
+    mutationFn: () => client.stopLocalApi(),
+    onSuccess: (state) => {
+      setLocalApiError(null);
+      queryClient.setQueryData(API_STATE_QUERY_KEY, state);
+    },
+    onError: (reason) =>
+      setLocalApiError(reason instanceof Error ? reason.message : copy.apiStopFailed),
+  });
   const synthesisMutation = useMutation({
     mutationFn: (request: { type: string; [key: string]: unknown }) =>
       client.request<SynthesisResult>(request),
@@ -4347,6 +4485,12 @@ function App() {
                     isRefreshingStatus={isRefreshingStatus}
                     isPreparing={isPreparing}
                     preparingProviders={preparingProviders}
+                    localApi={localApi}
+                    localApiError={localApiError}
+                    isStartingLocalApi={apiStartMutation.isPending}
+                    isStoppingLocalApi={apiStopMutation.isPending}
+                    onStartLocalApi={() => apiStartMutation.mutate()}
+                    onStopLocalApi={() => apiStopMutation.mutate()}
                     onSelectProvider={changeProvider}
                     onPrepareProvider={(target) => void prepareModel(target)}
                     onCancelPrepare={() => void cancelModelPreparation()}

@@ -17,6 +17,7 @@ from typing import Any, Callable, TextIO
 
 from tts_mcp.convert import save_audio
 from tts_mcp import desktop_diagnostics, desktop_runtime
+from tts_mcp.api import ApiServer, ApiStartError
 from tts_mcp.engine import (
     DATA_DIR,
     DownloadCancelled,
@@ -37,6 +38,31 @@ GENERATION_POSITIVE_KEYS = {"audio_chunk_duration", "audio_chunk_threshold"}
 VIENEU_SEED_REFERENCE_TEXT = (
     "Xin chào. Đây là mẫu giọng được tạo để lưu vào thư viện giọng nói của bạn."
 )
+
+
+_api_server: ApiServer | None = None
+_api_server_lock = threading.Lock()
+
+
+def _local_api_server() -> ApiServer:
+    """Return the single loopback API server owned by this sidecar process."""
+    global _api_server
+    with _api_server_lock:
+        if _api_server is None:
+            _api_server = ApiServer()
+        return _api_server
+
+
+def _stop_local_api_server() -> None:
+    global _api_server
+    with _api_server_lock:
+        server = _api_server
+    if server is None:
+        return
+    server.stop()
+    with _api_server_lock:
+        if _api_server is server:
+            _api_server = None
 
 
 def _ok(request_id: str, result: Any) -> dict[str, Any]:
@@ -887,6 +913,15 @@ def dispatch_request(
                 request_id,
                 {"deleted": Engine.delete_voice(request["name"])},
             )
+        if operation == "start_api":
+            try:
+                return _ok(request_id, _local_api_server().start())
+            except ApiStartError as exc:
+                return _error(request_id, exc.code, str(exc))
+        if operation == "stop_api":
+            return _ok(request_id, _local_api_server().stop())
+        if operation == "api_status":
+            return _ok(request_id, _local_api_server().state())
         if operation == "cancel":
             return _error(
                 request_id,
@@ -1039,8 +1074,12 @@ def run_protocol(
             continue
         write(dispatch_request(request, engine, vieneu_provider=vieneu_provider))
 
-    for worker in tuple(workers):
-        worker.join()
+    _stop_local_api_server()
+    try:
+        for worker in tuple(workers):
+            worker.join()
+    finally:
+        _stop_local_api_server()
 
 
 def main() -> None:

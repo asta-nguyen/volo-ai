@@ -154,6 +154,13 @@ export type RenameAudioHistoryResult = {
   audio_path: string;
 };
 
+export type LocalApiState = {
+  running: boolean;
+  url: string;
+  host: string;
+  port: number;
+};
+
 export class SidecarError extends Error {
   constructor(
     public code: string,
@@ -334,6 +341,18 @@ export class SidecarClient {
   async cancelNvidiaRuntime(): Promise<void> {
     if (!this.activeRuntimeInstallId) return;
     await this.request({ type: "cancel", request_id: this.activeRuntimeInstallId });
+  }
+
+  async apiStatus(): Promise<LocalApiState> {
+    return this.request<LocalApiState>({ type: "api_status" });
+  }
+
+  async startLocalApi(): Promise<LocalApiState> {
+    return this.request<LocalApiState>({ type: "start_api" });
+  }
+
+  async stopLocalApi(): Promise<LocalApiState> {
+    return this.request<LocalApiState>({ type: "stop_api" });
   }
 
   hydrateDiagnostics(events: DiagnosticEvent[]): void {

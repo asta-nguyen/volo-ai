@@ -65,6 +65,10 @@ but do not yet have dedicated feature pages:
   macOS ARM64, Windows x64, and Linux x64, and links directly to the assets;
   unavailable release and platform states are localized. See the
   [architecture overview](architecture/overview.md).
+- [x] Desktop local REST API — Settings starts and stops an opt-in API bound to
+  `127.0.0.1:8765`; it reuses the MCP tools and app data and stops with the
+  desktop sidecar. See the [API reference](../desktop-local-api.md) for routes
+  and the no-token trust boundary.
 - [x] Desktop NVIDIA runtime and diagnostics — Linux x64 uses CPU PyTorch by
   default and can install a version-matched NVIDIA sidecar from Settings;
   failed GPU checks fall back to CPU. Logs retains bounded local diagnostics
@@ -79,7 +83,9 @@ but do not yet have dedicated feature pages:
 - `src/tts_mcp/desktop_diagnostics.py`
 - `src/tts_mcp/cli.py`
 - `src/tts_mcp/server.py`
+- `src/tts_mcp/api.py`
 - `tests/test_server.py`
+- `tests/test_api.py`
 - `tests/test_engine.py`
 - `tests/test_desktop.py`
 - `tests/test_desktop_runtime.py`
@@ -98,3 +104,4 @@ but do not yet have dedicated feature pages:
 - `requirements-linux-cpu.txt`
 - `requirements-linux-cuda.txt`
 - `apps/desktop/package.json`
+- `docs/desktop-local-api.md`

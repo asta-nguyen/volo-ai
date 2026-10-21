@@ -2151,6 +2151,214 @@ class DesktopWorkerTests(unittest.TestCase):
         self.assertTrue(by_id["cancel"]["ok"])
         self.assertEqual(by_id["prepare-vieneu"]["error"]["code"], "cancelled")
 
+    def test_api_status_is_off_by_default(self):
+        self.addCleanup(setattr, desktop_module, "_api_server", None)
+        desktop_module._api_server = None
+        engine = Mock()
+
+        response = dispatch_request({"id": "api", "type": "api_status"}, engine)
+
+        self.assertTrue(response["ok"])
+        self.assertFalse(response["result"]["running"])
+        self.assertEqual(response["result"]["url"], "http://127.0.0.1:8765")
+        self.assertEqual(response["result"]["host"], "127.0.0.1")
+        self.assertEqual(response["result"]["port"], 8765)
+        engine.assert_not_called()
+
+    def test_api_start_stop_reuse_one_server(self):
+        class FakeApiServer:
+            def __init__(self):
+                self.started = 0
+                self.stopped = 0
+                self.running = False
+
+            def start(self):
+                self.started += 1
+                self.running = True
+                return self.state()
+
+            def stop(self):
+                self.stopped += 1
+                self.running = False
+                return self.state()
+
+            def state(self):
+                return {
+                    "running": self.running,
+                    "url": "http://127.0.0.1:8765",
+                    "host": "127.0.0.1",
+                    "port": 8765,
+                }
+
+        fake = FakeApiServer()
+        engine = Mock()
+        self.addCleanup(setattr, desktop_module, "_api_server", None)
+        desktop_module._api_server = None
+        with patch.object(desktop_module, "ApiServer", return_value=fake) as factory:
+            first = dispatch_request({"id": "s1", "type": "start_api"}, engine)
+            second = dispatch_request({"id": "s2", "type": "start_api"}, engine)
+            status = dispatch_request({"id": "st", "type": "api_status"}, engine)
+            stop = dispatch_request({"id": "x1", "type": "stop_api"}, engine)
+            stop_again = dispatch_request({"id": "x2", "type": "stop_api"}, engine)
+
+        self.assertTrue(first["ok"] and second["ok"])
+        self.assertTrue(first["result"]["running"])
+        self.assertEqual(factory.call_count, 1)
+        self.assertEqual(fake.started, 2)
+        self.assertTrue(status["result"]["running"])
+        self.assertTrue(stop["ok"] and stop_again["ok"])
+        self.assertFalse(stop["result"]["running"])
+        self.assertFalse(stop_again["result"]["running"])
+        self.assertEqual(fake.stopped, 2)
+        engine.assert_not_called()
+
+    def test_start_api_reports_port_conflict(self):
+        from tts_mcp.api import ApiStartError
+
+        class ConflictedServer:
+            running = False
+
+            def start(self):
+                raise ApiStartError("port_in_use", "127.0.0.1:8765 is already in use")
+
+            def stop(self):
+                return {"running": False}
+
+            def state(self):
+                return {
+                    "running": False,
+                    "url": "http://127.0.0.1:8765",
+                    "host": "127.0.0.1",
+                    "port": 8765,
+                }
+
+        self.addCleanup(setattr, desktop_module, "_api_server", None)
+        desktop_module._api_server = None
+        with patch.object(desktop_module, "ApiServer", return_value=ConflictedServer()):
+            response = dispatch_request({"id": "api", "type": "start_api"}, Mock())
+
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "port_in_use")
+        self.assertIn("127.0.0.1:8765", response["error"]["message"])
+
+    def test_protocol_stops_api_server_on_shutdown(self):
+        class FakeApiServer:
+            def __init__(self):
+                self.stopped = 0
+
+            def stop(self):
+                self.stopped += 1
+                return {"running": False}
+
+        fake = FakeApiServer()
+        self.addCleanup(setattr, desktop_module, "_api_server", None)
+        desktop_module._api_server = fake
+
+        run_protocol(io.StringIO(""), io.StringIO(), Mock())
+
+        self.assertEqual(fake.stopped, 1)
+
+    def test_protocol_stops_api_before_joining_pending_workers(self):
+        class QueueLines:
+            def __init__(self):
+                self.lines = queue.Queue()
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                line = self.lines.get()
+                if line is None:
+                    raise StopIteration
+                return line
+
+        class FakeApiServer:
+            def __init__(self):
+                self.started = 0
+                self.stopped = 0
+
+            def start(self):
+                self.started += 1
+                return self.state()
+
+            def stop(self):
+                self.stopped += 1
+                return self.state()
+
+            def state(self):
+                return {
+                    "running": self.started > self.stopped,
+                    "url": "http://127.0.0.1:8765",
+                    "host": "127.0.0.1",
+                    "port": 8765,
+                }
+
+        started = threading.Event()
+        release = threading.Event()
+
+        class BlockingEngine:
+            def ensure_model(self, on_progress=None, should_cancel=None):
+                started.set()
+                if not release.wait(timeout=10):
+                    raise RuntimeError("test worker timed out")
+                return {"ready": True}
+
+        fake = FakeApiServer()
+        self.addCleanup(setattr, desktop_module, "_api_server", None)
+        desktop_module._api_server = None
+        source = QueueLines()
+        target = io.StringIO()
+        worker = threading.Thread(
+            target=run_protocol, args=(source, target, BlockingEngine()), daemon=True
+        )
+        try:
+            with patch.object(desktop_module, "ApiServer", return_value=fake):
+                worker.start()
+                source.lines.put(json.dumps({"id": "api", "type": "start_api"}) + "\n")
+                deadline = time.time() + 3
+                while fake.started == 0 and time.time() < deadline:
+                    time.sleep(0.005)
+                self.assertEqual(fake.started, 1)
+                source.lines.put(
+                    json.dumps(
+                        {"id": "prepare", "type": "prepare_model", "provider": "omnivoice"}
+                    )
+                    + "\n"
+                )
+                self.assertTrue(started.wait(timeout=3))
+                source.lines.put(None)
+                deadline = time.time() + 3
+                while fake.stopped == 0 and time.time() < deadline:
+                    time.sleep(0.005)
+                self.assertGreaterEqual(fake.stopped, 1)
+        finally:
+            release.set()
+            worker.join(timeout=5)
+        self.assertFalse(worker.is_alive())
+
+    def test_stop_local_api_server_retries_after_stop_failure(self):
+        class FlakyApiServer:
+            def __init__(self):
+                self.calls = 0
+
+            def stop(self):
+                self.calls += 1
+                if self.calls == 1:
+                    raise OSError("listener close failed")
+                return {"running": False}
+
+        fake = FlakyApiServer()
+        self.addCleanup(setattr, desktop_module, "_api_server", None)
+        desktop_module._api_server = fake
+
+        with self.assertRaises(OSError):
+            desktop_module._stop_local_api_server()
+        self.assertIs(desktop_module._api_server, fake)
+
+        desktop_module._stop_local_api_server()
+        self.assertIsNone(desktop_module._api_server)
+        self.assertEqual(fake.calls, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
