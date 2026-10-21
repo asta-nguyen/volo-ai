@@ -1,0 +1,20 @@
+apps/web/lib/site-copy.ts
+  s_821a7cc69fbc06::t_8b6398e7cce931 105
+  s_821a7cc69fbc06::t_2b3aa7a42b82a5 338
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e0e6b5873ca61c8128d5e3404455c6280a78722f",
+  "prompts": {},
+  "sessions": {
+    "s_821a7cc69fbc06": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "succulent-pressure",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
