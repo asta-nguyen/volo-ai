@@ -387,14 +387,21 @@ function fileName(path: string | undefined): string {
   return path?.split(/[\\/]/).pop() || "Reference audio";
 }
 
+// Profile names become filenames, so the engine accepts only ASCII letters, digits, "_" and "-".
+function toVoiceName(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .replace(/[^A-Za-z0-9_-]+/g, "-")
+    .replace(/^[^A-Za-z0-9]+/, "")
+    .replace(/-+$/, "")
+    .slice(0, 64);
+}
+
 function voiceNameFromFile(path: string): string {
-  const stem = fileName(path).replace(/\.[^.]+$/, "");
-  return (
-    stem
-      .replace(/[^A-Za-z0-9_-]+/g, "-")
-      .replace(/^[^A-Za-z0-9]+/, "")
-      .slice(0, 64) || "imported-voice"
-  );
+  return toVoiceName(fileName(path).replace(/\.[^.]+$/, "")) || "imported-voice";
 }
 
 function preferredVoiceForLanguage(voices: VoiceProfile[], language: Language): string {
@@ -434,6 +441,17 @@ function isSupportedVideoUrl(value: string): boolean {
   }
 }
 
+const MAX_SESSION_TAKES = 5;
+
+function ElapsedTime() {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setSeconds((value) => value + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return <span className="ml-auto font-mono text-xs tabular-nums">{formatDuration(seconds)}</span>;
+}
+
 function formatDuration(seconds: number): string {
   const total = Math.max(0, Math.round(seconds));
   const hours = Math.floor(total / 3600);
@@ -445,7 +463,10 @@ function formatDuration(seconds: number): string {
 }
 
 function srtFileName(title: string): string {
-  const safe = title.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
+  const safe = title
+    .replace(/[\\/:*?"<>|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   return `${(safe || "transcript").slice(0, 80)}.srt`;
 }
 
@@ -469,7 +490,7 @@ function PageHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <header className="mb-7 flex items-end justify-between gap-5">
+    <header className="mb-7 flex flex-wrap items-end justify-between gap-x-5 gap-y-4">
       <div>
         <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-(--accent)">
           {eyebrow}
@@ -545,6 +566,8 @@ function SetupScreen({
   setupError,
   canPrepare,
   omniVoiceReady,
+  engineFailed,
+  onRetryEngine,
   onPrepareAll,
   onCancel,
   onOpenProfiles,
@@ -562,6 +585,8 @@ function SetupScreen({
   setupError: string | null;
   canPrepare: boolean;
   omniVoiceReady: boolean;
+  engineFailed: boolean;
+  onRetryEngine: () => void;
   onPrepareAll: () => void;
   onCancel: () => void;
   onOpenProfiles: () => void;
@@ -639,7 +664,11 @@ function SetupScreen({
                         <p className="mt-2 text-xs leading-5 text-(--muted-foreground)">
                           {progressEvent?.message ??
                             status?.unavailable_reason ??
-                            (isInstalling ? copy.preparingModels : copy.waitingEngine)}
+                            (isInstalling
+                              ? copy.preparingModels
+                              : engineFailed
+                                ? copy.engineUnavailable
+                                : copy.waitingEngine)}
                         </p>
                         {progressEvent?.asset && (
                           <p className="mt-1 font-mono text-[10px] uppercase text-(--muted-foreground)">
@@ -662,21 +691,29 @@ function SetupScreen({
                 </div>
               )}
               <div className="mt-6 flex flex-wrap gap-3">
-                <Button
-                  onClick={onPrepareAll}
-                  disabled={isPreparing || isCancelling || !canPrepare}
-                >
-                  {isPreparing ? (
-                    <LoaderCircle className="size-4 animate-spin" />
-                  ) : (
-                    <Download className="size-4" />
-                  )}
-                  {isPreparing
-                    ? copy.preparingModels
-                    : hasErrors
-                      ? copy.retryDownload
-                      : copy.downloadModel}
-                </Button>
+                {engineFailed ? (
+                  // Without a running engine the model state is unknown, so retry the engine first.
+                  <Button onClick={onRetryEngine}>
+                    <RotateCcw className="size-4" />
+                    {copy.retryProfiles}
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={onPrepareAll}
+                    disabled={isPreparing || isCancelling || !canPrepare}
+                  >
+                    {isPreparing ? (
+                      <LoaderCircle className="size-4 animate-spin" />
+                    ) : (
+                      <Download className="size-4" />
+                    )}
+                    {isPreparing
+                      ? copy.preparingModels
+                      : hasErrors
+                        ? copy.retryDownload
+                        : copy.downloadModel}
+                  </Button>
+                )}
                 {isPreparing && (
                   <Button variant="secondary" onClick={onCancel} disabled={isCancelling}>
                     <CircleStop className="size-4" />
@@ -744,7 +781,7 @@ function SetupScreen({
               <CardHeader>
                 <div>
                   <SectionLabel>{copy.setupAfter}</SectionLabel>
-                  <CardTitle className="mt-2">{copy.setupAfter}</CardTitle>
+                  <CardTitle className="mt-2">{copy.setupAfterTitle}</CardTitle>
                 </div>
                 <Sparkles className="size-5 text-(--accent)" />
               </CardHeader>
@@ -830,10 +867,6 @@ function LogsView({
                 <span className="text-xs text-(--destructive)">{copy.clearLogs}</span>
               </Button>
             )}
-            <Badge variant="secondary">
-              <span className="mr-2 size-1.5 rounded-full bg-(--success)" />
-              {copy.localHistory}
-            </Badge>
             <Button
               variant="secondary"
               size="sm"
@@ -903,7 +936,12 @@ function LogsView({
                             : "default"
                       }
                     >
-                      {entry.status === "pending" ? copy.running : entry.status.toUpperCase()}
+                      {entry.status === "pending"
+                        ? copy.running
+                        : (entry.status === "success"
+                            ? copy.success
+                            : copy.statusError
+                          ).toUpperCase()}
                     </Badge>
                   </div>
                   {entry.errorMessage && (
@@ -1032,63 +1070,59 @@ function VoiceProfilesView({
         title={copy.profilesTitle}
         description={copy.profilesDescription}
         action={
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={onSeedVieNeuVoices}
-                disabled={isSeedingVieNeu}
-              >
-                {isSeedingVieNeu ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : (
-                  <AudioLines className="size-4 text-(--accent)" />
-                )}
-                {isSeedingVieNeu ? copy.seedingVieNeuVoices : copy.seedVieNeuVoices}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={onImportVoiceFile}
-                disabled={isImporting || isImportingSeed || isSaving}
-              >
-                {isImporting ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : (
-                  <FileAudio className="size-4 text-(--accent)" />
-                )}
-                {isImporting ? copy.importingVoiceFile : copy.importVoiceFile}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={onImportSeedFolder}
-                disabled={isImporting || isImportingSeed || isSaving}
-              >
-                {isImportingSeed ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : (
-                  <FolderOpen className="size-4 text-(--accent)" />
-                )}
-                {isImportingSeed ? copy.importingSeedFolder : copy.importSeedFolder}
-              </Button>
-            </div>
-            <div className="flex items-center gap-3 rounded-xl border border-(--border) bg-(--surface) px-4 py-3">
-              <Library className="size-4 text-(--accent)" />
-              <span className="font-mono text-xs font-semibold">
-                {voices.length.toString().padStart(2, "0")} {copy.savedProfiles}
-              </span>
-            </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onSeedVieNeuVoices}
+              disabled={isSeedingVieNeu}
+            >
+              {isSeedingVieNeu ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : (
+                <AudioLines className="size-4 text-(--accent)" />
+              )}
+              {isSeedingVieNeu ? copy.seedingVieNeuVoices : copy.seedVieNeuVoices}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onImportVoiceFile}
+              disabled={isImporting || isImportingSeed || isSaving}
+            >
+              {isImporting ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : (
+                <FileAudio className="size-4 text-(--accent)" />
+              )}
+              {isImporting ? copy.importingVoiceFile : copy.importVoiceFile}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onImportSeedFolder}
+              disabled={isImporting || isImportingSeed || isSaving}
+            >
+              {isImportingSeed ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : (
+                <FolderOpen className="size-4 text-(--accent)" />
+              )}
+              {isImportingSeed ? copy.importingSeedFolder : copy.importSeedFolder}
+            </Button>
           </div>
         }
       />
-      <div className="mb-5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-5 text-(--muted-foreground)">
-        <FolderOpen className="size-3.5 text-(--accent)" />
-        <span>{copy.voiceImportDescription}</span>
-        <span>·</span>
-        <span>{copy.seedImportDescription}</span>
-      </div>
+      <ul className="mb-5 space-y-1 text-xs leading-5 text-(--muted-foreground)">
+        <li>
+          <span className="font-semibold text-(--foreground)">{copy.importVoiceFile}:</span>{" "}
+          {copy.voiceImportDescription}
+        </li>
+        <li>
+          <span className="font-semibold text-(--foreground)">{copy.importSeedFolder}:</span>{" "}
+          {copy.seedImportDescription}
+        </li>
+      </ul>
       {activeImportStatus && (
         <div
           className={`mb-5 rounded-xl border px-4 py-3 text-sm ${activeImportStatus.tone === "error" ? "border-(--destructive-border) bg-(--destructive-surface) text-(--destructive)" : "border-(--success-border) bg-(--success-surface) text-(--success)"}`}
@@ -1165,12 +1199,14 @@ function VoiceProfilesView({
           )}
         </div>
       )}
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
         <Card>
           <CardHeader>
             <div>
               <SectionLabel>{copy.voiceLibrary}</SectionLabel>
-              <CardTitle className="mt-2">{copy.savedProfiles}</CardTitle>
+              <CardTitle className="mt-2 first-letter:uppercase">
+                {copy.savedProfiles} · {voices.length}
+              </CardTitle>
             </div>
             {isLoading && <LoaderCircle className="size-4 animate-spin text-(--accent)" />}
           </CardHeader>
@@ -1359,7 +1395,11 @@ function VoiceProfilesView({
                   aria-label={copy.createProfile}
                 >
                   {(["clone", "design", "vieneu_preset"] as VoiceKind[]).map((kind) => (
-                    <ToggleGroupItem key={kind} value={kind} className="px-3 py-2 text-sm">
+                    <ToggleGroupItem
+                      key={kind}
+                      value={kind}
+                      className="h-auto min-h-9 min-w-0 px-1.5 py-1.5 text-center text-xs leading-tight whitespace-normal"
+                    >
                       {kind === "design"
                         ? copy.designVoice
                         : kind === "vieneu_preset"
@@ -1703,7 +1743,7 @@ function SettingsView({
                 <CardHeader>
                   <div>
                     <SectionLabel>{copy.theme}</SectionLabel>
-                    <CardTitle className="mt-2">{copy.theme}</CardTitle>
+                    <CardTitle className="mt-2">{copy.themeTitle}</CardTitle>
                   </div>
                   <Sun className="size-5 text-(--accent)" />
                 </CardHeader>
@@ -2159,9 +2199,7 @@ function SettingsView({
                       {isStartingLocalApi || isStoppingLocalApi ? (
                         <>
                           <LoaderCircle className="size-3.5 animate-spin" />
-                          <span>
-                            {isStartingLocalApi ? copy.apiStarting : copy.apiStopping}
-                          </span>
+                          <span>{isStartingLocalApi ? copy.apiStarting : copy.apiStopping}</span>
                         </>
                       ) : localApi?.running ? (
                         <>
@@ -2185,9 +2223,7 @@ function SettingsView({
                     {localApiError}
                   </p>
                 )}
-                <p className="mt-3 text-sm leading-6 text-(--muted-foreground)">
-                  {copy.apiHelp}
-                </p>
+                <p className="mt-3 text-sm leading-6 text-(--muted-foreground)">{copy.apiHelp}</p>
                 <div className="mt-4 rounded-xl border border-(--border) bg-(--surface-muted) p-4">
                   <p className="text-sm leading-6 text-(--muted-foreground)">
                     {copy.apiTrustWarning}
@@ -2445,6 +2481,11 @@ function AudioHistoryView({
                   dateStyle: "medium",
                   timeStyle: "short",
                 }).format(createdAt);
+            // Untouched takes are named by UUID; their script says more than the file name.
+            const scriptTitle =
+              /^[0-9a-f]{32}\.[a-z0-9]+$/.test(item.id) && item.metadata_available && item.text
+                ? item.text
+                : null;
 
             return (
               <Card key={item.id}>
@@ -2452,7 +2493,7 @@ function AudioHistoryView({
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="line-clamp-2 min-w-0 text-sm font-semibold leading-6">
-                        {item.id}
+                        {scriptTitle ?? item.id}
                       </h2>
                       <Badge variant="outline">{item.format}</Badge>
                     </div>
@@ -2462,8 +2503,9 @@ function AudioHistoryView({
                         <span>{item.provider === "vieneu" ? "VieNeu" : "OmniVoice"}</span>
                       )}
                       {voiceName && <span>{voiceName}</span>}
+                      {scriptTitle && <span className="font-mono">{item.id}</span>}
                     </div>
-                    {item.metadata_available && item.text && (
+                    {!scriptTitle && item.metadata_available && item.text && (
                       <p className="mt-2 line-clamp-2 text-xs leading-5 text-(--muted-foreground)">
                         {item.text}
                       </p>
@@ -2562,14 +2604,10 @@ function AudioHistoryView({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{copy.audioHistoryRenameTitle}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {copy.audioHistoryRenameDescription}
-            </AlertDialogDescription>
+            <AlertDialogDescription>{copy.audioHistoryRenameDescription}</AlertDialogDescription>
           </AlertDialogHeader>
           <Field>
-            <FieldLabel htmlFor="audio-history-rename">
-              {copy.audioHistoryRenameLabel}
-            </FieldLabel>
+            <FieldLabel htmlFor="audio-history-rename">{copy.audioHistoryRenameLabel}</FieldLabel>
             <Input
               id="audio-history-rename"
               value={renameDraft}
@@ -2644,6 +2682,7 @@ function WorkspaceView({
   onVoiceSelectionChange,
   onChooseReference,
   onSynthesize,
+  onCancelSynthesis,
   onExport,
 }: {
   copy: UiCopy;
@@ -2679,6 +2718,7 @@ function WorkspaceView({
   onVoiceSelectionChange: (name: string) => void;
   onChooseReference: () => void;
   onSynthesize: () => void;
+  onCancelSynthesis: () => void;
   onExport: () => void;
 }) {
   const isOmniVoice = provider === "omnivoice";
@@ -2707,7 +2747,9 @@ function WorkspaceView({
   const speedPresets = [0.8, 1.0, 1.25, 1.5];
 
   const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
-  const estSeconds = Math.max(1, Math.round(wordCount / 2.5));
+  // Measured speaking rates: OmniVoice ~2.9 words/s at 1x, VieNeu presets ~3.9 words/s.
+  const wordsPerSecond = provider === "vieneu" ? 3.9 : 2.9 * speed;
+  const estSeconds = Math.max(1, Math.round(wordCount / wordsPerSecond));
   const [copiedText, setCopiedText] = useState(false);
   const [sampleMenuOpen, setSampleMenuOpen] = useState(false);
 
@@ -2722,14 +2764,8 @@ function WorkspaceView({
 
   const currentSamples = SAMPLE_SCRIPTS[language] || SAMPLE_SCRIPTS.en;
 
-  const activeVoiceName = useMemo(() => {
-    if (mode === "profile") return selectedVoice;
-    if (mode === "preset") {
-      return presetVoices.find((p) => p.id === selectedVoice)?.label ?? selectedVoice;
-    }
-    if (refAudio) return fileName(refAudio);
-    return copy.autoVoice;
-  }, [mode, selectedVoice, presetVoices, refAudio, copy.autoVoice]);
+  // Describe the take being played, not the current form selection.
+  const activeTake = takes.find((take) => take.id === activeTakeId);
 
   return (
     <div>
@@ -2749,7 +2785,7 @@ function WorkspaceView({
           </div>
         }
       />
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_370px]">
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_330px] xl:grid-cols-[minmax(0,1fr)_370px]">
         <Card className="overflow-hidden">
           <CardHeader className="border-b border-(--border) pb-4">
             <div className="flex flex-wrap items-center justify-between gap-4 w-full">
@@ -2771,7 +2807,9 @@ function WorkspaceView({
                   </span>
                   <span>·</span>
                   <span className="flex items-center gap-1 text-(--accent)">
-                    <Clock className="size-3" />~{estSeconds}s {copy.estimatedDuration}
+                    <Clock className="size-3" />~
+                    {estSeconds < 60 ? `${estSeconds}s` : formatDuration(estSeconds)}{" "}
+                    {copy.estimatedDuration}
                   </span>
                 </div>
 
@@ -2810,33 +2848,37 @@ function WorkspaceView({
                   )}
                 </div>
 
-                {/* Copy text */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleCopyText}
-                  className="h-8 px-2.5 text-xs text-(--muted-foreground) hover:text-(--foreground)"
-                  title={copy.copyScript}
-                >
-                  {copiedText ? (
-                    <Check className="size-3.5 text-(--success)" />
-                  ) : (
-                    <Copy className="size-3.5" />
-                  )}
-                </Button>
-
-                {/* Clear text */}
-                {text.length > 0 && (
+                <div className="flex items-center">
+                  {/* Copy text */}
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => onTextChange("")}
-                    className="h-8 px-2 text-xs text-(--muted-foreground) hover:text-(--destructive)"
-                    title={copy.clearScript}
+                    onClick={handleCopyText}
+                    className="h-8 px-2.5 text-xs text-(--muted-foreground) hover:text-(--foreground)"
+                    title={copy.copyScript}
+                    aria-label={copy.copyScript}
                   >
-                    <Trash2 className="size-3.5" />
+                    {copiedText ? (
+                      <Check className="size-3.5 text-(--success)" />
+                    ) : (
+                      <Copy className="size-3.5" />
+                    )}
                   </Button>
-                )}
+
+                  {/* Clear text */}
+                  {text.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onTextChange("")}
+                      className="h-8 px-2 text-xs text-(--muted-foreground) hover:text-(--destructive)"
+                      title={copy.clearScript}
+                      aria-label={copy.clearScript}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           </CardHeader>
@@ -2845,11 +2887,17 @@ function WorkspaceView({
               aria-label={copy.untitledSpeech}
               value={text}
               onChange={(event) => onTextChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !isGenerating) {
+                  event.preventDefault();
+                  onSynthesize();
+                }
+              }}
               className="min-h-[310px] resize-none rounded-none border-0 bg-transparent px-6 py-6 text-base leading-8 shadow-none focus-visible:ring-0"
               spellCheck={false}
             />
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-(--border) px-6 py-3 text-xs text-(--muted-foreground)">
-              <span>{copy.lineOne}</span>
+              <span>{copy.renderShortcut}</span>
               <span className="font-mono text-[10px] uppercase tracking-[0.08em]">
                 {language === "vi" ? copy.vietnameseDiacritics : copy.englishPronunciation}
               </span>
@@ -2865,20 +2913,39 @@ function WorkspaceView({
               <div>
                 <SectionLabel>{copy.outputPreview}</SectionLabel>
                 <h2 className="mt-1 text-base font-semibold">
-                  {result ? copy.renderedTake : copy.nothingRendered}
+                  {isGenerating
+                    ? copy.rendering
+                    : result
+                      ? copy.renderedTake
+                      : copy.nothingRendered}
                 </h2>
               </div>
-              {result && <Badge variant="success">{copy.ready}</Badge>}
+              {result && !isGenerating && <Badge variant="success">{copy.ready}</Badge>}
             </div>
 
-            {audioUrl && result ? (
+            {isGenerating ? (
+              <div
+                role="status"
+                className="mt-4 flex items-center gap-3 rounded-xl border border-dashed border-(--accent-border) bg-(--surface) px-4 py-6 text-sm text-(--muted-foreground)"
+              >
+                <div className="flex size-9 items-center justify-center rounded-xl bg-(--accent-soft) text-(--accent)">
+                  <LoaderCircle className="size-4 animate-spin" />
+                </div>
+                <span>{copy.rendering}</span>
+                <ElapsedTime />
+                <Button variant="ghost" size="sm" onClick={onCancelSynthesis}>
+                  <CircleStop data-icon="inline-start" />
+                  {copy.cancel}
+                </Button>
+              </div>
+            ) : audioUrl && result ? (
               <div className="mt-4">
                 <AudioPlayer
                   src={audioUrl}
                   audioPath={result.audio_path}
                   format={result.format}
-                  sampleRate={provider === "vieneu" ? 48000 : 24000}
-                  voiceName={activeVoiceName}
+                  sampleRate={activeTake?.provider === "vieneu" ? 48000 : 24000}
+                  voiceName={activeTake?.voiceName}
                   copy={copy}
                   onExport={onExport}
                   autoPlay={false}
@@ -2902,7 +2969,7 @@ function WorkspaceView({
                     <SectionLabel>{copy.takeHistory}</SectionLabel>
                   </div>
                   <span className="font-mono text-[10px] text-(--muted-foreground)">
-                    {takes.length} {copy.take.toLowerCase()}(s)
+                    {takes.length} / {MAX_SESSION_TAKES}
                   </span>
                 </div>
                 <ToggleGroup
@@ -3050,7 +3117,7 @@ function WorkspaceView({
             <Separator />
             {isOmniVoice && (
               <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <Label htmlFor="speed">{copy.speed}</Label>
                   <div className="flex items-center gap-1.5">
                     <ToggleGroup
@@ -3128,16 +3195,15 @@ function WorkspaceView({
                     <Button
                       type="button"
                       variant="outline"
-                      size="xs"
+                      size="icon-sm"
                       onClick={(e) => {
                         e.stopPropagation();
                         onAdvancedChange(DEFAULT_ADVANCED);
                       }}
-                      className="gap-1"
                       title={copy.resetDefaults}
+                      aria-label={copy.resetDefaults}
                     >
-                      <RotateCcw data-icon="inline-start" />
-                      <span>{copy.resetDefaults}</span>
+                      <RotateCcw />
                     </Button>
                     <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
                   </div>
@@ -3285,16 +3351,15 @@ function WorkspaceView({
                     <Button
                       type="button"
                       variant="outline"
-                      size="xs"
+                      size="icon-sm"
                       onClick={(event) => {
                         event.stopPropagation();
                         onVieNeuAdvancedChange(DEFAULT_VIENEU);
                       }}
-                      className="gap-1"
                       title={copy.resetDefaults}
+                      aria-label={copy.resetDefaults}
                     >
-                      <RotateCcw data-icon="inline-start" />
-                      <span>{copy.resetDefaults}</span>
+                      <RotateCcw />
                     </Button>
                     <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
                   </div>
@@ -3382,22 +3447,14 @@ function WorkspaceView({
             {!isOmniVoice && vieneuAdvancedError && (
               <ErrorMessage>{vieneuAdvancedError}</ErrorMessage>
             )}
-            <div className="grid gap-2">
-              <Button size="lg" onClick={onSynthesize} disabled={isGenerating}>
-                {isGenerating ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : (
-                  <Play className="size-4 fill-current" />
-                )}
-                {isGenerating ? copy.rendering : copy.renderSpeech}
-              </Button>
-              {result && (
-                <Button variant="secondary" onClick={onExport}>
-                  <Download className="size-4" />
-                  {copy.export} {result.format.toUpperCase()}
-                </Button>
+            <Button size="lg" className="w-full" onClick={onSynthesize} disabled={isGenerating}>
+              {isGenerating ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : (
+                <Play className="size-4 fill-current" />
               )}
-            </div>
+              {isGenerating ? copy.rendering : copy.renderSpeech}
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -3432,13 +3489,9 @@ function TranscribeView({
   onCancel: () => void;
   onSave: () => void;
 }) {
-  const phaseLabel = progress
-    ? (copy.transcribePhases[progress.phase] ?? progress.phase)
-    : null;
+  const phaseLabel = progress ? (copy.transcribePhases[progress.phase] ?? progress.phase) : null;
   const percent =
-    progress && typeof progress.progress === "number"
-      ? Math.round(progress.progress * 100)
-      : null;
+    progress && typeof progress.progress === "number" ? Math.round(progress.progress * 100) : null;
   return (
     <div>
       <PageHeader
@@ -3459,44 +3512,49 @@ function TranscribeView({
       <div className="grid items-start gap-5">
         <Card className="overflow-hidden">
           <CardHeader className="border-b border-(--border) pb-4">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <SectionLabel>{copy.transcribeVideoLink}</SectionLabel>
-                <CardTitle className="mt-1">{copy.transcribeStart}</CardTitle>
-              </div>
-              <div className="flex items-center gap-2">
-                {isTranscribing && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={onCancel}
-                    disabled={isCancelling}
-                  >
-                    <CircleStop data-icon="inline-start" />
-                    {isCancelling ? copy.transcribeCancelling : copy.transcribeCancel}
-                  </Button>
-                )}
-                <Button size="sm" onClick={onStart} disabled={isTranscribing}>
-                  {isTranscribing ? (
-                    <LoaderCircle className="animate-spin" data-icon="inline-start" />
-                  ) : (
-                    <FileVideo data-icon="inline-start" />
-                  )}
-                  {isTranscribing ? copy.transcribeTranscribing : copy.transcribeStart}
-                </Button>
-              </div>
+            <div>
+              <SectionLabel>{copy.transcribeVideoLink}</SectionLabel>
+              <CardTitle className="mt-1">{copy.transcribeStart}</CardTitle>
             </div>
           </CardHeader>
           <CardContent className="space-y-4 p-5">
-            <Input
-              aria-label={copy.transcribeVideoLink}
-              value={url}
-              onChange={(event) => onUrlChange(event.target.value)}
-              placeholder={copy.transcribeVideoLinkPlaceholder}
-              disabled={isTranscribing}
-              inputMode="url"
-              spellCheck={false}
-            />
+            <form
+              className="flex flex-col gap-2 sm:flex-row"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!isTranscribing) onStart();
+              }}
+            >
+              <Input
+                className="flex-1"
+                aria-label={copy.transcribeVideoLink}
+                value={url}
+                onChange={(event) => onUrlChange(event.target.value)}
+                placeholder={copy.transcribeVideoLinkPlaceholder}
+                disabled={isTranscribing}
+                inputMode="url"
+                spellCheck={false}
+              />
+              {isTranscribing && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={onCancel}
+                  disabled={isCancelling}
+                >
+                  <CircleStop data-icon="inline-start" />
+                  {isCancelling ? copy.transcribeCancelling : copy.transcribeCancel}
+                </Button>
+              )}
+              <Button type="submit" disabled={isTranscribing}>
+                {isTranscribing ? (
+                  <LoaderCircle className="animate-spin" data-icon="inline-start" />
+                ) : (
+                  <FileVideo data-icon="inline-start" />
+                )}
+                {isTranscribing ? copy.transcribeTranscribing : copy.transcribeStart}
+              </Button>
+            </form>
             <p className="text-xs leading-5 text-(--muted-foreground)">
               {copy.transcribeAuthorizationNotice}
             </p>
@@ -3505,7 +3563,10 @@ function TranscribeView({
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs text-(--muted-foreground)">
                   <span>{phaseLabel ?? copy.transcribeTranscribing}</span>
-                  {percent !== null && <span className="font-mono">{percent}%</span>}
+                  <span className="flex items-center gap-3">
+                    {percent !== null && <span className="font-mono">{percent}%</span>}
+                    <ElapsedTime />
+                  </span>
                 </div>
                 <Progress value={percent ?? 0} />
               </div>
@@ -3530,8 +3591,7 @@ function TranscribeView({
                       : copy.transcribeSourceFacebook}
                   </Badge>
                   <Badge variant="secondary">
-                    {copy.transcribeDurationLabel} ·{" "}
-                    {formatDuration(result.duration_seconds)}
+                    {copy.transcribeDurationLabel} · {formatDuration(result.duration_seconds)}
                   </Badge>
                 </div>
               </div>
@@ -3636,6 +3696,7 @@ function App() {
     "none" | "current" | "unavailable"
   >("none");
   const bundledSeedImportStarted = useRef(false);
+  const renderCancelled = useRef(false);
   const lastView = useRef<AppView>(view);
 
   useEffect(() => {
@@ -4425,7 +4486,6 @@ function App() {
     }
     setAdvancedError(null);
     setVieNeuAdvancedError(null);
-    setResult(null);
     try {
       const request: { type: string; [key: string]: unknown } = {
         type: "synthesize",
@@ -4454,13 +4514,14 @@ function App() {
           request.ref_audio = refAudio;
         }
       }
+      renderCancelled.current = false;
       const response = await synthesisMutation.mutateAsync(request);
       setResult(response);
       const activeVoiceLabel =
         mode === "profile"
           ? selectedVoice
           : mode === "preset"
-            ? (presetVoices.find((p) => p.id === selectedVoice)?.label ?? selectedVoice)
+            ? (presetVoices.find((p) => p.id === selectedVoice)?.name ?? selectedVoice)
             : refAudio
               ? fileName(refAudio)
               : copy.autoVoice;
@@ -4473,11 +4534,23 @@ function App() {
         audioPath: response.audio_path,
         text,
       };
-      setTakes((prev) => [newTake, ...prev.slice(0, 4)]);
+      setTakes((prev) => [newTake, ...prev.slice(0, MAX_SESSION_TAKES - 1)]);
       setActiveTakeId(newTake.id);
     } catch (reason) {
+      if (renderCancelled.current) return;
       setError(reason instanceof Error ? reason.message : copy.synthesisFailed);
     }
+  }
+
+  async function cancelRender() {
+    renderCancelled.current = true;
+    if (await client.cancelSynthesis()) {
+      // Restarting the engine also stops the local API server it hosts.
+      void queryClient.invalidateQueries({ queryKey: API_STATE_QUERY_KEY });
+      return;
+    }
+    renderCancelled.current = false;
+    setError(copy.cancelRenderBusy);
   }
 
   function handleSelectTake(take: TakeItem) {
@@ -4593,25 +4666,26 @@ function App() {
       return;
     }
     setProfileError(null);
+    const name = toVoiceName(profileName) || profileName.trim();
     try {
       let request: SaveProfileRequest;
       if (profileKind === "vieneu_preset") {
         request = {
           kind: "vieneu_preset",
-          name: profileName.trim(),
+          name,
           presetId: profilePresetId,
         };
       } else if (profileKind === "design") {
         request = {
           kind: "design",
-          name: profileName.trim(),
+          name,
           instruction: designInstruction.trim(),
           language,
         };
       } else {
         request = {
           kind: "clone",
-          name: profileName.trim(),
+          name,
           refAudio: refAudio!,
           refText: refText || undefined,
           language,
@@ -4698,9 +4772,7 @@ function App() {
       if (localized) return localized;
       return reason.message || copy.transcribeErrors.transcription_failed;
     }
-    return reason instanceof Error
-      ? reason.message
-      : copy.transcribeErrors.transcription_failed;
+    return reason instanceof Error ? reason.message : copy.transcribeErrors.transcription_failed;
   }
 
   async function startTranscription() {
@@ -4744,9 +4816,7 @@ function App() {
       filters: [{ name: "SRT", extensions: ["srt"] }],
     });
     if (typeof destination !== "string") return;
-    const path = destination.toLowerCase().endsWith(".srt")
-      ? destination
-      : `${destination}.srt`;
+    const path = destination.toLowerCase().endsWith(".srt") ? destination : `${destination}.srt`;
     try {
       await writeTextFile(path, transcribeResult.srt);
       setTranscribeSaved(true);
@@ -4758,8 +4828,10 @@ function App() {
 
   async function exportAudio() {
     if (!result) return;
+    const script = takes.find((take) => take.id === activeTakeId)?.text ?? "";
+    const stem = toVoiceName(script.trim().split(/\s+/).slice(0, 6).join(" ")) || "volo-ai-output";
     const destination = await save({
-      defaultPath: `volo-ai-output.${result.format}`,
+      defaultPath: `${stem}.${result.format}`,
       filters: [{ name: result.format.toUpperCase(), extensions: [result.format] }],
     });
     if (typeof destination === "string") {
@@ -4804,6 +4876,8 @@ function App() {
           setupError={setupError ?? modelStatusError}
           canPrepare={canPrepareAllModels}
           omniVoiceReady={omniVoiceReady}
+          engineFailed={!engineStatus && statusQuery.isError}
+          onRetryEngine={() => void refreshModelStatus()}
           onPrepareAll={() => void prepareBothModels()}
           onCancel={() => void cancelModelPreparation()}
           onOpenProfiles={() => navigateTo("profiles")}
@@ -4825,8 +4899,8 @@ function App() {
   ];
   return (
     <MotionConfig reducedMotion="user">
-      <main className="flex min-h-screen bg-(--background) text-(--foreground)">
-        <aside className="hidden w-64 shrink-0 flex-col border-r border-(--border) bg-(--surface) px-4 py-5 md:flex">
+      <main className="flex h-screen overflow-hidden bg-(--background) text-(--foreground)">
+        <aside className="hidden w-64 shrink-0 flex-col overflow-y-auto border-r border-(--border) bg-(--surface) px-4 py-5 md:flex">
           <div className="flex items-center gap-3 px-2 pb-10">
             <div className="grid size-10 place-items-center rounded-xl bg-(--accent) text-white shadow-[0_8px_20px_rgb(191_95_69/20%)]">
               <AudioLines className="size-5" />
@@ -4907,8 +4981,8 @@ function App() {
             </p>
           </div>
         </aside>
-        <section className="min-w-0 flex-1 overflow-auto">
-          <div className="mx-auto w-full max-w-[1440px] px-5 py-6 sm:px-8 sm:py-8 lg:px-10">
+        <section className="flex min-w-0 flex-1 flex-col overflow-auto">
+          <div className="mx-auto w-full max-w-[1440px] flex-1 px-5 py-6 sm:px-8 sm:py-8 lg:px-10">
             {visibleUpdate && (
               <UpdateBanner
                 copy={copy}
@@ -5104,20 +5178,25 @@ function App() {
                     onVoiceSelectionChange={changeVoiceSelection}
                     onChooseReference={() => void chooseReference()}
                     onSynthesize={() => void synthesize()}
+                    onCancelSynthesis={() => void cancelRender()}
                     onExport={() => void exportAudio()}
                   />
                 )}
               </motion.div>
             </AnimatePresence>
           </div>
-          <footer className="border-t border-(--border) bg-(--surface) px-5 py-3 sm:px-8 lg:px-10">
+          <footer className="sticky bottom-0 border-t border-(--border) bg-(--surface) px-5 py-3 sm:px-8 lg:px-10">
             <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-(--muted-foreground)">
-              <span className="flex items-center gap-2 text-(--success)">
-                <span className="size-1.5 rounded-full bg-(--success)" />
-                {copy.engineReady}
+              <span
+                className={`flex items-center gap-2 ${engineOnline && modelReady ? "text-(--success)" : "text-(--destructive)"}`}
+              >
+                <span
+                  className={`size-1.5 rounded-full ${engineOnline && modelReady ? "bg-(--success)" : "bg-(--destructive)"}`}
+                />
+                {engineOnline && modelReady ? copy.engineReady : copy.engineUnavailable}
               </span>
               <span>
-                {copy.device} / {engineOnline ? "AUTO" : "OFFLINE"}
+                {copy.device} / {engineOnline ? device.toUpperCase() : "OFFLINE"}
               </span>
               <span>
                 {copy.sampleRate} / {provider === "vieneu" ? 48000 : 24000} HZ

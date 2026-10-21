@@ -68,6 +68,9 @@ const PREPARATION_TIMEOUT_MS = 60 * 60 * 1000;
 const SEED_TIMEOUT_MS = 60 * 60 * 1000;
 const RUNTIME_INSTALL_TIMEOUT_MS = 3 * 60 * 60 * 1000;
 const TRANSCRIBE_TIMEOUT_MS = 3 * 60 * 60 * 1000;
+// A ~360-word OmniVoice script takes over 3 minutes on Apple Silicon, so long
+// scripts must not hit REQUEST_TIMEOUT_MS and get the engine killed mid-render.
+const SYNTHESIS_TIMEOUT_MS = 60 * 60 * 1000;
 const MAX_REQUEST_LOGS = 500;
 
 export type ProgressEvent = {
@@ -204,6 +207,7 @@ export class SidecarClient {
   private activeSeedId: string | null = null;
   private activeRuntimeInstallId: string | null = null;
   private activeTranscriptionId: string | null = null;
+  private activeSynthesisIds = new Set<string>();
   private nextId = 1;
   private pending = new Map<
     string,
@@ -343,6 +347,22 @@ export class SidecarClient {
     if (failure?.status === "rejected") throw failure.reason;
   }
 
+  /**
+   * The sidecar renders inline and cannot interrupt a model call, so cancelling
+   * restarts the engine. Returns false, without stopping, while other long work would be lost.
+   */
+  async cancelSynthesis(): Promise<boolean> {
+    const otherWork =
+      this.activePreparationIds.size > 0 ||
+      this.activeSeedId !== null ||
+      this.activeRuntimeInstallId !== null ||
+      this.activeTranscriptionId !== null;
+    if (this.activeSynthesisIds.size === 0) return true;
+    if (otherWork) return false;
+    await this.stop();
+    return true;
+  }
+
   async cancelSeed(): Promise<void> {
     if (!this.activeSeedId) return;
     await this.request({ type: "cancel", request_id: this.activeSeedId });
@@ -418,7 +438,9 @@ export class SidecarClient {
     const isSeed = payload.type === "seed_vieneu_voices";
     const isRuntimeInstall = payload.type === "install_nvidia_runtime";
     const isTranscription = payload.type === "transcribe_video";
+    const isSynthesis = payload.type === "synthesize";
     if (isPreparation) this.activePreparationIds.add(id);
+    if (isSynthesis) this.activeSynthesisIds.add(id);
     if (isSeed) this.activeSeedId = id;
     if (isRuntimeInstall) this.activeRuntimeInstallId = id;
     if (isTranscription) this.activeTranscriptionId = id;
@@ -468,6 +490,7 @@ export class SidecarClient {
         this.activeRuntimeInstallId = null;
       if (isTranscription && this.activeTranscriptionId === id)
         this.activeTranscriptionId = null;
+      this.activeSynthesisIds.delete(id);
     }
   }
 
@@ -485,7 +508,10 @@ export class SidecarClient {
             ? RUNTIME_INSTALL_TIMEOUT_MS
             : payload.type === "transcribe_video"
               ? TRANSCRIBE_TIMEOUT_MS
-              : REQUEST_TIMEOUT_MS;
+              : // The sidecar handles synthesis inline, so requests queued behind it wait as long.
+                this.activeSynthesisIds.size > 0
+                ? SYNTHESIS_TIMEOUT_MS
+                : REQUEST_TIMEOUT_MS;
     let timeout: ReturnType<typeof setTimeout>;
     const response = new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
