@@ -102,7 +102,7 @@ export const copy = {
           },
           {
             title: "WAV and MP3 export",
-            body: "Save every take as a WAV file or a compressed MP3.",
+            body: "Save every take as a WAV file or a compressed MP3 — VieNeu output stays at 48 kHz, OmniVoice generates at 24 kHz.",
           },
         ],
       },
@@ -335,7 +335,7 @@ export const copy = {
           },
           {
             title: "Xuất WAV và MP3",
-            body: "Lưu mỗi lần tạo thành tệp WAV hoặc MP3 nén.",
+            body: "Lưu mỗi lần tạo thành tệp WAV hoặc MP3 nén — âm thanh VieNeu giữ nguyên 48 kHz, OmniVoice tạo ở 24 kHz.",
           },
         ],
       },
