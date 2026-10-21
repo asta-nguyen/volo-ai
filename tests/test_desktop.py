@@ -2529,6 +2529,21 @@ class TranscribeVideoTests(unittest.TestCase):
         self.assertTrue(all(event["id"] == "req-1" for event in progress))
         self.engine.transcribe_with_timestamps.assert_called_once()
 
+    def test_long_segment_is_split_into_readable_cues(self):
+        self.engine.transcribe_with_timestamps.return_value = {
+            "text": "one two three four five six",
+            "chunks": [{"text": "one two three four five six", "timestamp": (10.0, 22.0)}],
+        }
+        response = self.run_transcribe({})
+        self.assertTrue(response["ok"])
+        result = response["result"]
+        self.assertEqual(result["transcript"], "one two three four five six")
+        self.assertEqual(
+            result["srt"],
+            "1\n00:00:10,000 --> 00:00:16,000\none two three\n\n"
+            "2\n00:00:16,000 --> 00:00:22,000\nfour five six\n",
+        )
+
     def test_facebook_url_reports_platform(self):
         response = self.run_transcribe({"url": "https://www.facebook.com/watch?v=12345"})
         self.assertTrue(response["ok"])
@@ -2635,6 +2650,12 @@ class TranscribeVideoTests(unittest.TestCase):
             ("Unsupported URL: https://example.com", "invalid_url"),
             ("Private video. Sign in if you've been granted access", "video_unavailable"),
             ("HTTP Error 404", "video_unavailable"),
+            # YouTube's bot check also says "Sign in"; it is not a private video.
+            (
+                "[youtube] demo123: Sign in to confirm you're not a bot. "
+                "Use --cookies-from-browser or --cookies for the authentication.",
+                "source_blocked",
+            ),
         ):
             ydl = MagicMock()
             ydl.__enter__.return_value = ydl

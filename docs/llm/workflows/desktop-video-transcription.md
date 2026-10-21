@@ -197,12 +197,16 @@ Evidence: `apps/desktop/src/App.tsx`
    (`*_ORIG`), so spawned helpers resolve their own libraries instead of the
    bundled ones.
 5. `Engine.transcribe_with_timestamps` reads the WAV through soundfile and
-   reuses `model._asr_pipe` with `chunk_length_s=30` and
-   `return_timestamps=True`; the model detects the spoken language and no
-   translation is applied.
+   reuses `model._asr_pipe` with `return_timestamps=True` and no
+   `chunk_length_s`, so audio longer than 30 seconds uses Whisper's sequential
+   long-form decoding; the model detects the spoken language and no
+   translation is applied. Chunked decoding was dropped because it merged
+   minutes of speech into single segments and lost words on long videos.
 6. Valid `(start, end)` chunks become sequentially numbered
    `HH:MM:SS,mmm` SRT blocks; a missing chunk end falls back to the video
-   duration. The response returns `platform`, `title`, `duration_seconds`,
+   duration. A chunk longer than `MAX_CUE_SECONDS` (7 s) is split into
+   word groups of at most that length, timed in proportion to their word
+   count; text without spaces stays one cue. The response returns `platform`, `title`, `duration_seconds`,
    `transcript`, and `srt`. The view previews all of them and saves the SRT
    through the native dialog with a sanitized title as the default filename.
 7. Requests emit `metadata`, `fetch` (with a progress fraction), `audio`,
@@ -259,6 +263,9 @@ Evidence: `apps/desktop/src/App.tsx`
 - `video_unavailable` — private, needs-auth, premium, or subscriber
   availability; age restriction; live or upcoming stream; extractor or
   download failure.
+- `source_blocked` — the site rate-limits or bot-checks this network
+  ("not a bot", HTTP 429, "too many requests"); checked before the sign-in
+  wording so a bot check is not reported as a private video.
 - `duration_limit` — missing, non-positive, or over-60-minute duration.
 - `missing_audio` — the video offers no audio-only stream, or the download
   produced no usable audio track.

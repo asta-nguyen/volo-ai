@@ -99,7 +99,10 @@ the Python worker as a Tauri sidecar and stores model/audio data locally.
   the clone prompt there; SQLite records profile kinds, metadata, defaults, and
   installed seed versions. The Voice Profiles view also lets users choose an individual
   audio file; the UI derives a profile name from its filename and reuses the
-  existing `save_voice` operation. It can also pass a user-selected seed root
+  existing `save_voice` operation. Typed and derived profile names go through
+  the same `toVoiceName` helper in `App.tsx`, which strips Vietnamese
+  diacritics and replaces other unsupported characters with `-` so they match
+  the engine's ASCII name rule. It can also pass a user-selected seed root
   to the existing seed importer. Setup is therefore independent of the source
   repository or the original sample-audio path.
 - `scripts/build_sidecar.py` packages the desktop worker and FFmpeg into a
@@ -133,7 +136,17 @@ accepted same-machine process trust boundary and route contract.
 while unsupported output extensions are rejected.
 The frontend `SidecarClient` gives ordinary requests a five-minute timeout,
 model preparation and seeding a one-hour timeout, and optional runtime
-installation and video transcription a three-hour timeout. Runtime downloads emit progress and support
+installation and video transcription a three-hour timeout. Synthesis runs inline
+on the sidecar's request loop, so a `synthesize` request and any request sent
+while one is pending get a one-hour timeout; a long OmniVoice script can take
+several minutes. Because a model call cannot be interrupted, cancelling a render
+(`SidecarClient.cancelSynthesis`) restarts the sidecar; it is refused while a
+model download, seed import, runtime install, or transcription is running, and
+the restart also stops the local API server. `Engine` serializes OmniVoice generation,
+Whisper transcription, and clone-prompt creation behind one class-level
+`_inference_lock`, because the sidecar runs synthesis on its request loop while
+transcription and seed imports run on worker threads, and concurrent MPS work
+aborts the process; a render requested during a transcription waits for it. Runtime downloads emit progress and support
 cancellation. Startup checks the exact app version and performs a CUDA health
 check; a stale or unusable runtime leaves CPU synthesis available.
 The React UI also checks GitHub's latest stable release at startup without

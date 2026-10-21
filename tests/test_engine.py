@@ -1103,10 +1103,53 @@ class EngineTests(unittest.TestCase):
         model._asr_pipe.assert_called_once()
         inputs, kwargs = model._asr_pipe.call_args
         self.assertEqual(kwargs["return_timestamps"], True)
-        self.assertEqual(kwargs["chunk_length_s"], 30)
+        # Chunked decoding merged minutes of speech into one cue; long-form must stay sequential.
+        self.assertNotIn("chunk_length_s", kwargs)
         payload = inputs[0]
         self.assertEqual(payload["sampling_rate"], 16000)
         self.assertEqual(payload["array"].shape, (1600,))
+
+    def test_generation_and_transcription_never_run_concurrently(self):
+        # Concurrent model calls abort the process on MPS (Metal command buffer assertion).
+        import threading
+
+        import torch  # noqa: F401  # first import is slow and would stagger the threads
+
+        engine = Engine()
+        model = Mock()
+        active = []
+        overlap = []
+
+        both_inside = threading.Event()
+
+        def busy(*_args, **_kwargs):
+            active.append(1)
+            overlap.append(len(active))
+            if len(active) == 2:
+                both_inside.set()
+            # Without serialization the other call enters while this one waits here.
+            both_inside.wait(timeout=0.5)
+            active.pop()
+            return [np.zeros(1, dtype=np.float32)]
+
+        # Plain callables: Mock serializes its own calls and would hide the race.
+        model.generate = busy
+        model._asr_pipe = lambda *a, **k: busy() and {"text": "", "chunks": []}
+        with patch.object(engine, "_model", model):
+            threads = [
+                threading.Thread(target=lambda: engine.generate(text="hello")),
+                threading.Thread(
+                    target=lambda: engine.transcribe_with_timestamps(
+                        (np.zeros(1600, dtype=np.float32), 16000)
+                    )
+                ),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+        self.assertEqual(len(overlap), 2)
+        self.assertEqual(max(overlap), 1)
 
     def test_transcribe_with_timestamps_requires_loaded_pipeline(self):
         engine = Engine()

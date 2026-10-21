@@ -73,6 +73,13 @@ def _map_download_error(exc: Exception) -> TranscriptionError:
         return TranscriptionError(
             "invalid_url", "Only YouTube and Facebook video links are supported"
         )
+    # Checked before the sign-in branch: the bot check also asks to "sign in".
+    if "not a bot" in lowered or "too many requests" in lowered or "http error 429" in lowered:
+        return TranscriptionError(
+            "source_blocked",
+            "The video site is temporarily blocking downloads from this network; "
+            "wait a while and try again",
+        )
     if (
         "private" in lowered
         or "sign in" in lowered
@@ -261,6 +268,26 @@ def _format_srt_timestamp(seconds: float) -> str:
     return f"{hours:02}:{minutes:02}:{secs:02},{ms:03}"
 
 
+MAX_CUE_SECONDS = 7.0
+
+
+def _split_cue(start: float, end: float, text: str) -> list[tuple[float, float, str]]:
+    """Split a long Whisper segment into shorter cues, timing words evenly.
+
+    ponytail: assumes a steady speech rate inside one segment; switch to word-level
+    timestamps if cue boundaries need to be exact.
+    """
+    words = text.split()
+    parts = min(len(words), math.ceil((end - start) / MAX_CUE_SECONDS))
+    if parts <= 1:
+        return [(start, end, text)]
+    bounds = [round(i * len(words) / parts) for i in range(parts + 1)]
+    at = [start + (end - start) * index / len(words) for index in bounds]
+    return [
+        (at[i], at[i + 1], " ".join(words[bounds[i] : bounds[i + 1]])) for i in range(parts)
+    ]
+
+
 def _transcript_and_srt(result: Any, duration: float) -> tuple[str, str]:
     """Build plain transcript and SRT text from Whisper timestamped chunks."""
     if not isinstance(result, dict) or not isinstance(result.get("chunks"), list):
@@ -302,7 +329,7 @@ def _transcript_and_srt(result: Any, duration: float) -> tuple[str, str]:
             raise TranscriptionError(
                 "transcription_failed", "The transcription returned invalid timestamps"
             )
-        entries.append((float(start), float(end), text))
+        entries.extend(_split_cue(float(start), float(end), text))
     if not entries:
         raise TranscriptionError("no_speech", "No speech was detected in this video")
     transcript = str(result.get("text") or "").strip() or " ".join(text for _, _, text in entries)
