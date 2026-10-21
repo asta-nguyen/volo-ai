@@ -32,6 +32,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    },
     "icon": ["icons/icon.png", "icons/icon.ico"],
     "resources": ["resources/seed-voices"],
     "externalBin": ["binaries/tts-sidecar", "binaries/audiocpp-cli"]
