@@ -46,6 +46,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   AlertCircle,
   AudioLines,
+  Captions,
   Check,
   CheckCircle2,
   ChevronRight,
@@ -55,6 +56,7 @@ import {
   Download,
   FileAudio,
   FileText,
+  FileVideo,
   FolderOpen,
   HardDrive,
   History,
@@ -79,6 +81,7 @@ import {
 } from "lucide-react";
 import {
   SidecarClient,
+  SidecarError,
   type AudioHistoryCursor,
   type AudioHistoryItem,
   type AudioHistoryPage,
@@ -93,6 +96,7 @@ import {
   type SeedVieNeuResult,
   type StatusResult,
   type SynthesisResult,
+  type TranscribeVideoResult,
   type VieNeuConfig,
   type VoiceKind,
   type VoiceMode,
@@ -174,7 +178,7 @@ const client = new SidecarClient();
 const STATUS_QUERY_KEY = ["sidecar", "status"] as const;
 const VOICES_QUERY_KEY = ["sidecar", "voices"] as const;
 const AUDIO_HISTORY_QUERY_KEY = ["sidecar", "audio-history"] as const;
-type AppView = "workspace" | "profiles" | "history" | "settings" | "logs";
+type AppView = "workspace" | "transcribe" | "profiles" | "history" | "settings" | "logs";
 type SettingsTab = "general" | "model" | "storage" | "mcp";
 type McpClientId = "codex" | "claude-code" | "claude-desktop" | "cursor" | "vscode" | "zed";
 
@@ -378,6 +382,48 @@ function preferredVoiceForLanguage(voices: VoiceProfile[], language: Language): 
   );
 }
 
+const TRANSCRIBE_PHASES = new Set(["metadata", "fetch", "audio", "transcribe"]);
+const SUPPORTED_VIDEO_HOSTS = new Set([
+  "youtube.com",
+  "www.youtube.com",
+  "m.youtube.com",
+  "youtu.be",
+  "facebook.com",
+  "www.facebook.com",
+  "m.facebook.com",
+  "web.facebook.com",
+  "fb.watch",
+]);
+
+function isSupportedVideoUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      !url.username &&
+      !url.password &&
+      SUPPORTED_VIDEO_HOSTS.has(url.hostname.toLowerCase())
+    );
+  } catch {
+    return false;
+  }
+}
+
+function formatDuration(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
+    : `${minutes}:${String(secs).padStart(2, "0")}`;
+}
+
+function srtFileName(title: string): string {
+  const safe = title.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
+  return `${(safe || "transcript").slice(0, 80)}.srt`;
+}
+
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-(--muted-foreground)">
@@ -439,11 +485,13 @@ function SetupScreen({
   isCancelling,
   setupError,
   canPrepare,
+  omniVoiceReady,
   onPrepareAll,
   onCancel,
   onOpenProfiles,
   onOpenHistory,
   onOpenSettings,
+  onOpenTranscribe,
 }: {
   copy: UiCopy;
   providers: Record<ProviderId, ProviderStatus> | null;
@@ -454,11 +502,13 @@ function SetupScreen({
   isCancelling: boolean;
   setupError: string | null;
   canPrepare: boolean;
+  omniVoiceReady: boolean;
   onPrepareAll: () => void;
   onCancel: () => void;
   onOpenProfiles: () => void;
   onOpenHistory: () => void;
   onOpenSettings: () => void;
+  onOpenTranscribe: () => void;
 }) {
   const providerChoices: Array<[ProviderId, string, string[], string]> = [
     [
@@ -572,6 +622,12 @@ function SetupScreen({
                   <Button variant="secondary" onClick={onCancel} disabled={isCancelling}>
                     <CircleStop className="size-4" />
                     {isCancelling ? copy.cancelling : copy.cancelDownload}
+                  </Button>
+                )}
+                {omniVoiceReady && (
+                  <Button variant="ghost" onClick={onOpenTranscribe}>
+                    <Captions className="size-4" />
+                    {copy.transcribe}
                   </Button>
                 )}
                 <Button variant="ghost" onClick={onOpenProfiles}>
@@ -2993,6 +3049,164 @@ function WorkspaceView({
   );
 }
 
+function TranscribeView({
+  copy,
+  url,
+  progress,
+  result,
+  error,
+  saved,
+  isTranscribing,
+  isCancelling,
+  onUrlChange,
+  onStart,
+  onCancel,
+  onSave,
+}: {
+  copy: UiCopy;
+  url: string;
+  progress: ProgressEvent | null;
+  result: TranscribeVideoResult | null;
+  error: string | null;
+  saved: boolean;
+  isTranscribing: boolean;
+  isCancelling: boolean;
+  onUrlChange: (value: string) => void;
+  onStart: () => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  const phaseLabel = progress
+    ? (copy.transcribePhases[progress.phase] ?? progress.phase)
+    : null;
+  const percent =
+    progress && typeof progress.progress === "number"
+      ? Math.round(progress.progress * 100)
+      : null;
+  return (
+    <div>
+      <PageHeader
+        eyebrow={copy.transcribeEyebrow}
+        title={copy.transcribeTitle}
+        description={copy.transcribeDescription}
+        action={
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="secondary">
+              {copy.transcribeSourceYouTube} · {copy.transcribeSourceYouTubeHint}
+            </Badge>
+            <Badge variant="secondary">
+              {copy.transcribeSourceFacebook} · {copy.transcribeSourceFacebookHint}
+            </Badge>
+          </div>
+        }
+      />
+      <div className="grid items-start gap-5">
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b border-(--border) pb-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <SectionLabel>{copy.transcribeVideoLink}</SectionLabel>
+                <CardTitle className="mt-1">{copy.transcribeStart}</CardTitle>
+              </div>
+              <div className="flex items-center gap-2">
+                {isTranscribing && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={onCancel}
+                    disabled={isCancelling}
+                  >
+                    <CircleStop data-icon="inline-start" />
+                    {isCancelling ? copy.transcribeCancelling : copy.transcribeCancel}
+                  </Button>
+                )}
+                <Button size="sm" onClick={onStart} disabled={isTranscribing}>
+                  {isTranscribing ? (
+                    <LoaderCircle className="animate-spin" data-icon="inline-start" />
+                  ) : (
+                    <FileVideo data-icon="inline-start" />
+                  )}
+                  {isTranscribing ? copy.transcribeTranscribing : copy.transcribeStart}
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4 p-5">
+            <Input
+              aria-label={copy.transcribeVideoLink}
+              value={url}
+              onChange={(event) => onUrlChange(event.target.value)}
+              placeholder={copy.transcribeVideoLinkPlaceholder}
+              disabled={isTranscribing}
+              inputMode="url"
+              spellCheck={false}
+            />
+            <p className="text-xs leading-5 text-(--muted-foreground)">
+              {copy.transcribeAuthorizationNotice}
+            </p>
+            {error && <ErrorMessage>{error}</ErrorMessage>}
+            {isTranscribing && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-(--muted-foreground)">
+                  <span>{phaseLabel ?? copy.transcribeTranscribing}</span>
+                  {percent !== null && <span className="font-mono">{percent}%</span>}
+                </div>
+                <Progress value={percent ?? 0} />
+              </div>
+            )}
+          </CardContent>
+        </Card>
+        {result && (
+          <Card className="overflow-hidden">
+            <CardHeader className="border-b border-(--border) pb-4">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <SectionLabel>{copy.transcribeResultTitle}</SectionLabel>
+                  <CardTitle className="mt-1">
+                    {result?.title || copy.transcribeUntitledVideo}
+                  </CardTitle>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="secondary">
+                    {copy.transcribePlatformLabel} ·{" "}
+                    {result.platform === "youtube"
+                      ? copy.transcribeSourceYouTube
+                      : copy.transcribeSourceFacebook}
+                  </Badge>
+                  <Badge variant="secondary">
+                    {copy.transcribeDurationLabel} ·{" "}
+                    {formatDuration(result.duration_seconds)}
+                  </Badge>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4 p-5">
+              <div className="max-h-56 overflow-auto rounded-xl border border-(--border) bg-(--surface-muted) p-4 text-sm leading-6 whitespace-pre-wrap">
+                {result.transcript}
+              </div>
+              <div className="max-h-56 overflow-auto rounded-xl border border-(--border) bg-(--surface-muted) p-4 font-mono text-xs leading-5 whitespace-pre-wrap">
+                {result.srt}
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button onClick={onSave}>
+                  <Download data-icon="inline-start" />
+                  {copy.transcribeSaveSrt}
+                </Button>
+                {saved && (
+                  <span className="flex items-center gap-1.5 text-xs text-(--success)">
+                    <Check className="size-3.5" />
+                    {copy.transcribeSavedSrt}
+                  </span>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const { t, i18n: translator } = useTranslation();
   const prefersReducedMotion = useReducedMotion();
@@ -3041,6 +3255,12 @@ function App() {
   const [profilePresetId, setProfilePresetId] = useState("");
   const [designInstruction, setDesignInstruction] = useState("");
   const [result, setResult] = useState<SynthesisResult | null>(null);
+  const [transcribeUrl, setTranscribeUrl] = useState("");
+  const [transcribeProgress, setTranscribeProgress] = useState<ProgressEvent | null>(null);
+  const [transcribeResult, setTranscribeResult] = useState<TranscribeVideoResult | null>(null);
+  const [transcribeError, setTranscribeError] = useState<string | null>(null);
+  const [transcribeSaved, setTranscribeSaved] = useState(false);
+  const [isCancellingTranscribe, setIsCancellingTranscribe] = useState(false);
   const [preparingProviders, setPreparingProviders] = useState<ProviderId[]>([]);
   const [isCancelling, setIsCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -3204,6 +3424,10 @@ function App() {
       client.request<SynthesisResult>(request),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: AUDIO_HISTORY_QUERY_KEY }),
   });
+  const transcribeMutation = useMutation({
+    mutationFn: (url: string) =>
+      client.request<TranscribeVideoResult>({ type: "transcribe_video", url }),
+  });
   const deleteHistoryMutation = useMutation({
     mutationFn: async (audioId: string) => {
       const response = await client.request<{ deleted: boolean }>({
@@ -3294,6 +3518,7 @@ function App() {
     const unsubscribe = client.onProgress((event) => {
       if (event.phase === "seed_vieneu") setSeedProgress(event);
       else if (event.phase === "nvidia_runtime") setRuntimeProgress(event);
+      else if (TRANSCRIBE_PHASES.has(event.phase)) setTranscribeProgress(event);
       else if (event.provider) {
         const target = event.provider;
         setModelProgress((current) => ({ ...current, [target]: event }));
@@ -3986,6 +4211,70 @@ function App() {
     setProfileError(null);
   }
 
+  function transcribeErrorMessage(reason: unknown): string {
+    if (reason instanceof SidecarError) {
+      const localized = copy.transcribeErrors[reason.code];
+      if (localized) return localized;
+      return reason.message || copy.transcribeErrors.transcription_failed;
+    }
+    return reason instanceof Error
+      ? reason.message
+      : copy.transcribeErrors.transcription_failed;
+  }
+
+  async function startTranscription() {
+    const url = transcribeUrl.trim();
+    if (!url) {
+      setTranscribeError(copy.transcribeEnterUrl);
+      return;
+    }
+    if (!isSupportedVideoUrl(url)) {
+      setTranscribeError(copy.transcribeInvalidUrl);
+      return;
+    }
+    setTranscribeError(null);
+    setTranscribeSaved(false);
+    setTranscribeResult(null);
+    setTranscribeProgress(null);
+    try {
+      const completed = await transcribeMutation.mutateAsync(url);
+      setTranscribeResult(completed);
+      setTranscribeProgress(null);
+    } catch (reason) {
+      setTranscribeResult(null);
+      setTranscribeProgress(null);
+      setTranscribeError(transcribeErrorMessage(reason));
+    }
+  }
+
+  async function cancelTranscription() {
+    setIsCancellingTranscribe(true);
+    try {
+      await client.cancelTranscription().catch(() => undefined);
+    } finally {
+      setIsCancellingTranscribe(false);
+    }
+  }
+
+  async function saveTranscriptSrt() {
+    if (!transcribeResult) return;
+    const destination = await save({
+      defaultPath: srtFileName(transcribeResult.title),
+      filters: [{ name: "SRT", extensions: ["srt"] }],
+    });
+    if (typeof destination !== "string") return;
+    const path = destination.toLowerCase().endsWith(".srt")
+      ? destination
+      : `${destination}.srt`;
+    try {
+      await writeTextFile(path, transcribeResult.srt);
+      setTranscribeSaved(true);
+      setTranscribeError(null);
+    } catch (reason) {
+      setTranscribeError(reason instanceof Error ? reason.message : copy.exportFailed);
+    }
+  }
+
   async function exportAudio() {
     if (!result) return;
     const destination = await save({
@@ -4002,7 +4291,13 @@ function App() {
     }
   }
 
-  if (!allProvidersReady && view !== "profiles" && view !== "history" && view !== "settings")
+  if (
+    !allProvidersReady &&
+    view !== "profiles" &&
+    view !== "history" &&
+    view !== "settings" &&
+    !(view === "transcribe" && omniVoiceReady)
+  )
     return (
       <SetupScreen
         copy={copy}
@@ -4014,17 +4309,20 @@ function App() {
         isCancelling={isCancelling}
         setupError={setupError ?? modelStatusError}
         canPrepare={canPrepareAllModels}
+        omniVoiceReady={omniVoiceReady}
         onPrepareAll={() => void prepareBothModels()}
         onCancel={() => void cancelModelPreparation()}
         onOpenProfiles={() => navigateTo("profiles")}
         onOpenHistory={() => navigateTo("history")}
         onOpenSettings={() => navigateTo("settings")}
+        onOpenTranscribe={() => navigateTo("transcribe")}
       />
     );
 
   const transition = { duration: prefersReducedMotion ? 0 : 0.22, ease: "easeOut" as const };
   const navItems: Array<[AppView, string, LucideIcon]> = [
     ["workspace", copy.synthesize, AudioLines],
+    ["transcribe", copy.transcribe, Captions],
     ["profiles", copy.voiceProfiles, Library],
     ["history", copy.audioHistory, History],
     ["settings", copy.settings, Settings2],
@@ -4175,6 +4473,24 @@ function App() {
                     diagnosticsIncomplete={
                       diagnosticsIncomplete || engineStatus?.diagnostics_complete === false
                     }
+                  />
+                ) : view === "transcribe" ? (
+                  <TranscribeView
+                    copy={copy}
+                    url={transcribeUrl}
+                    progress={transcribeProgress}
+                    result={transcribeResult}
+                    error={transcribeError}
+                    saved={transcribeSaved}
+                    isTranscribing={transcribeMutation.isPending}
+                    isCancelling={isCancellingTranscribe}
+                    onUrlChange={(value) => {
+                      setTranscribeUrl(value);
+                      if (transcribeError) setTranscribeError(null);
+                    }}
+                    onStart={() => void startTranscription()}
+                    onCancel={() => void cancelTranscription()}
+                    onSave={() => void saveTranscriptSrt()}
                   />
                 ) : view === "history" ? (
                   <AudioHistoryView

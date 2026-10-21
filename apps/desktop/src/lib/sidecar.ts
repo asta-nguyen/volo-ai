@@ -67,6 +67,7 @@ const REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
 const PREPARATION_TIMEOUT_MS = 60 * 60 * 1000;
 const SEED_TIMEOUT_MS = 60 * 60 * 1000;
 const RUNTIME_INSTALL_TIMEOUT_MS = 3 * 60 * 60 * 1000;
+const TRANSCRIBE_TIMEOUT_MS = 3 * 60 * 60 * 1000;
 const MAX_REQUEST_LOGS = 500;
 
 export type ProgressEvent = {
@@ -141,6 +142,14 @@ export type AudioHistoryItem = {
   metadata_available: boolean;
 };
 
+export type TranscribeVideoResult = {
+  platform: "youtube" | "facebook";
+  title: string;
+  duration_seconds: number;
+  transcript: string;
+  srt: string;
+};
+
 export type AudioHistoryCursor = { created_at: string; id: string };
 
 export type AudioHistoryPage = {
@@ -182,6 +191,7 @@ export class SidecarClient {
   private activePreparationIds = new Set<string>();
   private activeSeedId: string | null = null;
   private activeRuntimeInstallId: string | null = null;
+  private activeTranscriptionId: string | null = null;
   private nextId = 1;
   private pending = new Map<
     string,
@@ -331,6 +341,11 @@ export class SidecarClient {
     await this.request({ type: "cancel", request_id: this.activeRuntimeInstallId });
   }
 
+  async cancelTranscription(): Promise<void> {
+    if (!this.activeTranscriptionId) return;
+    await this.request({ type: "cancel", request_id: this.activeTranscriptionId });
+  }
+
   hydrateDiagnostics(events: DiagnosticEvent[]): void {
     if (this.diagnosticsHydrated) return;
     this.diagnosticsHydrated = true;
@@ -378,9 +393,11 @@ export class SidecarClient {
     const isPreparation = payload.type === "prepare_model";
     const isSeed = payload.type === "seed_vieneu_voices";
     const isRuntimeInstall = payload.type === "install_nvidia_runtime";
+    const isTranscription = payload.type === "transcribe_video";
     if (isPreparation) this.activePreparationIds.add(id);
     if (isSeed) this.activeSeedId = id;
     if (isRuntimeInstall) this.activeRuntimeInstallId = id;
+    if (isTranscription) this.activeTranscriptionId = id;
     this.addLog({
       id,
       operation: String(payload.type ?? "unknown"),
@@ -425,6 +442,8 @@ export class SidecarClient {
       if (isSeed && this.activeSeedId === id) this.activeSeedId = null;
       if (isRuntimeInstall && this.activeRuntimeInstallId === id)
         this.activeRuntimeInstallId = null;
+      if (isTranscription && this.activeTranscriptionId === id)
+        this.activeTranscriptionId = null;
     }
   }
 
@@ -440,7 +459,9 @@ export class SidecarClient {
           ? SEED_TIMEOUT_MS
           : payload.type === "install_nvidia_runtime"
             ? RUNTIME_INSTALL_TIMEOUT_MS
-            : REQUEST_TIMEOUT_MS;
+            : payload.type === "transcribe_video"
+              ? TRANSCRIBE_TIMEOUT_MS
+              : REQUEST_TIMEOUT_MS;
     let timeout: ReturnType<typeof setTimeout>;
     const response = new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import os
 import re
 import shutil
@@ -10,9 +11,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+from packaging.requirements import Requirement
+
 
 ROOT = Path(__file__).resolve().parents[1]
 BINARIES = ROOT / "apps" / "desktop" / "src-tauri" / "binaries"
+BUILD_EXTRAS = ("mp3", "desktop-vieneu")
 
 
 def host_triple() -> str:
@@ -21,6 +25,29 @@ def host_triple() -> str:
         if line.startswith("host:"):
             return line.split(":", 1)[1].strip()
     raise RuntimeError("Could not determine the Rust host target triple")
+
+
+def _check_build_environment() -> list[str]:
+    """Return declared dependency mismatches in the sidecar build environment."""
+    try:
+        declared = importlib.metadata.requires("tts-mcp")
+    except importlib.metadata.PackageNotFoundError:
+        return ["tts-mcp is not installed in this environment"]
+    problems = []
+    for entry in declared or []:
+        requirement = Requirement(entry)
+        if requirement.marker is not None and not any(
+            requirement.marker.evaluate({"extra": extra}) for extra in BUILD_EXTRAS
+        ):
+            continue
+        try:
+            installed = importlib.metadata.version(requirement.name)
+        except importlib.metadata.PackageNotFoundError:
+            problems.append(f"{requirement.name} is not installed")
+            continue
+        if not requirement.specifier.contains(installed, prereleases=True):
+            problems.append(f"{requirement.name} {installed} does not satisfy {requirement}")
+    return problems
 
 
 def main() -> int:
@@ -44,6 +71,13 @@ def main() -> int:
     args = parser.parse_args()
     if not re.fullmatch(r"[A-Za-z0-9_-]+", args.sidecar_name):
         parser.error("--sidecar-name may contain only ASCII letters, digits, '_' and '-'")
+    problems = _check_build_environment()
+    if problems:
+        parser.error(
+            "Build environment does not match declared dependencies: "
+            + "; ".join(problems)
+            + ". Install the extras first: python -m pip install -e '.[mp3,desktop-vieneu]'"
+        )
 
     ffmpeg = args.ffmpeg.resolve()
     if not ffmpeg.is_file():
@@ -86,6 +120,8 @@ def main() -> int:
         "sea_g2p",
         "--collect-all",
         "onnxruntime",
+        "--collect-all",
+        "yt_dlp",
         "--add-binary",
         f"{ffmpeg}{separator}.",
         str(ROOT / "src" / "tts_mcp" / "desktop.py"),

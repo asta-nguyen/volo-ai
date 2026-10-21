@@ -7,6 +7,7 @@ import importlib.util
 import math
 import os
 import queue
+import shutil
 import sys
 import tempfile
 import threading
@@ -27,6 +28,7 @@ from tts_mcp.engine import (
     validate_language,
 )
 from tts_mcp.desktop_vieneu import VieNeuProvider
+from tts_mcp.transcribe import TranscriptionError, transcribe_video
 
 OUTPUT_DIR = DATA_DIR / "outputs"
 AUDIO_HISTORY_PAGE_SIZE = 50
@@ -90,6 +92,31 @@ def _request_id(request: dict[str, Any]) -> str:
     return str(request.get("id", ""))
 
 
+_LIBRARY_PATH_ENV_VARS = (
+    "LD_LIBRARY_PATH",
+    "DYLD_LIBRARY_PATH",
+    "DYLD_FALLBACK_LIBRARY_PATH",
+    "LIBPATH",
+)
+
+
+def _restore_library_path_env() -> None:
+    """Undo the library-path overrides a PyInstaller bootloader injects.
+
+    Frozen children inherit those overrides and resolve bundled libraries by
+    leaf name, which crashes helpers such as FFmpeg on missing symbols. The
+    bootloader stores pre-launch values in ``<name>_ORIG``.
+    """
+    if not getattr(sys, "frozen", False):
+        return
+    for name in _LIBRARY_PATH_ENV_VARS:
+        original = os.environ.pop(f"{name}_ORIG", None)
+        if original is not None:
+            os.environ[name] = original
+        else:
+            os.environ.pop(name, None)
+
+
 def _resolve_ffmpeg() -> str | None:
     bundled_root = getattr(sys, "_MEIPASS", None)
     candidates = []
@@ -102,7 +129,7 @@ def _resolve_ffmpeg() -> str | None:
     for candidate in candidates:
         if candidate.is_file():
             return str(candidate)
-    return None
+    return shutil.which("ffmpeg")
 
 
 def _validate_reference_audio(value: Any) -> str:
@@ -737,6 +764,20 @@ def dispatch_request(
                 request_id,
                 {"deleted": Engine.delete_voice(request["name"])},
             )
+        if operation == "transcribe_video":
+            if "url" not in request:
+                raise KeyError("url")
+            return _ok(
+                request_id,
+                transcribe_video(
+                    request_id,
+                    request.get("url"),
+                    engine,
+                    _resolve_ffmpeg(),
+                    emit=emit,
+                    should_cancel=should_cancel,
+                ),
+            )
         if operation == "cancel":
             return _error(
                 request_id,
@@ -744,6 +785,9 @@ def dispatch_request(
                 "Cancel is only valid during a model or optional runtime download",
             )
         return _error(request_id, "invalid_request", f"Unknown operation: {operation}")
+    except TranscriptionError as exc:
+        _record_dispatch_failure(operation, exc.code, exc)
+        return _error(request_id, exc.code, str(exc))
     except DownloadCancelled as exc:
         _record_dispatch_failure(operation, "cancelled", exc)
         return _error(request_id, "cancelled", str(exc))
@@ -792,6 +836,7 @@ def run_protocol(
     active_preparations: set[str] = set()
     active_seeds: set[str] = set()
     active_runtime_installs: set[str] = set()
+    active_transcriptions: set[str] = set()
     workers: set[threading.Thread] = set()
     write_lock = threading.Lock()
 
@@ -829,7 +874,12 @@ def run_protocol(
             else:
                 write(_error(request_id, "not_found", "No active operation for request"))
             continue
-        if operation in {"prepare_model", "seed_vieneu_voices", "install_nvidia_runtime"}:
+        if operation in {
+            "prepare_model",
+            "seed_vieneu_voices",
+            "install_nvidia_runtime",
+            "transcribe_video",
+        }:
             provider_id = request.get("provider") if operation == "prepare_model" else None
             if not isinstance(provider_id, str) or provider_id not in {"omnivoice", "vieneu"}:
                 provider_id = None
@@ -840,6 +890,9 @@ def run_protocol(
                 write(
                     _error(request_id, "busy", "An NVIDIA runtime installation is already running")
                 )
+                continue
+            if operation == "transcribe_video" and active_transcriptions:
+                write(_error(request_id, "busy", "A video transcription is already running"))
                 continue
             if provider_id is not None:
                 if provider_id in active_preparations:
@@ -858,6 +911,8 @@ def run_protocol(
                 active_seeds.add(request_id)
             if operation == "install_nvidia_runtime":
                 active_runtime_installs.add(request_id)
+            if operation == "transcribe_video":
+                active_transcriptions.add(request_id)
 
             def run_long_operation(
                 request=request,
@@ -881,6 +936,7 @@ def run_protocol(
                         active_preparations.discard(provider_id)
                     active_seeds.discard(request_id)
                     active_runtime_installs.discard(request_id)
+                    active_transcriptions.discard(request_id)
                     workers.discard(threading.current_thread())
 
             worker = threading.Thread(target=run_long_operation, daemon=True)
@@ -894,6 +950,7 @@ def run_protocol(
 
 
 def main() -> None:
+    _restore_library_path_env()
     if sys.argv[1:] == ["--runtime-check"]:
         raise SystemExit(_runtime_check())
     runtime_path, fallback_reason = desktop_runtime.select(
