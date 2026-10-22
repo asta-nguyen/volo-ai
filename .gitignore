@@ -46,3 +46,4 @@ volo.db-*
 /docs/Untitled*.md
 /docs/Untitled*.canvas
 .openez/
+apps/web/tsconfig.tsbuildinfo
