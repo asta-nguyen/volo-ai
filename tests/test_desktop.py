@@ -751,6 +751,694 @@ class DesktopWorkerTests(unittest.TestCase):
             self.assertTrue(audio.exists())
             delete_metadata.assert_not_called()
 
+    def test_rename_audio_history_renames_file_and_updates_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(
+                    Engine, "rename_audio_history", return_value=True
+                ) as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "bản ghi mới",
+                    },
+                    Mock(),
+                )
+
+            self.assertTrue(response["ok"])
+            self.assertEqual(response["result"]["file_name"], "bản ghi mới.wav")
+            self.assertEqual(
+                Path(response["result"]["audio_path"]),
+                (output_dir / "bản ghi mới.wav").resolve(),
+            )
+            self.assertFalse(audio.exists())
+            self.assertTrue((output_dir / "bản ghi mới.wav").is_file())
+            rename_metadata.assert_called_once_with("take.wav", "bản ghi mới.wav")
+
+    def test_rename_audio_history_legacy_file_stays_file_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "legacy.mp3"
+            audio.write_bytes(b"audio")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(
+                    Engine, "rename_audio_history", return_value=False
+                ) as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "legacy.mp3",
+                        "new_name": "renamed",
+                    },
+                    Mock(),
+                )
+
+            self.assertTrue(response["ok"])
+            self.assertEqual(response["result"]["file_name"], "renamed.mp3")
+            self.assertFalse(audio.exists())
+            self.assertTrue((output_dir / "renamed.mp3").is_file())
+            rename_metadata.assert_called_once_with("legacy.mp3", "renamed.mp3")
+
+    def test_rename_audio_history_rejects_invalid_names_and_traversal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output_dir = root / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            outside = root / "outside.wav"
+            outside.write_bytes(b"keep")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(Engine, "rename_audio_history") as rename_metadata,
+            ):
+                for new_name in (
+                    "",
+                    "   ",
+                    ".",
+                    "..",
+                    "nested/take",
+                    "nested\\take",
+                    "take.",
+                    "CON",
+                    "lpt3",
+                    "ta*ke",
+                    'ta"ke',
+                    "ta?ke",
+                    "ta|ke",
+                    "ta\nke",
+                    "take\x7f",
+                ):
+                    with self.subTest(new_name=new_name):
+                        response = dispatch_request(
+                            {
+                                "id": "rename",
+                                "type": "rename_audio_history",
+                                "file_name": "take.wav",
+                                "new_name": new_name,
+                            },
+                            Mock(),
+                        )
+                        self.assertFalse(response["ok"])
+                        self.assertEqual(response["error"]["code"], "invalid_input")
+                traversal = dispatch_request(
+                    {
+                        "id": "traversal",
+                        "type": "rename_audio_history",
+                        "file_name": "../outside.wav",
+                        "new_name": "renamed",
+                    },
+                    Mock(),
+                )
+
+            self.assertFalse(traversal["ok"])
+            self.assertTrue(audio.exists())
+            self.assertTrue(outside.exists())
+            self.assertEqual(sorted(path.name for path in output_dir.iterdir()), ["take.wav"])
+            rename_metadata.assert_not_called()
+
+    def test_rename_audio_history_rejects_symlink_missing_and_collision(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output_dir = root / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            taken = output_dir / "taken.wav"
+            taken.write_bytes(b"taken")
+            outside = root / "outside.wav"
+            outside.write_bytes(b"keep")
+            link = output_dir / "link.wav"
+            try:
+                link.symlink_to(outside)
+            except OSError:
+                self.skipTest("symlink creation is unavailable")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(Engine, "rename_audio_history") as rename_metadata,
+            ):
+                symlink = dispatch_request(
+                    {
+                        "id": "symlink",
+                        "type": "rename_audio_history",
+                        "file_name": "link.wav",
+                        "new_name": "renamed",
+                    },
+                    Mock(),
+                )
+                missing = dispatch_request(
+                    {
+                        "id": "missing",
+                        "type": "rename_audio_history",
+                        "file_name": "missing.wav",
+                        "new_name": "renamed",
+                    },
+                    Mock(),
+                )
+                collision = dispatch_request(
+                    {
+                        "id": "collision",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "taken",
+                    },
+                    Mock(),
+                )
+
+            self.assertFalse(symlink["ok"])
+            self.assertFalse(missing["ok"])
+            self.assertEqual(missing["error"]["code"], "not_found")
+            self.assertFalse(collision["ok"])
+            self.assertEqual(collision["error"]["code"], "invalid_input")
+            self.assertEqual(audio.read_bytes(), b"audio")
+            self.assertEqual(taken.read_bytes(), b"taken")
+            self.assertTrue(outside.exists())
+            rename_metadata.assert_not_called()
+
+    def test_rename_audio_history_file_failure_keeps_source_and_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch("os.link", side_effect=OSError("disk error")),
+                patch.object(Engine, "rename_audio_history") as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "renamed",
+                    },
+                    Mock(),
+                )
+
+            self.assertFalse(response["ok"])
+            self.assertEqual(response["error"]["code"], "operation_failed")
+            self.assertTrue(audio.exists())
+            rename_metadata.assert_not_called()
+
+    def test_rename_audio_history_metadata_failure_restores_filename(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(
+                    Engine, "rename_audio_history", side_effect=OSError("database error")
+                ) as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "renamed",
+                    },
+                    Mock(),
+                )
+
+            self.assertFalse(response["ok"])
+            self.assertEqual(response["error"]["code"], "operation_failed")
+            self.assertTrue(audio.exists())
+            self.assertFalse((output_dir / "renamed.wav").exists())
+            rename_metadata.assert_called_once_with("take.wav", "renamed.wav")
+
+    def test_rename_audio_history_restore_failure_reports_actual_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            original_link = os.link
+
+            def fail_restore(source, target, *args, **kwargs):
+                if Path(target).name == "take.wav":
+                    raise OSError("restore denied")
+                return original_link(source, target, *args, **kwargs)
+
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch("os.link", fail_restore),
+                patch.object(
+                    Engine, "rename_audio_history", side_effect=OSError("database error")
+                ),
+                patch.object(Engine, "list_audio_history", return_value=[]),
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "renamed",
+                    },
+                    Mock(),
+                )
+                history = dispatch_request(
+                    {"id": "history", "type": "list_audio_history"}, Mock()
+                )
+
+            self.assertFalse(response["ok"])
+            self.assertEqual(response["error"]["code"], "operation_failed")
+            self.assertIn("renamed.wav", response["error"]["message"])
+            self.assertFalse(audio.exists())
+            renamed = output_dir / "renamed.wav"
+            self.assertTrue(renamed.is_file())
+            self.assertIn("renamed.wav", [item["id"] for item in history["result"]["items"]])
+
+    def test_rename_audio_history_same_name_leaves_file_untouched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch("os.link") as link,
+                patch.object(
+                    Engine, "rename_audio_history", return_value=True
+                ) as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": " take ",
+                    },
+                    Mock(),
+                )
+
+            self.assertTrue(response["ok"])
+            self.assertEqual(response["result"]["file_name"], "take.wav")
+            self.assertEqual(audio.read_bytes(), b"audio")
+            self.assertEqual([path.name for path in output_dir.iterdir()], ["take.wav"])
+            link.assert_not_called()
+            rename_metadata.assert_called_once_with("take.wav", "take.wav")
+
+    def test_rename_audio_history_target_taken_at_link_boundary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            original_link = os.link
+
+            def occupying_link(source, target, *args, **kwargs):
+                Path(target).write_bytes(b"existing output")
+                return original_link(source, target, *args, **kwargs)
+
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch("os.link", occupying_link),
+                patch.object(Engine, "rename_audio_history") as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "taken",
+                    },
+                    Mock(),
+                )
+
+            self.assertFalse(response["ok"])
+            self.assertEqual(response["error"]["code"], "invalid_input")
+            self.assertEqual(audio.read_bytes(), b"audio")
+            self.assertEqual((output_dir / "taken.wav").read_bytes(), b"existing output")
+            rename_metadata.assert_not_called()
+
+    def test_rename_audio_history_restore_target_taken_at_link_boundary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            original_link = os.link
+
+            def occupying_link(source, target, *args, **kwargs):
+                if Path(target).name == "take.wav":
+                    Path(target).write_bytes(b"existing output")
+                return original_link(source, target, *args, **kwargs)
+
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch("os.link", occupying_link),
+                patch.object(
+                    Engine, "rename_audio_history", side_effect=OSError("database error")
+                ),
+                patch.object(Engine, "list_audio_history", return_value=[]),
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "renamed",
+                    },
+                    Mock(),
+                )
+                history = dispatch_request(
+                    {"id": "history", "type": "list_audio_history"}, Mock()
+                )
+
+            self.assertFalse(response["ok"])
+            self.assertEqual(response["error"]["code"], "operation_failed")
+            self.assertIn("renamed.wav", response["error"]["message"])
+            self.assertEqual((output_dir / "take.wav").read_bytes(), b"existing output")
+            self.assertEqual((output_dir / "renamed.wav").read_bytes(), b"audio")
+            ids = [item["id"] for item in history["result"]["items"]]
+            self.assertIn("renamed.wav", ids)
+            self.assertIn("take.wav", ids)
+
+    def test_rename_audio_history_rejects_reserved_names_with_suffixes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(Engine, "rename_audio_history") as rename_metadata,
+            ):
+                for device in sorted(desktop_module._WINDOWS_DEVICE_NAMES):
+                    for new_name in (
+                        device,
+                        device.lower(),
+                        f"{device}.ext",
+                        f"{device.lower()}.ext",
+                    ):
+                        with self.subTest(new_name=new_name):
+                            response = dispatch_request(
+                                {
+                                    "id": "rename",
+                                    "type": "rename_audio_history",
+                                    "file_name": "take.wav",
+                                    "new_name": new_name,
+                                },
+                                Mock(),
+                            )
+                            self.assertFalse(response["ok"])
+                            self.assertEqual(
+                                response["error"]["code"], "invalid_input"
+                            )
+
+            self.assertEqual(
+                [path.name for path in output_dir.iterdir()], ["take.wav"]
+            )
+            rename_metadata.assert_not_called()
+
+    def test_rename_audio_history_case_only_rename_succeeds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(
+                    Engine, "rename_audio_history", return_value=True
+                ) as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "TAKE",
+                    },
+                    Mock(),
+                )
+
+            self.assertTrue(response["ok"])
+            self.assertEqual(response["result"]["file_name"], "TAKE.wav")
+            self.assertEqual(
+                [path.name for path in output_dir.iterdir()], ["TAKE.wav"]
+            )
+            self.assertEqual((output_dir / "TAKE.wav").read_bytes(), b"audio")
+            rename_metadata.assert_called_once_with("take.wav", "TAKE.wav")
+
+    def test_rename_audio_history_case_only_metadata_failure_restores_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(
+                    Engine, "rename_audio_history", side_effect=OSError("database error")
+                ) as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "TAKE",
+                    },
+                    Mock(),
+                )
+
+            self.assertFalse(response["ok"])
+            self.assertEqual(response["error"]["code"], "operation_failed")
+            self.assertEqual(
+                [path.name for path in output_dir.iterdir()], ["take.wav"]
+            )
+            self.assertEqual(audio.read_bytes(), b"audio")
+            rename_metadata.assert_called_once_with("take.wav", "TAKE.wav")
+
+    def test_rename_audio_history_case_only_temp_collision_preserves_contents(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            try:
+                case_variant = os.path.samefile(audio, output_dir / "TAKE.wav")
+            except OSError:
+                case_variant = False
+            if not case_variant:
+                self.skipTest(
+                    "case-only move requires a case-insensitive filesystem"
+                )
+            original_link = os.link
+            collider = output_dir / f".TAKE.wav.{os.getpid()}.tmp.wav"
+
+            def colliding_link(source, target, *args, **kwargs):
+                if Path(target).name == collider.name:
+                    collider.write_bytes(b"concurrent output")
+                return original_link(source, target, *args, **kwargs)
+
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch("os.link", colliding_link),
+                patch.object(
+                    Engine, "rename_audio_history", return_value=True
+                ) as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "TAKE",
+                    },
+                    Mock(),
+                )
+
+            self.assertTrue(response["ok"])
+            self.assertEqual(response["result"]["file_name"], "TAKE.wav")
+            self.assertEqual(collider.read_bytes(), b"concurrent output")
+            self.assertEqual((output_dir / "TAKE.wav").read_bytes(), b"audio")
+            self.assertEqual(
+                sorted(path.name for path in output_dir.iterdir()),
+                [collider.name, "TAKE.wav"],
+            )
+            rename_metadata.assert_called_once_with("take.wav", "TAKE.wav")
+
+    def test_rename_audio_history_case_only_stranded_temp_stays_discoverable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            try:
+                case_variant = os.path.samefile(audio, output_dir / "TAKE.wav")
+            except OSError:
+                case_variant = False
+            if not case_variant:
+                self.skipTest(
+                    "case-only move requires a case-insensitive filesystem"
+                )
+            original_link = os.link
+
+            def occupying_link(source, target, *args, **kwargs):
+                if Path(target).name == "TAKE.wav":
+                    Path(target).write_bytes(b"concurrent output")
+                return original_link(source, target, *args, **kwargs)
+
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch("os.link", occupying_link),
+                patch.object(Engine, "rename_audio_history") as rename_metadata,
+                patch.object(Engine, "list_audio_history", return_value=[]),
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "TAKE",
+                    },
+                    Mock(),
+                )
+                history = dispatch_request(
+                    {"id": "history", "type": "list_audio_history"}, Mock()
+                )
+
+            self.assertFalse(response["ok"])
+            self.assertEqual(response["error"]["code"], "operation_failed")
+            self.assertEqual((output_dir / "TAKE.wav").read_bytes(), b"concurrent output")
+            stranded = [
+                path
+                for path in output_dir.iterdir()
+                if path.name.endswith(".tmp.wav")
+            ]
+            self.assertEqual(len(stranded), 1)
+            self.assertEqual(stranded[0].read_bytes(), b"audio")
+            self.assertIn(stranded[0].name, response["error"]["message"])
+            self.assertIn(
+                stranded[0].name, [item["id"] for item in history["result"]["items"]]
+            )
+            rename_metadata.assert_not_called()
+
+    def test_rename_audio_history_case_only_rollback_stranded_temp_reports_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            try:
+                case_variant = os.path.samefile(audio, output_dir / "TAKE.wav")
+            except OSError:
+                case_variant = False
+            if not case_variant:
+                self.skipTest(
+                    "case-only move requires a case-insensitive filesystem"
+                )
+            original_link = os.link
+            blocking = {"enabled": False}
+
+            def blocked_link(source, target, *args, **kwargs):
+                if blocking["enabled"] and Path(target).name in {
+                    "take.wav",
+                    "TAKE.wav",
+                }:
+                    raise OSError("link blocked")
+                return original_link(source, target, *args, **kwargs)
+
+            def fail_metadata(*args, **kwargs):
+                blocking["enabled"] = True
+                raise OSError("database error")
+
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch("os.link", blocked_link),
+                patch.object(
+                    Engine, "rename_audio_history", side_effect=fail_metadata
+                ),
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "TAKE",
+                    },
+                    Mock(),
+                )
+
+            self.assertFalse(response["ok"])
+            self.assertEqual(response["error"]["code"], "operation_failed")
+            stranded = [
+                path
+                for path in output_dir.iterdir()
+                if path.name.endswith(".tmp.wav")
+            ]
+            self.assertEqual(len(stranded), 1)
+            self.assertEqual(stranded[0].read_bytes(), b"audio")
+            self.assertIn("could not be restored", response["error"]["message"])
+            self.assertIn(stranded[0].name, response["error"]["message"])
+
+    def test_rename_audio_history_case_only_staged_temp_unlink_failure_succeeds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            try:
+                case_variant = os.path.samefile(audio, output_dir / "TAKE.wav")
+            except OSError:
+                case_variant = False
+            if not case_variant:
+                self.skipTest(
+                    "case-only move requires a case-insensitive filesystem"
+                )
+            original_unlink = Path.unlink
+
+            def staged_unlink(path, *args, **kwargs):
+                if path.name.endswith(".tmp.wav"):
+                    raise OSError("cannot remove staged name")
+                return original_unlink(path, *args, **kwargs)
+
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(Path, "unlink", staged_unlink),
+                patch.object(
+                    Engine, "rename_audio_history", return_value=True
+                ) as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "take.wav",
+                        "new_name": "TAKE",
+                    },
+                    Mock(),
+                )
+
+            self.assertTrue(response["ok"])
+            self.assertEqual(response["result"]["file_name"], "TAKE.wav")
+            self.assertEqual((output_dir / "TAKE.wav").read_bytes(), b"audio")
+            stranded = [
+                path
+                for path in output_dir.iterdir()
+                if path.name.endswith(".tmp.wav")
+            ]
+            self.assertEqual(len(stranded), 1)
+            self.assertEqual(stranded[0].read_bytes(), b"audio")
+            rename_metadata.assert_called_once_with("take.wav", "TAKE.wav")
+
     def test_history_write_failure_keeps_audio_discoverable(self):
         engine = Mock()
         engine.generate.return_value = object()
@@ -1541,6 +2229,636 @@ class DesktopWorkerTests(unittest.TestCase):
         by_id = {response["id"]: response for response in responses}
         self.assertTrue(by_id["cancel"]["ok"])
         self.assertEqual(by_id["prepare-vieneu"]["error"]["code"], "cancelled")
+
+    def test_api_status_is_off_by_default(self):
+        self.addCleanup(setattr, desktop_module, "_api_server", None)
+        desktop_module._api_server = None
+        engine = Mock()
+
+        response = dispatch_request({"id": "api", "type": "api_status"}, engine)
+
+        self.assertTrue(response["ok"])
+        self.assertFalse(response["result"]["running"])
+        self.assertEqual(response["result"]["url"], "http://127.0.0.1:8765")
+        self.assertEqual(response["result"]["host"], "127.0.0.1")
+        self.assertEqual(response["result"]["port"], 8765)
+        engine.assert_not_called()
+
+    def test_api_start_stop_reuse_one_server(self):
+        class FakeApiServer:
+            def __init__(self):
+                self.started = 0
+                self.stopped = 0
+                self.running = False
+
+            def start(self):
+                self.started += 1
+                self.running = True
+                return self.state()
+
+            def stop(self):
+                self.stopped += 1
+                self.running = False
+                return self.state()
+
+            def state(self):
+                return {
+                    "running": self.running,
+                    "url": "http://127.0.0.1:8765",
+                    "host": "127.0.0.1",
+                    "port": 8765,
+                }
+
+        fake = FakeApiServer()
+        engine = Mock()
+        self.addCleanup(setattr, desktop_module, "_api_server", None)
+        desktop_module._api_server = None
+        with patch.object(desktop_module, "ApiServer", return_value=fake) as factory:
+            first = dispatch_request({"id": "s1", "type": "start_api"}, engine)
+            second = dispatch_request({"id": "s2", "type": "start_api"}, engine)
+            status = dispatch_request({"id": "st", "type": "api_status"}, engine)
+            stop = dispatch_request({"id": "x1", "type": "stop_api"}, engine)
+            stop_again = dispatch_request({"id": "x2", "type": "stop_api"}, engine)
+
+        self.assertTrue(first["ok"] and second["ok"])
+        self.assertTrue(first["result"]["running"])
+        self.assertEqual(factory.call_count, 1)
+        self.assertEqual(fake.started, 2)
+        self.assertTrue(status["result"]["running"])
+        self.assertTrue(stop["ok"] and stop_again["ok"])
+        self.assertFalse(stop["result"]["running"])
+        self.assertFalse(stop_again["result"]["running"])
+        self.assertEqual(fake.stopped, 2)
+        engine.assert_not_called()
+
+    def test_start_api_reports_port_conflict(self):
+        from tts_mcp.api import ApiStartError
+
+        class ConflictedServer:
+            running = False
+
+            def start(self):
+                raise ApiStartError("port_in_use", "127.0.0.1:8765 is already in use")
+
+            def stop(self):
+                return {"running": False}
+
+            def state(self):
+                return {
+                    "running": False,
+                    "url": "http://127.0.0.1:8765",
+                    "host": "127.0.0.1",
+                    "port": 8765,
+                }
+
+        self.addCleanup(setattr, desktop_module, "_api_server", None)
+        desktop_module._api_server = None
+        with patch.object(desktop_module, "ApiServer", return_value=ConflictedServer()):
+            response = dispatch_request({"id": "api", "type": "start_api"}, Mock())
+
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "port_in_use")
+        self.assertIn("127.0.0.1:8765", response["error"]["message"])
+
+    def test_protocol_stops_api_server_on_shutdown(self):
+        class FakeApiServer:
+            def __init__(self):
+                self.stopped = 0
+
+            def stop(self):
+                self.stopped += 1
+                return {"running": False}
+
+        fake = FakeApiServer()
+        self.addCleanup(setattr, desktop_module, "_api_server", None)
+        desktop_module._api_server = fake
+
+        run_protocol(io.StringIO(""), io.StringIO(), Mock())
+
+        self.assertEqual(fake.stopped, 1)
+
+    def test_protocol_stops_api_before_joining_pending_workers(self):
+        class QueueLines:
+            def __init__(self):
+                self.lines = queue.Queue()
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                line = self.lines.get()
+                if line is None:
+                    raise StopIteration
+                return line
+
+        class FakeApiServer:
+            def __init__(self):
+                self.started = 0
+                self.stopped = 0
+
+            def start(self):
+                self.started += 1
+                return self.state()
+
+            def stop(self):
+                self.stopped += 1
+                return self.state()
+
+            def state(self):
+                return {
+                    "running": self.started > self.stopped,
+                    "url": "http://127.0.0.1:8765",
+                    "host": "127.0.0.1",
+                    "port": 8765,
+                }
+
+        started = threading.Event()
+        release = threading.Event()
+
+        class BlockingEngine:
+            def ensure_model(self, on_progress=None, should_cancel=None):
+                started.set()
+                if not release.wait(timeout=10):
+                    raise RuntimeError("test worker timed out")
+                return {"ready": True}
+
+        fake = FakeApiServer()
+        self.addCleanup(setattr, desktop_module, "_api_server", None)
+        desktop_module._api_server = None
+        source = QueueLines()
+        target = io.StringIO()
+        worker = threading.Thread(
+            target=run_protocol, args=(source, target, BlockingEngine()), daemon=True
+        )
+        try:
+            with patch.object(desktop_module, "ApiServer", return_value=fake):
+                worker.start()
+                source.lines.put(json.dumps({"id": "api", "type": "start_api"}) + "\n")
+                deadline = time.time() + 3
+                while fake.started == 0 and time.time() < deadline:
+                    time.sleep(0.005)
+                self.assertEqual(fake.started, 1)
+                source.lines.put(
+                    json.dumps(
+                        {"id": "prepare", "type": "prepare_model", "provider": "omnivoice"}
+                    )
+                    + "\n"
+                )
+                self.assertTrue(started.wait(timeout=3))
+                source.lines.put(None)
+                deadline = time.time() + 3
+                while fake.stopped == 0 and time.time() < deadline:
+                    time.sleep(0.005)
+                self.assertGreaterEqual(fake.stopped, 1)
+        finally:
+            release.set()
+            worker.join(timeout=5)
+        self.assertFalse(worker.is_alive())
+
+    def test_stop_local_api_server_retries_after_stop_failure(self):
+        class FlakyApiServer:
+            def __init__(self):
+                self.calls = 0
+
+            def stop(self):
+                self.calls += 1
+                if self.calls == 1:
+                    raise OSError("listener close failed")
+                return {"running": False}
+
+        fake = FlakyApiServer()
+        self.addCleanup(setattr, desktop_module, "_api_server", None)
+        desktop_module._api_server = fake
+
+        with self.assertRaises(OSError):
+            desktop_module._stop_local_api_server()
+        self.assertIs(desktop_module._api_server, fake)
+
+        desktop_module._stop_local_api_server()
+        self.assertIsNone(desktop_module._api_server)
+        self.assertEqual(fake.calls, 2)
+
+
+class TranscribeVideoTests(unittest.TestCase):
+    """Unit coverage for the transcribe_video sidecar operation."""
+
+    YOUTUBE_URL = "https://www.youtube.com/watch?v=demo123"
+
+    def setUp(self):
+        self.engine = Mock()
+        self.engine.model_status.return_value = {"ready": True}
+        self.engine.transcribe_with_timestamps.return_value = {
+            "text": "hello world",
+            "chunks": [
+                {"text": "hello", "timestamp": (0.0, 1.5)},
+                {"text": "wörld", "timestamp": (1.5, 3.25)},
+            ],
+        }
+        self.work_dirs = []
+
+    def tearDown(self):
+        for path in self.work_dirs:
+            self.assertFalse(path.exists(), f"temporary media left behind: {path}")
+
+    def track_work_dir(self, options):
+        self.work_dirs.append(Path(options["outtmpl"]).parent)
+
+    def fake_ydl(self, options, info=None, downloaded=True):
+        self.track_work_dir(options)
+        ydl = MagicMock()
+        ydl.__enter__.return_value = ydl
+        info = (
+            {
+                "title": "Demo video",
+                "duration": 120,
+                "availability": "public",
+            }
+            if info is None
+            else info
+        )
+        ydl.extract_info.return_value = info
+
+        def download(result, download=True):
+            hook = options["progress_hooks"][0]
+            hook({"status": "downloading", "downloaded_bytes": 5, "total_bytes": 10})
+            source = Path(options["outtmpl"] % {"ext": "webm"})
+            source.write_bytes(b"audio")
+            return {"requested_downloads": [{"filepath": str(source)}]}
+
+        if downloaded:
+            ydl.process_ie_result.side_effect = download
+        return ydl
+
+    @staticmethod
+    def fake_ffmpeg(command, **_kwargs):
+        with wave.open(command[-1], "wb") as audio:
+            audio.setnchannels(1)
+            audio.setsampwidth(2)
+            audio.setframerate(16000)
+            audio.writeframes(b"\x00\x00" * 160)
+        return Mock(returncode=0)
+
+    def run_transcribe(self, request, ydl=None, info=None, **kwargs):
+        request.setdefault("id", "req-1")
+        request.setdefault("type", "transcribe_video")
+        request.setdefault("url", self.YOUTUBE_URL)
+        ydl_factory = ydl or (lambda options: self.fake_ydl(options, info=info))
+        with (
+            patch("yt_dlp.YoutubeDL", side_effect=ydl_factory),
+            patch("subprocess.run", side_effect=self.fake_ffmpeg),
+            patch("tts_mcp.desktop._resolve_ffmpeg", return_value="/fake/ffmpeg"),
+        ):
+            return dispatch_request(request, self.engine, **kwargs)
+
+    def test_success_returns_srt_and_progress_events(self):
+        progress = []
+        response = self.run_transcribe({}, emit=progress.append)
+        self.assertTrue(response["ok"])
+        result = response["result"]
+        self.assertEqual(result["platform"], "youtube")
+        self.assertEqual(result["title"], "Demo video")
+        self.assertEqual(result["duration_seconds"], 120.0)
+        self.assertEqual(result["transcript"], "hello world")
+        self.assertEqual(
+            result["srt"],
+            "1\n00:00:00,000 --> 00:00:01,500\nhello\n\n2\n00:00:01,500 --> 00:00:03,250\nwörld\n",
+        )
+        phases = [event["phase"] for event in progress]
+        self.assertEqual(phases, ["metadata", "fetch", "audio", "transcribe"])
+        self.assertEqual(progress[1]["progress"], 0.5)
+        self.assertTrue(all(event["id"] == "req-1" for event in progress))
+        self.engine.transcribe_with_timestamps.assert_called_once()
+
+    def test_long_segment_is_split_into_readable_cues(self):
+        self.engine.transcribe_with_timestamps.return_value = {
+            "text": "one two three four five six",
+            "chunks": [{"text": "one two three four five six", "timestamp": (10.0, 22.0)}],
+        }
+        response = self.run_transcribe({})
+        self.assertTrue(response["ok"])
+        result = response["result"]
+        self.assertEqual(result["transcript"], "one two three four five six")
+        self.assertEqual(
+            result["srt"],
+            "1\n00:00:10,000 --> 00:00:16,000\none two three\n\n"
+            "2\n00:00:16,000 --> 00:00:22,000\nfour five six\n",
+        )
+
+    def test_facebook_url_reports_platform(self):
+        response = self.run_transcribe({"url": "https://www.facebook.com/watch?v=12345"})
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["result"]["platform"], "facebook")
+
+    def test_short_youtube_host_accepted(self):
+        response = self.run_transcribe({"url": "https://youtu.be/demo123"})
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["result"]["platform"], "youtube")
+
+    def assert_error(self, request, code):
+        response = self.run_transcribe(request)
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], code)
+        return response
+
+    def test_rejects_non_https_url(self):
+        self.assert_error({"url": "http://www.youtube.com/watch?v=x"}, "invalid_url")
+
+    def test_rejects_unsupported_host(self):
+        self.assert_error({"url": "https://vimeo.com/123"}, "invalid_url")
+        self.assert_error({"url": "https://www.youtube.com.evil.com/x"}, "invalid_url")
+
+    def test_rejects_malformed_and_empty_url(self):
+        for url in ("", "   ", "not a url", "https://", 123, None):
+            self.assert_error({"url": url}, "invalid_url")
+
+    def test_rejects_url_credentials(self):
+        self.assert_error({"url": "https://user:pass@www.youtube.com/watch?v=x"}, "invalid_url")
+
+    def test_rejects_playlist_urls(self):
+        for url in (
+            "https://www.youtube.com/playlist?list=PL123",
+            "https://www.youtube.com/watch?v=x&list=PL123",
+            "https://youtu.be/x?list=PL123",
+        ):
+            self.assert_error({"url": url}, "invalid_url")
+
+    def test_missing_url_field_is_invalid_input(self):
+        request = {"id": "req-x", "type": "transcribe_video"}
+        response = dispatch_request(request, self.engine)
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "invalid_input")
+
+    def test_model_not_ready_skips_download(self):
+        self.engine.model_status.return_value = {"ready": False}
+        downloads = []
+        response = self.run_transcribe({}, ydl=lambda options: downloads.append(options))
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "model_not_ready")
+        self.assertEqual(downloads, [])
+        self.engine.model_status.assert_called_once()
+        self.engine.transcribe_with_timestamps.assert_not_called()
+
+    def test_playlist_and_multi_result_rejected(self):
+        for info in (
+            {"_type": "playlist", "entries": [{"id": "a"}, {"id": "b"}]},
+            {"entries": [{"id": "a"}]},
+        ):
+
+            def ydl(options, info=info):
+                return self.fake_ydl(options, info=info)
+
+            response = self.run_transcribe({}, ydl=ydl)
+            self.assertFalse(response["ok"], info)
+            self.assertEqual(response["error"]["code"], "invalid_url", info)
+
+    def test_private_and_restricted_videos_rejected(self):
+        for info in (
+            {"title": "x", "duration": 10, "availability": "private"},
+            {"title": "x", "duration": 10, "availability": "needs_auth"},
+            {"title": "x", "duration": 10, "age_limit": 18},
+            {"title": "x", "duration": 10, "is_live": True},
+            {"title": "x", "duration": 10, "live_status": "is_upcoming"},
+            {"title": "x", "duration": 10, "live_status": "post_live"},
+        ):
+
+            def ydl(options, info=info):
+                return self.fake_ydl(options, info=info)
+
+            response = self.run_transcribe({}, ydl=ydl)
+            self.assertFalse(response["ok"], info)
+            self.assertEqual(response["error"]["code"], "video_unavailable", info)
+
+    def test_duration_limits(self):
+        for info, code in (
+            ({"title": "x", "duration": None}, "duration_limit"),
+            ({"title": "x"}, "duration_limit"),
+            ({"title": "x", "duration": 60 * 60 + 1}, "duration_limit"),
+            ({"title": "x", "duration": 0}, "duration_limit"),
+        ):
+
+            def ydl(options, info=info):
+                return self.fake_ydl(options, info=info)
+
+            response = self.run_transcribe({}, ydl=ydl)
+            self.assertFalse(response["ok"], info)
+            self.assertEqual(response["error"]["code"], code, info)
+
+    def test_download_error_maps_to_stable_codes(self):
+        import yt_dlp
+
+        for message, code in (
+            ("Unsupported URL: https://example.com", "invalid_url"),
+            ("Private video. Sign in if you've been granted access", "video_unavailable"),
+            ("HTTP Error 404", "video_unavailable"),
+            # YouTube's bot check also says "Sign in"; it is not a private video.
+            (
+                "[youtube] demo123: Sign in to confirm you're not a bot. "
+                "Use --cookies-from-browser or --cookies for the authentication.",
+                "source_blocked",
+            ),
+        ):
+            ydl = MagicMock()
+            ydl.__enter__.return_value = ydl
+            ydl.extract_info.side_effect = yt_dlp.utils.DownloadError(message)
+
+            def factory(options, ydl=ydl):
+                self.track_work_dir(options)
+                return ydl
+
+            response = self.run_transcribe({}, ydl=factory)
+            self.assertFalse(response["ok"], message)
+            self.assertEqual(response["error"]["code"], code, message)
+
+    def test_audio_selector_is_strictly_audio_only(self):
+        captured = []
+        response = self.run_transcribe(
+            {},
+            ydl=lambda options: captured.append(options) or self.fake_ydl(options),
+        )
+        self.assertTrue(response["ok"])
+        self.assertEqual(len(captured), 1)
+        options = captured[0]
+        self.assertEqual(options["format"], "bestaudio")
+        for forbidden in (
+            "cookiefile",
+            "cookiesfrombrowser",
+            "usenetrc",
+            "username",
+            "password",
+            "extractor_args",
+            "remote_components",
+            "po_token",
+        ):
+            self.assertNotIn(forbidden, options)
+
+    def test_no_audio_only_stream_is_missing_audio(self):
+        import yt_dlp
+
+        def ydl_factory(options):
+            self.track_work_dir(options)
+            ydl = MagicMock()
+            ydl.__enter__.return_value = ydl
+            ydl.extract_info.return_value = {
+                "title": "Demo",
+                "duration": 60,
+                "availability": "public",
+            }
+            ydl.process_ie_result.side_effect = yt_dlp.utils.DownloadError(
+                "Requested format is not available"
+            )
+            return ydl
+
+        response = self.run_transcribe({}, ydl=ydl_factory)
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "missing_audio")
+
+    def test_missing_audio_when_nothing_downloaded(self):
+        def ydl(options):
+            return self.fake_ydl(options, downloaded=False)
+
+        response = self.run_transcribe({}, ydl=ydl)
+        # process_ie_result returns a MagicMock without requested_downloads
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "missing_audio")
+
+    def test_ffmpeg_missing_or_failing(self):
+        request = {"id": "r", "type": "transcribe_video", "url": self.YOUTUBE_URL}
+        with (
+            patch("yt_dlp.YoutubeDL", side_effect=lambda o: self.fake_ydl(o)),
+            patch("tts_mcp.desktop._resolve_ffmpeg", return_value=None),
+        ):
+            response = dispatch_request(dict(request), self.engine)
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "audio_prepare_failed")
+        with (
+            patch("yt_dlp.YoutubeDL", side_effect=lambda o: self.fake_ydl(o)),
+            patch("subprocess.run", return_value=Mock(returncode=1)),
+            patch("tts_mcp.desktop._resolve_ffmpeg", return_value="/fake/ffmpeg"),
+        ):
+            response = dispatch_request(dict(request), self.engine)
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "audio_prepare_failed")
+
+    def test_resolve_ffmpeg_falls_back_to_system_path(self):
+        with (
+            patch.dict("os.environ", {"TTS_MCP_FFMPEG_PATH": ""}),
+            patch("shutil.which", return_value="/usr/bin/ffmpeg"),
+        ):
+            self.assertEqual(desktop_module._resolve_ffmpeg(), "/usr/bin/ffmpeg")
+
+    def test_cancel_before_download(self):
+        response = self.run_transcribe({}, should_cancel=lambda: True)
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "cancelled")
+        self.engine.transcribe_with_timestamps.assert_not_called()
+
+    def test_ytdlp_download_cancelled_maps_to_cancelled(self):
+        import yt_dlp
+
+        def ydl_factory(options):
+            self.track_work_dir(options)
+            ydl = MagicMock()
+            ydl.__enter__.return_value = ydl
+            ydl.extract_info.return_value = {
+                "title": "Demo",
+                "duration": 60,
+                "availability": "public",
+            }
+            ydl.process_ie_result.side_effect = yt_dlp.utils.DownloadCancelled("stopped by user")
+            return ydl
+
+        response = self.run_transcribe({}, ydl=ydl_factory)
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "cancelled")
+
+    def test_cancel_during_download(self):
+        cancel = {"flag": False}
+
+        def ydl_factory(options):
+            self.track_work_dir(options)
+            ydl = self.fake_ydl(options)
+            hook = options["progress_hooks"][0]
+
+            def download(info, download=True):
+                cancel["flag"] = True
+                hook({"status": "downloading", "downloaded_bytes": 5, "total_bytes": 10})
+                return {"requested_downloads": []}
+
+            ydl.process_ie_result.side_effect = download
+            return ydl
+
+        response = self.run_transcribe({}, ydl=ydl_factory, should_cancel=lambda: cancel["flag"])
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "cancelled")
+
+    def test_asr_failures_and_empty_output(self):
+        cases = (
+            (RuntimeError("boom"), "transcription_failed"),
+            ({"text": "", "chunks": []}, "no_speech"),
+            ({"text": "x", "chunks": "nope"}, "transcription_failed"),
+            (
+                {"text": "x", "chunks": [{"text": "a", "timestamp": ("x", 1)}]},
+                "transcription_failed",
+            ),
+            (
+                {"text": "x", "chunks": [{"text": "a", "timestamp": (2.0, 1.0)}]},
+                "transcription_failed",
+            ),
+            ({"text": "x", "chunks": [{"text": "   ", "timestamp": (0, 1)}]}, "no_speech"),
+        )
+        for result, code in cases:
+            if isinstance(result, Exception):
+                self.engine.transcribe_with_timestamps.side_effect = result
+            else:
+                self.engine.transcribe_with_timestamps.side_effect = None
+                self.engine.transcribe_with_timestamps.return_value = result
+            response = self.run_transcribe({})
+            self.assertFalse(response["ok"], result)
+            self.assertEqual(response["error"]["code"], code, result)
+        self.engine.transcribe_with_timestamps.side_effect = None
+
+    def test_chunk_without_end_uses_duration(self):
+        self.engine.transcribe_with_timestamps.return_value = {
+            "text": "tail",
+            "chunks": [{"text": "tail", "timestamp": (5.0, None)}],
+        }
+        response = self.run_transcribe({})
+        self.assertTrue(response["ok"])
+        self.assertIn("00:00:05,000 --> 00:02:00,000", response["result"]["srt"])
+
+
+class LibraryPathEnvTests(unittest.TestCase):
+    def test_frozen_restores_original_values_and_drops_injected_paths(self):
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "DYLD_LIBRARY_PATH": "/meipass",
+                    "DYLD_LIBRARY_PATH_ORIG": "/user/lib",
+                    "LD_LIBRARY_PATH": "/meipass",
+                },
+                clear=False,
+            ),
+            patch.object(desktop_module.sys, "frozen", True, create=True),
+        ):
+            os.environ.pop("LD_LIBRARY_PATH_ORIG", None)
+            desktop_module._restore_library_path_env()
+            self.assertEqual(os.environ["DYLD_LIBRARY_PATH"], "/user/lib")
+            self.assertNotIn("DYLD_LIBRARY_PATH_ORIG", os.environ)
+            self.assertNotIn("LD_LIBRARY_PATH", os.environ)
+
+    def test_unfrozen_process_keeps_environment_untouched(self):
+        with (
+            patch.dict(
+                "os.environ",
+                {"DYLD_LIBRARY_PATH": "/meipass", "DYLD_LIBRARY_PATH_ORIG": "/user/lib"},
+                clear=False,
+            ),
+            patch.object(desktop_module.sys, "frozen", False, create=True),
+        ):
+            desktop_module._restore_library_path_env()
+            self.assertEqual(os.environ["DYLD_LIBRARY_PATH"], "/meipass")
+            self.assertEqual(os.environ["DYLD_LIBRARY_PATH_ORIG"], "/user/lib")
 
 
 class TranscribeVideoTests(unittest.TestCase):

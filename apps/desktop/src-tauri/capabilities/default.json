@@ -10,8 +10,12 @@
     "fs:allow-copy-file",
     "fs:allow-write-text-file",
     {
+      "identifier": "fs:allow-read-file",
+      "allow": [{ "path": "$APPDATA" }, { "path": "$APPDATA/**" }]
+    },
+    {
       "identifier": "fs:scope",
-      "allow": [{ "path": "$APPDATA/outputs/**" }, { "path": "$HOME/**" }]
+      "allow": [{ "path": "$APPDATA/outputs/**" }]
     },
     {
       "identifier": "shell:allow-spawn",
@@ -24,6 +28,7 @@
       ]
     },
     "shell:allow-kill",
-    "shell:allow-stdin-write"
+    "shell:allow-stdin-write",
+    "shell:allow-open"
   ]
 }

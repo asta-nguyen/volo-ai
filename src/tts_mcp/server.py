@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-from functools import lru_cache
+from functools import lru_cache, wraps
 from pathlib import Path
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from .desktop_vieneu import VieNeuProvider
 from .engine import DATA_DIR, Engine, get_engine, validate_language
@@ -28,6 +29,27 @@ server = MCPServer(
         "list_voices to see saved voice profiles."
     ),
 )
+
+
+def tool():
+    """Register a tool whose anticipated failures reach the caller.
+
+    The SDK reports any other exception as only "Error executing tool <name>",
+    which hides validation and model-readiness messages from agents.
+    """
+
+    def register(fn):
+        @wraps(fn)
+        def reported(*args, **kwargs):
+            try:
+                return fn(*args, **kwargs)
+            except (ValueError, OSError, RuntimeError) as exc:
+                raise ToolError(str(exc)) from exc
+
+        server.tool()(reported)
+        return fn
+
+    return register
 
 
 @lru_cache(maxsize=1)
@@ -52,7 +74,7 @@ def _reject_vieneu_config(vieneu_config: dict[str, Any] | None) -> None:
         raise ValueError("vieneu_config is only valid for provider='vieneu'")
 
 
-@server.tool()
+@tool()
 def status() -> dict[str, Any]:
     """Report model readiness and runtime requirements for each provider."""
     omnivoice = get_engine().model_status()
@@ -81,7 +103,7 @@ def status() -> dict[str, Any]:
     }
 
 
-@server.tool()
+@tool()
 def prepare_model(provider: str) -> dict[str, Any]:
     """Explicitly download and verify assets for one provider."""
     provider_id = _provider_id(provider)
@@ -93,7 +115,7 @@ def prepare_model(provider: str) -> dict[str, Any]:
     return {"provider": provider_id, "model_ready": bool(result["ready"])}
 
 
-@server.tool()
+@tool()
 def speak(
     text: str,
     output_path: str,
@@ -166,7 +188,7 @@ def speak(
     return f"Audio saved to: {result['audio_path']}"
 
 
-@server.tool()
+@tool()
 def clone(
     text: str,
     output_path: str,
@@ -288,7 +310,7 @@ def clone(
     return f"{audio_label} audio saved to: {path}"
 
 
-@server.tool()
+@tool()
 def design(
     text: str,
     output_path: str,
@@ -326,7 +348,7 @@ def design(
     return f"Designed voice audio saved to: {path}"
 
 
-@server.tool()
+@tool()
 def list_voices() -> str:
     """List all saved voice profiles that can be used with the clone tool.
 
@@ -353,7 +375,7 @@ def list_voices() -> str:
     return "\n".join(lines)
 
 
-@server.tool()
+@tool()
 def save_voice(
     name: str,
     ref_audio_path: str,
@@ -378,7 +400,7 @@ def save_voice(
     return f"Voice profile '{name}' saved to: {path}"
 
 
-@server.tool()
+@tool()
 def delete_voice(name: str) -> str:
     """Delete a saved voice profile by name.
 

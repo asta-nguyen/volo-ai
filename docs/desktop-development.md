@@ -136,8 +136,11 @@ dependencies, then build the app.
 ### Publish a release
 
 Prepare a desktop release by updating the repository-root `release.md` with a
-short summary and selected user-facing highlights for this release only. Commit
-that file and set the same `X.Y.Z` version in
+short summary and selected user-facing highlights for this release only. Mirror
+those highlights in a new `## vX.Y.Z` entry at the top of the repository-root
+`changelog.md` — the cumulative file the website changelog renders — while
+keeping prior entries untouched; the release workflow still validates only
+`release.md`. Commit both files and set the same `X.Y.Z` version in
 `apps/desktop/package.json`, `apps/desktop/src-tauri/Cargo.toml`, and
 `apps/desktop/src-tauri/tauri.conf.json` before pushing tag `vX.Y.Z`. The tag
 must match all three version fields, and its commit must contain non-empty

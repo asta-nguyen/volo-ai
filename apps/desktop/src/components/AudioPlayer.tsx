@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { readFile } from "@tauri-apps/plugin-fs";
 import {
   Play,
   Pause,
@@ -25,9 +27,27 @@ function formatTime(seconds: number): string {
   return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 }
 
+const isLinuxWebView = navigator.userAgent.includes("Linux");
+
+const AUDIO_MIME_TYPES: Record<string, string> = {
+  wav: "audio/wav",
+  mp3: "audio/mpeg",
+  flac: "audio/flac",
+  ogg: "audio/ogg",
+};
+
+function audioMimeType(path: string): string {
+  const extension = path.split(/[\\/]/).pop()?.split(".").pop()?.toLowerCase() ?? "";
+  return AUDIO_MIME_TYPES[extension] ?? "application/octet-stream";
+}
+
+async function readAudioBlobUrl(path: string): Promise<string> {
+  const bytes = await readFile(path);
+  return URL.createObjectURL(new Blob([bytes], { type: audioMimeType(path) }));
+}
+
 export interface AudioPlayerProps {
-  src: string;
-  audioPath?: string;
+  audioPath: string;
   format?: string;
   sampleRate?: number;
   voiceName?: string;
@@ -38,7 +58,6 @@ export interface AudioPlayerProps {
 }
 
 export function AudioPlayer({
-  src,
   audioPath,
   format = "wav",
   sampleRate,
@@ -50,6 +69,35 @@ export function AudioPlayer({
 }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const progressBarRef = useRef<HTMLDivElement>(null);
+  const [blobSource, setBlobSource] = useState<{ path: string; url: string } | null>(null);
+
+  const src = isLinuxWebView
+    ? blobSource && blobSource.path === audioPath
+      ? blobSource.url
+      : undefined
+    : convertFileSrc(audioPath);
+
+  useEffect(() => {
+    if (!isLinuxWebView) return;
+    let cancelled = false;
+    let createdUrl: string | null = null;
+    readAudioBlobUrl(audioPath)
+      .then((url) => {
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        createdUrl = url;
+        setBlobSource({ path: audioPath, url });
+      })
+      .catch((reason) => {
+        console.error("Failed to read audio file for playback:", audioPath, reason);
+      });
+    return () => {
+      cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [audioPath]);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -309,6 +357,7 @@ export function AudioPlayer({
             variant="default"
             size="icon-lg"
             onClick={togglePlay}
+            disabled={!src}
             className="rounded-2xl transition-transform hover:scale-105 active:scale-95"
             aria-label={isPlaying ? "Pause" : "Play"}
           >
@@ -394,26 +443,67 @@ export function AudioPlayer({
 }
 
 export function InlineAudioPreview({
-  src,
+  audioPath,
   label,
   pauseLabel = "Pause",
 }: {
-  src: string;
+  audioPath: string;
   label?: string;
   pauseLabel?: string;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const blobSourceRef = useRef<{ path: string; url: string } | null>(null);
+  const readCounter = useRef(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [blobSource, setBlobSource] = useState<{ path: string; url: string } | null>(null);
+
+  const src = isLinuxWebView
+    ? blobSource && blobSource.path === audioPath
+      ? blobSource.url
+      : undefined
+    : convertFileSrc(audioPath);
 
   const toggle = () => {
     const audio = audioRef.current;
     if (!audio) return;
-    if (audio.paused) {
-      audio.play().catch(console.error);
-    } else {
+    if (!audio.paused) {
       audio.pause();
+      return;
     }
+    if (!isLinuxWebView || blobSourceRef.current?.path === audioPath) {
+      audio.play().catch(console.error);
+      return;
+    }
+    const readId = ++readCounter.current;
+    readAudioBlobUrl(audioPath)
+      .then((url) => {
+        if (readId !== readCounter.current) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        const source = { path: audioPath, url };
+        blobSourceRef.current = source;
+        setBlobSource(source);
+        const element = audioRef.current;
+        if (element && element.paused) {
+          element.src = url;
+          element.play().catch(console.error);
+        }
+      })
+      .catch((reason) => {
+        console.error("Failed to read audio file for playback:", audioPath, reason);
+      });
   };
+
+  useEffect(() => {
+    return () => {
+      readCounter.current += 1;
+      if (blobSourceRef.current) {
+        URL.revokeObjectURL(blobSourceRef.current.url);
+        blobSourceRef.current = null;
+      }
+    };
+  }, [audioPath]);
 
   useEffect(() => {
     const audio = audioRef.current;

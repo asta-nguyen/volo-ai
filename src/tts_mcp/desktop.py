@@ -18,6 +18,7 @@ from typing import Any, Callable, TextIO
 
 from tts_mcp.convert import save_audio
 from tts_mcp import desktop_diagnostics, desktop_runtime
+from tts_mcp.api import ApiServer, ApiStartError
 from tts_mcp.engine import (
     DATA_DIR,
     DownloadCancelled,
@@ -39,6 +40,31 @@ GENERATION_POSITIVE_KEYS = {"audio_chunk_duration", "audio_chunk_threshold"}
 VIENEU_SEED_REFERENCE_TEXT = (
     "Xin chào. Đây là mẫu giọng được tạo để lưu vào thư viện giọng nói của bạn."
 )
+
+
+_api_server: ApiServer | None = None
+_api_server_lock = threading.Lock()
+
+
+def _local_api_server() -> ApiServer:
+    """Return the single loopback API server owned by this sidecar process."""
+    global _api_server
+    with _api_server_lock:
+        if _api_server is None:
+            _api_server = ApiServer()
+        return _api_server
+
+
+def _stop_local_api_server() -> None:
+    global _api_server
+    with _api_server_lock:
+        server = _api_server
+    if server is None:
+        return
+    server.stop()
+    with _api_server_lock:
+        if _api_server is server:
+            _api_server = None
 
 
 def _ok(request_id: str, result: Any) -> dict[str, Any]:
@@ -389,7 +415,7 @@ def _list_audio_history_page(cursor: Any) -> dict[str, Any]:
     }
 
 
-def _delete_audio_history(file_name: Any) -> bool:
+def _validate_output_file_name(file_name: Any) -> str:
     if (
         not isinstance(file_name, str)
         or not file_name
@@ -400,6 +426,43 @@ def _delete_audio_history(file_name: Any) -> bool:
         or Path(file_name).stem in {"", ".", ".."}
     ):
         raise ValueError("Audio history ID must be a WAV or MP3 basename")
+    return file_name
+
+
+_WINDOWS_DEVICE_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "CONIN$",
+    "CONOUT$",
+    *(f"COM{index}" for index in range(1, 10)),
+    *(f"COM{digit}" for digit in "¹²³"),
+    *(f"LPT{index}" for index in range(1, 10)),
+    *(f"LPT{digit}" for digit in "¹²³"),
+}
+
+
+def _validate_output_stem(new_name: Any) -> str:
+    if not isinstance(new_name, str):
+        raise ValueError("Audio history name must be a filename stem")
+    stem = new_name.strip()
+    if (
+        not stem
+        or stem in {".", ".."}
+        or stem.endswith((".", " "))
+        or stem.split(".", 1)[0].rstrip(" .").upper() in _WINDOWS_DEVICE_NAMES
+        or any(
+            char in '<>:"/\\|?*' or ord(char) < 0x20 or ord(char) == 0x7F
+            for char in stem
+        )
+    ):
+        raise ValueError("Audio history name is not a valid filename stem")
+    return stem
+
+
+def _delete_audio_history(file_name: Any) -> bool:
+    file_name = _validate_output_file_name(file_name)
     output_dir = OUTPUT_DIR.resolve()
     path = OUTPUT_DIR / file_name
     if path.is_symlink():
@@ -410,6 +473,110 @@ def _delete_audio_history(file_name: Any) -> bool:
     resolved.unlink()
     Engine.delete_audio_history(file_name)
     return True
+
+
+def _move_file_no_overwrite(source: Path, destination: Path) -> None:
+    try:
+        same_file = os.path.samefile(source, destination)
+    except OSError:
+        same_file = False
+    if same_file:
+        # A case-only rename on a case-insensitive filesystem: os.link cannot
+        # create a case-variant alias, so move through a temporary name. The
+        # candidate is claimed by an exclusive link so a concurrent entry is
+        # never overwritten, and keeps the audio suffix so a stranded file
+        # stays discoverable by the history scan.
+        counter = 0
+        while True:
+            counter_suffix = f".{counter}" if counter else ""
+            temporary = destination.with_name(
+                f".{destination.name}.{os.getpid()}{counter_suffix}"
+                f".tmp{destination.suffix}"
+            )
+            try:
+                os.link(source, temporary)
+            except FileExistsError:
+                counter += 1
+                continue
+            break
+        try:
+            source.unlink()
+        except OSError:
+            temporary.unlink()
+            raise
+        try:
+            os.link(temporary, destination)
+        except OSError as link_exc:
+            try:
+                os.link(temporary, source)
+            except OSError:
+                stranded = OSError(
+                    f"{link_exc}; the audio remains as '{temporary.name}'"
+                )
+                stranded.surviving_name = temporary.name
+                raise stranded from link_exc
+            else:
+                temporary.unlink()
+            raise
+        # The destination already holds the content, so the move succeeds; a
+        # staged link that cannot be removed stays discoverable in history.
+        try:
+            temporary.unlink()
+        except OSError:
+            pass
+        return
+    os.link(source, destination)
+    try:
+        source.unlink()
+    except OSError:
+        try:
+            if os.path.samefile(source, destination):
+                destination.unlink()
+        except OSError:
+            pass
+        raise
+
+
+def _rename_audio_history(file_name: Any, new_name: Any) -> dict[str, str]:
+    file_name = _validate_output_file_name(file_name)
+    stem = _validate_output_stem(new_name)
+    output_dir = OUTPUT_DIR.resolve()
+    source = OUTPUT_DIR / file_name
+    if source.is_symlink():
+        raise ValueError("Audio history cannot rename a symbolic link")
+    resolved = source.resolve(strict=True)
+    if resolved.parent != output_dir or not resolved.is_file():
+        raise ValueError("Audio history file must be directly inside the output directory")
+    new_file_name = f"{stem}{resolved.suffix}"
+    destination = output_dir / new_file_name
+    collision = f"An audio file named '{new_file_name}' already exists"
+    if destination.is_symlink():
+        raise ValueError(collision)
+    moved = False
+    if new_file_name != file_name:
+        try:
+            _move_file_no_overwrite(resolved, destination)
+            moved = True
+        except FileExistsError as exc:
+            raise ValueError(collision) from exc
+        except OSError as exc:
+            raise RuntimeError(f"Could not rename the audio file: {exc}") from exc
+    try:
+        Engine.rename_audio_history(file_name, new_file_name)
+    except Exception as exc:
+        if moved:
+            try:
+                _move_file_no_overwrite(destination, resolved)
+            except OSError as restore_exc:
+                surviving = getattr(restore_exc, "surviving_name", new_file_name)
+                raise RuntimeError(
+                    "Audio history metadata could not be updated and the file could not "
+                    f"be restored; the audio remains as '{surviving}'"
+                ) from restore_exc
+        raise RuntimeError(
+            "Audio history metadata could not be updated; the file name was restored"
+        ) from exc
+    return {"file_name": new_file_name, "audio_path": str(destination)}
 
 
 def _readable_seed_reference(profile: dict[str, Any]) -> Path | None:
@@ -759,11 +926,29 @@ def dispatch_request(
             if "file_name" not in request:
                 raise KeyError("file_name")
             return _ok(request_id, {"deleted": _delete_audio_history(request["file_name"])})
+        if operation == "rename_audio_history":
+            if "file_name" not in request:
+                raise KeyError("file_name")
+            if "new_name" not in request:
+                raise KeyError("new_name")
+            return _ok(
+                request_id,
+                _rename_audio_history(request["file_name"], request["new_name"]),
+            )
         if operation == "delete_voice":
             return _ok(
                 request_id,
                 {"deleted": Engine.delete_voice(request["name"])},
             )
+        if operation == "start_api":
+            try:
+                return _ok(request_id, _local_api_server().start())
+            except ApiStartError as exc:
+                return _error(request_id, exc.code, str(exc))
+        if operation == "stop_api":
+            return _ok(request_id, _local_api_server().stop())
+        if operation == "api_status":
+            return _ok(request_id, _local_api_server().state())
         if operation == "transcribe_video":
             if "url" not in request:
                 raise KeyError("url")
@@ -835,6 +1020,7 @@ def run_protocol(
     active: dict[str, threading.Event] = {}
     active_preparations: set[str] = set()
     active_seeds: set[str] = set()
+    active_seed_imports: set[str] = set()
     active_runtime_installs: set[str] = set()
     active_transcriptions: set[str] = set()
     workers: set[threading.Thread] = set()
@@ -876,6 +1062,7 @@ def run_protocol(
             continue
         if operation in {
             "prepare_model",
+            "import_seed_voices",
             "seed_vieneu_voices",
             "install_nvidia_runtime",
             "transcribe_video",
@@ -885,6 +1072,9 @@ def run_protocol(
                 provider_id = None
             if operation == "prepare_model" and active_seeds:
                 write(_error(request_id, "busy", "VieNeu voice seeding is already running"))
+                continue
+            if operation == "import_seed_voices" and active_seed_imports:
+                write(_error(request_id, "busy", "A bundled voice seed import is already running"))
                 continue
             if operation == "install_nvidia_runtime" and active_runtime_installs:
                 write(
@@ -906,7 +1096,10 @@ def run_protocol(
                     continue
                 active_preparations.add(provider_id)
             cancel_event = threading.Event()
-            active[request_id] = cancel_event
+            if operation != "import_seed_voices":
+                active[request_id] = cancel_event
+            if operation == "import_seed_voices":
+                active_seed_imports.add(request_id)
             if operation == "seed_vieneu_voices":
                 active_seeds.add(request_id)
             if operation == "install_nvidia_runtime":
@@ -934,6 +1127,7 @@ def run_protocol(
                     active.pop(request_id, None)
                     if provider_id is not None:
                         active_preparations.discard(provider_id)
+                    active_seed_imports.discard(request_id)
                     active_seeds.discard(request_id)
                     active_runtime_installs.discard(request_id)
                     active_transcriptions.discard(request_id)
@@ -945,8 +1139,12 @@ def run_protocol(
             continue
         write(dispatch_request(request, engine, vieneu_provider=vieneu_provider))
 
-    for worker in tuple(workers):
-        worker.join()
+    _stop_local_api_server()
+    try:
+        for worker in tuple(workers):
+            worker.join()
+    finally:
+        _stop_local_api_server()
 
 
 def main() -> None:

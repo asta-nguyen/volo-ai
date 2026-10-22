@@ -68,6 +68,9 @@ const PREPARATION_TIMEOUT_MS = 60 * 60 * 1000;
 const SEED_TIMEOUT_MS = 60 * 60 * 1000;
 const RUNTIME_INSTALL_TIMEOUT_MS = 3 * 60 * 60 * 1000;
 const TRANSCRIBE_TIMEOUT_MS = 3 * 60 * 60 * 1000;
+// A ~360-word OmniVoice script takes over 3 minutes on Apple Silicon, so long
+// scripts must not hit REQUEST_TIMEOUT_MS and get the engine killed mid-render.
+const SYNTHESIS_TIMEOUT_MS = 60 * 60 * 1000;
 const MAX_REQUEST_LOGS = 500;
 
 export type ProgressEvent = {
@@ -158,6 +161,18 @@ export type AudioHistoryPage = {
   next_cursor: AudioHistoryCursor | null;
 };
 
+export type RenameAudioHistoryResult = {
+  file_name: string;
+  audio_path: string;
+};
+
+export type LocalApiState = {
+  running: boolean;
+  url: string;
+  host: string;
+  port: number;
+};
+
 export class SidecarError extends Error {
   constructor(
     public code: string,
@@ -192,6 +207,7 @@ export class SidecarClient {
   private activeSeedId: string | null = null;
   private activeRuntimeInstallId: string | null = null;
   private activeTranscriptionId: string | null = null;
+  private activeSynthesisIds = new Set<string>();
   private nextId = 1;
   private pending = new Map<
     string,
@@ -213,6 +229,29 @@ export class SidecarClient {
     } finally {
       if (this.startPromise === pending) this.startPromise = null;
     }
+  }
+
+  private handleStopped(command: Command<string>, reason: SidecarError): void {
+    if (this.command !== command) return;
+    const stoppedAt = Date.now();
+    recordFrontendDiagnostic(
+      "sidecar_exit",
+      reason.code,
+      undefined,
+      "The local engine stopped unexpectedly.",
+    );
+    this.addLog({
+      id: `sidecar-exit-${stoppedAt}-${this.nextId++}`,
+      operation: "sidecar_exit",
+      status: "error",
+      startedAt: stoppedAt,
+      finishedAt: stoppedAt,
+      errorCode: reason.code,
+      errorMessage: "The local engine stopped unexpectedly.",
+    });
+    this.child = null;
+    this.command = null;
+    this.rejectAll(reason);
   }
 
   private async spawn(): Promise<void> {
@@ -238,26 +277,18 @@ export class SidecarClient {
         "The local engine reported an error.",
       ),
     );
-    const handleStopped = (reason: SidecarError) => {
-      if (this.command !== command) return;
-      recordFrontendDiagnostic(
-        "sidecar_exit",
-        reason.code,
-        undefined,
-        "The local engine stopped unexpectedly.",
-      );
-      this.child = null;
-      this.command = null;
-      this.rejectAll(reason);
-    };
     command.on("error", (message) =>
-      handleStopped(
+      this.handleStopped(
+        command,
         new SidecarError("sidecar_stopped", `The local TTS engine stopped: ${message}`),
       ),
     );
-    command.on("close", () => {
-      handleStopped(new SidecarError("sidecar_stopped", "The local TTS engine stopped"));
-    });
+    command.on("close", () =>
+      this.handleStopped(
+        command,
+        new SidecarError("sidecar_stopped", "The local TTS engine stopped"),
+      ),
+    );
     try {
       const child = await command.spawn();
       if (this.command !== command) {
@@ -331,6 +362,22 @@ export class SidecarClient {
     if (failure?.status === "rejected") throw failure.reason;
   }
 
+  /**
+   * The sidecar renders inline and cannot interrupt a model call, so cancelling
+   * restarts the engine. Returns false, without stopping, while other long work would be lost.
+   */
+  async cancelSynthesis(): Promise<boolean> {
+    const otherWork =
+      this.activePreparationIds.size > 0 ||
+      this.activeSeedId !== null ||
+      this.activeRuntimeInstallId !== null ||
+      this.activeTranscriptionId !== null;
+    if (this.activeSynthesisIds.size === 0) return true;
+    if (otherWork) return false;
+    await this.stop();
+    return true;
+  }
+
   async cancelSeed(): Promise<void> {
     if (!this.activeSeedId) return;
     await this.request({ type: "cancel", request_id: this.activeSeedId });
@@ -339,6 +386,18 @@ export class SidecarClient {
   async cancelNvidiaRuntime(): Promise<void> {
     if (!this.activeRuntimeInstallId) return;
     await this.request({ type: "cancel", request_id: this.activeRuntimeInstallId });
+  }
+
+  async apiStatus(): Promise<LocalApiState> {
+    return this.request<LocalApiState>({ type: "api_status" });
+  }
+
+  async startLocalApi(): Promise<LocalApiState> {
+    return this.request<LocalApiState>({ type: "start_api" });
+  }
+
+  async stopLocalApi(): Promise<LocalApiState> {
+    return this.request<LocalApiState>({ type: "stop_api" });
   }
 
   async cancelTranscription(): Promise<void> {
@@ -394,7 +453,9 @@ export class SidecarClient {
     const isSeed = payload.type === "seed_vieneu_voices";
     const isRuntimeInstall = payload.type === "install_nvidia_runtime";
     const isTranscription = payload.type === "transcribe_video";
+    const isSynthesis = payload.type === "synthesize";
     if (isPreparation) this.activePreparationIds.add(id);
+    if (isSynthesis) this.activeSynthesisIds.add(id);
     if (isSeed) this.activeSeedId = id;
     if (isRuntimeInstall) this.activeRuntimeInstallId = id;
     if (isTranscription) this.activeTranscriptionId = id;
@@ -444,13 +505,16 @@ export class SidecarClient {
         this.activeRuntimeInstallId = null;
       if (isTranscription && this.activeTranscriptionId === id)
         this.activeTranscriptionId = null;
+      this.activeSynthesisIds.delete(id);
     }
   }
 
   private async requestOnce<T>(id: string, payload: Omit<Request, "id">): Promise<T> {
     const child = this.child;
     const command = this.command;
-    if (!child) throw new Error("The local TTS engine is unavailable");
+    if (!child || !command) {
+      throw new SidecarError("sidecar_stopped", "The local TTS engine is unavailable");
+    }
     const request = JSON.stringify({ ...payload, id }) + "\n";
     const timeoutMs =
       payload.type === "prepare_model"
@@ -461,7 +525,10 @@ export class SidecarClient {
             ? RUNTIME_INSTALL_TIMEOUT_MS
             : payload.type === "transcribe_video"
               ? TRANSCRIBE_TIMEOUT_MS
-              : REQUEST_TIMEOUT_MS;
+              : // The sidecar handles synthesis inline, so requests queued behind it wait as long.
+                this.activeSynthesisIds.size > 0
+                ? SYNTHESIS_TIMEOUT_MS
+                : REQUEST_TIMEOUT_MS;
     let timeout: ReturnType<typeof setTimeout>;
     const response = new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
@@ -472,9 +539,7 @@ export class SidecarClient {
           `The local engine did not respond within ${Math.round(timeoutMs / 60000)} minutes`,
         );
         if (this.command === command) {
-          this.child = null;
-          this.command = null;
-          this.rejectAll(error);
+          this.handleStopped(command, error);
           void child.kill().catch(() => undefined);
         }
         reject(error);
@@ -485,11 +550,7 @@ export class SidecarClient {
     } catch (reason) {
       clearTimeout(timeout!);
       const error = new SidecarError("sidecar_stopped", "The local TTS engine stopped");
-      if (this.command === command) {
-        this.child = null;
-        this.command = null;
-        this.rejectAll(error);
-      }
+      if (this.command === command) this.handleStopped(command, error);
       throw error;
     }
     return response.finally(() => clearTimeout(timeout!));

@@ -27,8 +27,8 @@
 ## Feature inventory
 
 The desktop provider and MCP voice-library workflows have source-backed deep
-coverage below. The remaining behaviors are mapped in the architecture overview
-but do not yet have dedicated feature pages:
+coverage below. The remaining desktop behaviors are mapped in the architecture
+overview but do not yet have dedicated wiki feature pages:
 
 - [x] Desktop provider setup and offline synthesis — the desktop sidecar reports
   both providers, the first-run screen prepares all missing providers
@@ -54,10 +54,18 @@ but do not yet have dedicated feature pages:
   Storage, and MCP tabs. The MCP tab generates copyable setup for Codex CLI,
   Claude Code, Claude Desktop, Cursor, VS Code / GitHub Copilot, and Zed,
   including the app data path; Settings is also reachable from the first-run
-  setup screen.
-- [ ] Desktop audio history — the app lists and plays WAV/MP3 files from its
-  output directory, including older files without synthesis metadata, confirms
-  before deletion, and keeps the five latest session takes in Workspace.
+  setup screen. General also opens the public GitHub Ideas category for feature
+  suggestions and the repository homepage for manually starring the project;
+  the localized notice explains public visibility and GitHub sign-in.
+- [x] Desktop audio history — the app lists and plays WAV/MP3 files from its
+  output directory, including older files without synthesis metadata; it can
+  rename an output while preserving its extension and metadata, copy its local
+  path, confirm deletion, and keep the five latest session takes in Workspace.
+- [x] Desktop update notices — startup checks the latest stable GitHub release
+  without blocking app startup, at most once per 24 hours; Settings supports a
+  manual check that can resurface a dismissed update, and a localized banner
+  links to the validated release page without downloading or installing it. See
+  the [architecture overview](architecture/overview.md).
 - [x] Desktop video transcription — the Transcribe view accepts one public
   HTTPS YouTube link (Facebook secondary), streams progress through the
   sidecar, previews the transcript and timestamped SRT, and saves the SRT
@@ -73,11 +81,21 @@ but do not yet have dedicated feature pages:
   presets or Clone/reference voices, accept optional VieNeu sampler options
   such as `seed`, and keep OmniVoice as the default.
   MCP profile and shared-store behavior is in the workflow page.
-- [x] Public bilingual desktop downloads — the Next.js site serves English and
-  Vietnamese pages, resolves validated latest stable GitHub release assets for
-  macOS ARM64, Windows x64, and Linux x64, and links directly to the assets;
-  unavailable release and platform states are localized. See the
-  [architecture overview](architecture/overview.md).
+- [x] Public bilingual desktop downloads, feature overview, and release history
+  — the Next.js site serves English and Vietnamese pages, resolves validated
+  latest stable GitHub release assets for macOS ARM64, Windows x64, and Linux x64,
+  and links directly to the assets. Localized changelog pages read ordered version
+  entries from the root `changelog.md`, link each version only to its exact
+  tag's validated installer assets, and show a localized status when no
+  verified installer is available. See the
+  [architecture overview](architecture/overview.md), which also maps the
+  localized feature overview route. The Features page and shared footer link to
+  GitHub Ideas and the repository for manual starring; header/footer branding
+  and the browser icon use the supplied Volo logo.
+- [x] Desktop local REST API — Settings starts and stops an opt-in API bound to
+  `127.0.0.1:8765`; it reuses the MCP tools and app data and stops with the
+  desktop sidecar. See the [API reference](../desktop-local-api.md) for routes
+  and the no-token trust boundary.
 - [x] Desktop NVIDIA runtime and diagnostics — Linux x64 uses CPU PyTorch by
   default and can install a version-matched NVIDIA sidecar from Settings;
   failed GPU checks fall back to CPU. Logs retains bounded local diagnostics
@@ -93,13 +111,16 @@ but do not yet have dedicated feature pages:
 - `src/tts_mcp/desktop_diagnostics.py`
 - `src/tts_mcp/cli.py`
 - `src/tts_mcp/server.py`
+- `src/tts_mcp/api.py`
 - `tests/test_server.py`
+- `tests/test_api.py`
 - `tests/test_engine.py`
 - `tests/test_desktop.py`
 - `tests/test_desktop_runtime.py`
 - `tests/test_desktop_diagnostics.py`
 - `tests/test_package_cuda_runtime.py`
 - `apps/desktop/src/App.tsx`
+- `apps/desktop/src/lib/update-check.ts`
 - `apps/desktop/src/main.tsx`
 - `apps/desktop/src/components/ui/button.tsx`
 - `apps/desktop/src/components/ui/tabs.tsx`
@@ -108,7 +129,11 @@ but do not yet have dedicated feature pages:
 - `apps/desktop/src/lib/i18n.ts`
 - `apps/desktop/src/lib/sidecar.ts`
 - `apps/desktop/src/lib/diagnostics.ts`
+- `changelog.md`
+- `apps/web/lib/changelog.ts`
+- `apps/web/test/changelog.test.mjs`
 - `scripts/package_cuda_runtime.py`
 - `requirements-linux-cpu.txt`
 - `requirements-linux-cuda.txt`
 - `apps/desktop/package.json`
+- `docs/desktop-local-api.md`

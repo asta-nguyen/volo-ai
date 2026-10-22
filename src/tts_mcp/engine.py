@@ -449,6 +449,10 @@ class Engine:
     _instance: "Engine | None" = None
     _model: Any = None
     _model_lock = threading.Lock()
+    # One model call at a time: the desktop sidecar renders on its request loop while
+    # transcription and seed imports run on worker threads, and concurrent MPS work
+    # aborts the process. ponytail: a long transcription makes a render wait for it.
+    _inference_lock = threading.Lock()
 
     def __new__(cls):
         if cls._instance is None:
@@ -609,7 +613,9 @@ class Engine:
         elif instruct is not None:
             kwargs["instruct"] = instruct
 
-        audio_list = self.model.generate(**kwargs)
+        model = self.model
+        with self._inference_lock:
+            audio_list = model.generate(**kwargs)
         return audio_list[0]  # np.ndarray shape (T,) at 24 kHz
 
     def transcribe_with_timestamps(self, audio: tuple) -> dict[str, Any]:
@@ -625,10 +631,11 @@ class Engine:
         if pipe is None:
             raise RuntimeError("The loaded OmniVoice model has no Whisper ASR pipeline")
         waveform, sample_rate = audio
-        with torch.inference_mode():
+        # Sequential long-form decoding, not chunk_length_s: chunked decoding merged
+        # minutes of speech into single segments and dropped words on long videos.
+        with self._inference_lock, torch.inference_mode():
             return pipe(
                 {"array": np.squeeze(np.asarray(waveform)), "sampling_rate": sample_rate},
-                chunk_length_s=30,
                 return_timestamps=True,
             )
 
@@ -780,9 +787,11 @@ class Engine:
                 reference_path = staging_dir / f"reference{source.suffix.lower()}"
                 prompt_path = staging_dir / "prompt.pt"
                 _copy_file_atomic(source, reference_path)
-                prompt = self.model.create_voice_clone_prompt(
-                    ref_audio=str(reference_path), ref_text=ref_text
-                )
+                model = self.model
+                with self._inference_lock:
+                    prompt = model.create_voice_clone_prompt(
+                        ref_audio=str(reference_path), ref_text=ref_text
+                    )
                 _save_prompt_atomic(prompt, prompt_path)
 
                 if profile_dir.exists():
@@ -1384,6 +1393,19 @@ class Engine:
                 with connection:
                     cursor = connection.execute(
                         "DELETE FROM audio_history WHERE file_name = ?", (file_name,)
+                    )
+                return cursor.rowcount > 0
+
+    @staticmethod
+    def rename_audio_history(old_file_name: str, new_file_name: str) -> bool:
+        old_file_name = _validate_audio_history_file_name(old_file_name)
+        new_file_name = _validate_audio_history_file_name(new_file_name)
+        with _STORAGE_LOCK:
+            with closing(Engine._open_storage()) as connection:
+                with connection:
+                    cursor = connection.execute(
+                        "UPDATE audio_history SET file_name = ? WHERE file_name = ?",
+                        (new_file_name, old_file_name),
                     )
                 return cursor.rowcount > 0
 

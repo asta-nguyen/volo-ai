@@ -321,6 +321,12 @@ directory, profile writes and deletions affect the desktop library too.
 
 ## Error paths
 
+- Tools register through the `tool()` decorator in `src/tts_mcp/server.py`, which
+  re-raises `ValueError`, `OSError` (including `FileNotFoundError`), and
+  `RuntimeError` as the SDK's `ToolError`. The MCP client therefore receives
+  the original message as an `is_error` result instead of the SDK's generic
+  `Error executing tool <name>`. Direct Python calls still raise the original
+  exception types listed below.
 - If neither a voice name nor reference path is supplied, `clone` raises
   `ValueError`.
 - Unknown providers, invalid languages, VieNeu Design profiles, attempts to

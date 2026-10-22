@@ -7,11 +7,11 @@ import {
   useQueryClient,
   type InfiniteData,
 } from "@tanstack/react-query";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { appDataDir, resolveResource } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { copyFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "motion/react";
 import {
   AlertDialog,
@@ -27,7 +27,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Field, FieldGroup, FieldLabel, FieldSet, FieldLegend } from "@/components/ui/field";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldSet,
+  FieldLegend,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -45,6 +52,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   AlertCircle,
+  ArrowUpRight,
   AudioLines,
   Captions,
   Check,
@@ -58,6 +66,7 @@ import {
   FileText,
   FileVideo,
   FolderOpen,
+  Globe,
   HardDrive,
   History,
   Languages,
@@ -66,17 +75,21 @@ import {
   Logs,
   Monitor,
   Moon,
+  Pencil,
   Play,
   Plus,
+  RefreshCw,
   RotateCcw,
   Search,
   Settings2,
   ShieldCheck,
+  Star,
   SlidersHorizontal,
   Sparkles,
   Sun,
   Trash2,
   Wand2,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -88,10 +101,12 @@ import {
   type AudioFormat,
   type GenerationConfig,
   type Language,
+  type LocalApiState,
   type NvidiaRuntimeStatus,
   type ProviderId,
   type ProviderStatus,
   type ProgressEvent,
+  type RenameAudioHistoryResult,
   type RequestLog,
   type SeedVieNeuResult,
   type StatusResult,
@@ -108,6 +123,15 @@ import {
   recordFrontendDiagnostic,
 } from "./lib/diagnostics";
 import { createUiCopy, setAppLanguage, type AppLanguage, type UiCopy } from "./lib/i18n";
+import {
+  automaticCheckDue,
+  checkLatestRelease,
+  clearDismissedTag,
+  dismissUpdateTag,
+  readDismissedTag,
+  recordAutomaticCheck,
+  type UpdateCheckResult,
+} from "./lib/update-check";
 import { cn } from "./lib/utils";
 import { AudioPlayer, InlineAudioPreview } from "./components/AudioPlayer";
 
@@ -177,6 +201,7 @@ const SAMPLE_SCRIPTS = {
 const client = new SidecarClient();
 const STATUS_QUERY_KEY = ["sidecar", "status"] as const;
 const VOICES_QUERY_KEY = ["sidecar", "voices"] as const;
+const API_STATE_QUERY_KEY = ["sidecar", "local-api"] as const;
 const AUDIO_HISTORY_QUERY_KEY = ["sidecar", "audio-history"] as const;
 type AppView = "workspace" | "transcribe" | "profiles" | "history" | "settings" | "logs";
 type SettingsTab = "general" | "model" | "storage" | "mcp";
@@ -207,6 +232,8 @@ function buildMcpConfig(clientId: McpClientId, dataDir: string): string {
 }
 
 const BUNDLED_SEED_DIRECTORY = "resources/seed-voices";
+// Set once VieNeu presets were seeded as profiles, so voices the user deletes stay deleted.
+const VIENEU_SEEDED_KEY = "volo-ai.vieneu-presets-seeded";
 type SeedImportResult = {
   imported: Array<{ id: string; name: string; language: string }>;
   skipped: Array<{ id: string; name: string; reason: string }>;
@@ -362,14 +389,21 @@ function fileName(path: string | undefined): string {
   return path?.split(/[\\/]/).pop() || "Reference audio";
 }
 
+// Profile names become filenames, so the engine accepts only ASCII letters, digits, "_" and "-".
+function toVoiceName(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .replace(/[^A-Za-z0-9_-]+/g, "-")
+    .replace(/^[^A-Za-z0-9]+/, "")
+    .replace(/-+$/, "")
+    .slice(0, 64);
+}
+
 function voiceNameFromFile(path: string): string {
-  const stem = fileName(path).replace(/\.[^.]+$/, "");
-  return (
-    stem
-      .replace(/[^A-Za-z0-9_-]+/g, "-")
-      .replace(/^[^A-Za-z0-9]+/, "")
-      .slice(0, 64) || "imported-voice"
-  );
+  return toVoiceName(fileName(path).replace(/\.[^.]+$/, "")) || "imported-voice";
 }
 
 function preferredVoiceForLanguage(voices: VoiceProfile[], language: Language): string {
@@ -409,6 +443,17 @@ function isSupportedVideoUrl(value: string): boolean {
   }
 }
 
+const MAX_SESSION_TAKES = 5;
+
+function ElapsedTime() {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setSeconds((value) => value + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return <span className="ml-auto font-mono text-xs tabular-nums">{formatDuration(seconds)}</span>;
+}
+
 function formatDuration(seconds: number): string {
   const total = Math.max(0, Math.round(seconds));
   const hours = Math.floor(total / 3600);
@@ -420,7 +465,10 @@ function formatDuration(seconds: number): string {
 }
 
 function srtFileName(title: string): string {
-  const safe = title.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
+  const safe = title
+    .replace(/[\\/:*?"<>|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   return `${(safe || "transcript").slice(0, 80)}.srt`;
 }
 
@@ -444,7 +492,7 @@ function PageHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <header className="mb-7 flex items-end justify-between gap-5">
+    <header className="mb-7 flex flex-wrap items-end justify-between gap-x-5 gap-y-4">
       <div>
         <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-(--accent)">
           {eyebrow}
@@ -475,6 +523,40 @@ function ErrorMessage({ children }: { children: React.ReactNode }) {
   );
 }
 
+function UpdateBanner({
+  copy,
+  tag,
+  onOpenRelease,
+  onDismiss,
+}: {
+  copy: UiCopy;
+  tag: string;
+  onOpenRelease: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      role="status"
+      className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-(--border) bg-(--surface) px-4 py-3"
+    >
+      <Sparkles className="size-5 shrink-0 text-(--accent)" />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold">{copy.updateBannerTitle(tag)}</p>
+        <p className="text-xs leading-5 text-(--muted-foreground)">
+          {copy.updateBannerDescription}
+        </p>
+      </div>
+      <Button size="sm" onClick={onOpenRelease}>
+        <ArrowUpRight className="size-4" />
+        {copy.updateViewRelease}
+      </Button>
+      <Button size="icon-sm" variant="ghost" onClick={onDismiss} aria-label={copy.updateDismiss}>
+        <X className="size-4" />
+      </Button>
+    </div>
+  );
+}
+
 function SetupScreen({
   copy,
   providers,
@@ -486,6 +568,8 @@ function SetupScreen({
   setupError,
   canPrepare,
   omniVoiceReady,
+  engineFailed,
+  onRetryEngine,
   onPrepareAll,
   onCancel,
   onOpenProfiles,
@@ -503,6 +587,8 @@ function SetupScreen({
   setupError: string | null;
   canPrepare: boolean;
   omniVoiceReady: boolean;
+  engineFailed: boolean;
+  onRetryEngine: () => void;
   onPrepareAll: () => void;
   onCancel: () => void;
   onOpenProfiles: () => void;
@@ -580,7 +666,11 @@ function SetupScreen({
                         <p className="mt-2 text-xs leading-5 text-(--muted-foreground)">
                           {progressEvent?.message ??
                             status?.unavailable_reason ??
-                            (isInstalling ? copy.preparingModels : copy.waitingEngine)}
+                            (isInstalling
+                              ? copy.preparingModels
+                              : engineFailed
+                                ? copy.engineUnavailable
+                                : copy.waitingEngine)}
                         </p>
                         {progressEvent?.asset && (
                           <p className="mt-1 font-mono text-[10px] uppercase text-(--muted-foreground)">
@@ -603,21 +693,29 @@ function SetupScreen({
                 </div>
               )}
               <div className="mt-6 flex flex-wrap gap-3">
-                <Button
-                  onClick={onPrepareAll}
-                  disabled={isPreparing || isCancelling || !canPrepare}
-                >
-                  {isPreparing ? (
-                    <LoaderCircle className="size-4 animate-spin" />
-                  ) : (
-                    <Download className="size-4" />
-                  )}
-                  {isPreparing
-                    ? copy.preparingModels
-                    : hasErrors
-                      ? copy.retryDownload
-                      : copy.downloadModel}
-                </Button>
+                {engineFailed ? (
+                  // Without a running engine the model state is unknown, so retry the engine first.
+                  <Button onClick={onRetryEngine}>
+                    <RotateCcw className="size-4" />
+                    {copy.retryProfiles}
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={onPrepareAll}
+                    disabled={isPreparing || isCancelling || !canPrepare}
+                  >
+                    {isPreparing ? (
+                      <LoaderCircle className="size-4 animate-spin" />
+                    ) : (
+                      <Download className="size-4" />
+                    )}
+                    {isPreparing
+                      ? copy.preparingModels
+                      : hasErrors
+                        ? copy.retryDownload
+                        : copy.downloadModel}
+                  </Button>
+                )}
                 {isPreparing && (
                   <Button variant="secondary" onClick={onCancel} disabled={isCancelling}>
                     <CircleStop className="size-4" />
@@ -685,7 +783,7 @@ function SetupScreen({
               <CardHeader>
                 <div>
                   <SectionLabel>{copy.setupAfter}</SectionLabel>
-                  <CardTitle className="mt-2">{copy.setupAfter}</CardTitle>
+                  <CardTitle className="mt-2">{copy.setupAfterTitle}</CardTitle>
                 </div>
                 <Sparkles className="size-5 text-(--accent)" />
               </CardHeader>
@@ -771,10 +869,6 @@ function LogsView({
                 <span className="text-xs text-(--destructive)">{copy.clearLogs}</span>
               </Button>
             )}
-            <Badge variant="secondary">
-              <span className="mr-2 size-1.5 rounded-full bg-(--success)" />
-              {copy.localHistory}
-            </Badge>
             <Button
               variant="secondary"
               size="sm"
@@ -844,7 +938,12 @@ function LogsView({
                             : "default"
                       }
                     >
-                      {entry.status === "pending" ? copy.running : entry.status.toUpperCase()}
+                      {entry.status === "pending"
+                        ? copy.running
+                        : (entry.status === "success"
+                            ? copy.success
+                            : copy.statusError
+                          ).toUpperCase()}
                     </Badge>
                   </div>
                   {entry.errorMessage && (
@@ -973,63 +1072,59 @@ function VoiceProfilesView({
         title={copy.profilesTitle}
         description={copy.profilesDescription}
         action={
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={onSeedVieNeuVoices}
-                disabled={isSeedingVieNeu}
-              >
-                {isSeedingVieNeu ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : (
-                  <AudioLines className="size-4 text-(--accent)" />
-                )}
-                {isSeedingVieNeu ? copy.seedingVieNeuVoices : copy.seedVieNeuVoices}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={onImportVoiceFile}
-                disabled={isImporting || isImportingSeed || isSaving}
-              >
-                {isImporting ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : (
-                  <FileAudio className="size-4 text-(--accent)" />
-                )}
-                {isImporting ? copy.importingVoiceFile : copy.importVoiceFile}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={onImportSeedFolder}
-                disabled={isImporting || isImportingSeed || isSaving}
-              >
-                {isImportingSeed ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : (
-                  <FolderOpen className="size-4 text-(--accent)" />
-                )}
-                {isImportingSeed ? copy.importingSeedFolder : copy.importSeedFolder}
-              </Button>
-            </div>
-            <div className="flex items-center gap-3 rounded-xl border border-(--border) bg-(--surface) px-4 py-3">
-              <Library className="size-4 text-(--accent)" />
-              <span className="font-mono text-xs font-semibold">
-                {voices.length.toString().padStart(2, "0")} {copy.savedProfiles}
-              </span>
-            </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onSeedVieNeuVoices}
+              disabled={isSeedingVieNeu}
+            >
+              {isSeedingVieNeu ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : (
+                <AudioLines className="size-4 text-(--accent)" />
+              )}
+              {isSeedingVieNeu ? copy.seedingVieNeuVoices : copy.seedVieNeuVoices}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onImportVoiceFile}
+              disabled={isImporting || isImportingSeed || isSaving}
+            >
+              {isImporting ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : (
+                <FileAudio className="size-4 text-(--accent)" />
+              )}
+              {isImporting ? copy.importingVoiceFile : copy.importVoiceFile}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onImportSeedFolder}
+              disabled={isImporting || isImportingSeed || isSaving}
+            >
+              {isImportingSeed ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : (
+                <FolderOpen className="size-4 text-(--accent)" />
+              )}
+              {isImportingSeed ? copy.importingSeedFolder : copy.importSeedFolder}
+            </Button>
           </div>
         }
       />
-      <div className="mb-5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-5 text-(--muted-foreground)">
-        <FolderOpen className="size-3.5 text-(--accent)" />
-        <span>{copy.voiceImportDescription}</span>
-        <span>·</span>
-        <span>{copy.seedImportDescription}</span>
-      </div>
+      <ul className="mb-5 space-y-1 text-xs leading-5 text-(--muted-foreground)">
+        <li>
+          <span className="font-semibold text-(--foreground)">{copy.importVoiceFile}:</span>{" "}
+          {copy.voiceImportDescription}
+        </li>
+        <li>
+          <span className="font-semibold text-(--foreground)">{copy.importSeedFolder}:</span>{" "}
+          {copy.seedImportDescription}
+        </li>
+      </ul>
       {activeImportStatus && (
         <div
           className={`mb-5 rounded-xl border px-4 py-3 text-sm ${activeImportStatus.tone === "error" ? "border-(--destructive-border) bg-(--destructive-surface) text-(--destructive)" : "border-(--success-border) bg-(--success-surface) text-(--success)"}`}
@@ -1106,12 +1201,14 @@ function VoiceProfilesView({
           )}
         </div>
       )}
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
         <Card>
           <CardHeader>
             <div>
               <SectionLabel>{copy.voiceLibrary}</SectionLabel>
-              <CardTitle className="mt-2">{copy.savedProfiles}</CardTitle>
+              <CardTitle className="mt-2 first-letter:uppercase">
+                {copy.savedProfiles} · {voices.length}
+              </CardTitle>
             </div>
             {isLoading && <LoaderCircle className="size-4 animate-spin text-(--accent)" />}
           </CardHeader>
@@ -1241,7 +1338,7 @@ function VoiceProfilesView({
                           <div className="flex items-center gap-2">
                             {voice.ref_audio && (
                               <InlineAudioPreview
-                                src={convertFileSrc(voice.ref_audio)}
+                                audioPath={voice.ref_audio}
                                 label={copy.previewAudio}
                                 pauseLabel={copy.pauseAudio}
                               />
@@ -1300,7 +1397,11 @@ function VoiceProfilesView({
                   aria-label={copy.createProfile}
                 >
                   {(["clone", "design", "vieneu_preset"] as VoiceKind[]).map((kind) => (
-                    <ToggleGroupItem key={kind} value={kind} className="px-3 py-2 text-sm">
+                    <ToggleGroupItem
+                      key={kind}
+                      value={kind}
+                      className="h-auto min-h-9 min-w-0 px-1.5 py-1.5 text-center text-xs leading-tight whitespace-normal"
+                    >
                       {kind === "design"
                         ? copy.designVoice
                         : kind === "vieneu_preset"
@@ -1342,7 +1443,7 @@ function VoiceProfilesView({
                         {refAudio && (
                           <div className="flex items-center gap-2">
                             <InlineAudioPreview
-                              src={convertFileSrc(refAudio)}
+                              audioPath={refAudio}
                               label={copy.previewAudio}
                               pauseLabel={copy.pauseAudio}
                             />
@@ -1461,6 +1562,14 @@ function SettingsView({
   isRefreshingStatus,
   isPreparing,
   preparingProviders,
+  localApi,
+  localApiError,
+  isStartingLocalApi,
+  isStoppingLocalApi,
+  onStartLocalApi,
+  onStopLocalApi,
+  isCheckingUpdates,
+  manualUpdateFeedback,
   onChangeLanguage,
   onChangeTheme,
   onSelectProvider,
@@ -1470,6 +1579,8 @@ function SettingsView({
   onInstallRuntime,
   onCancelRuntime,
   onRemoveRuntime,
+  onCheckForUpdates,
+  onOpenCommunityPage,
   onBack,
 }: {
   copy: UiCopy;
@@ -1496,6 +1607,14 @@ function SettingsView({
   isRefreshingStatus: boolean;
   isPreparing: boolean;
   preparingProviders: ProviderId[];
+  localApi: LocalApiState | null;
+  localApiError: string | null;
+  isStartingLocalApi: boolean;
+  isStoppingLocalApi: boolean;
+  onStartLocalApi: () => void;
+  onStopLocalApi: () => void;
+  isCheckingUpdates: boolean;
+  manualUpdateFeedback: "none" | "current" | "unavailable";
   onChangeLanguage: (language: AppLanguage) => void;
   onChangeTheme: (theme: ThemeMode) => void;
   onSelectProvider: (provider: ProviderId) => void;
@@ -1505,13 +1624,17 @@ function SettingsView({
   onInstallRuntime: () => void;
   onCancelRuntime: () => void;
   onRemoveRuntime: () => void;
+  onCheckForUpdates: () => void;
+  onOpenCommunityPage: (page: "ideas" | "repository") => void;
   onBack: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("model");
   const [copiedDataDir, setCopiedDataDir] = useState(false);
   const [copiedMcpConfig, setCopiedMcpConfig] = useState(false);
+  const [copiedApiUrl, setCopiedApiUrl] = useState(false);
   const [mcpClient, setMcpClient] = useState<McpClientId>("codex");
   const mcpSetupConfig = dataDir ? buildMcpConfig(mcpClient, dataDir) : copy.loadingDataPath;
+  const localApiUrl = localApi?.url ?? "http://127.0.0.1:8765";
 
   const handleCopyDataDir = async () => {
     if (!dataDir) return;
@@ -1528,6 +1651,14 @@ function SettingsView({
       await navigator.clipboard.writeText(mcpSetupConfig);
       setCopiedMcpConfig(true);
       setTimeout(() => setCopiedMcpConfig(false), 2000);
+    } catch {}
+  };
+
+  const handleCopyApiUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(localApiUrl);
+      setCopiedApiUrl(true);
+      setTimeout(() => setCopiedApiUrl(false), 2000);
     } catch {}
   };
 
@@ -1616,7 +1747,7 @@ function SettingsView({
                 <CardHeader>
                   <div>
                     <SectionLabel>{copy.theme}</SectionLabel>
-                    <CardTitle className="mt-2">{copy.theme}</CardTitle>
+                    <CardTitle className="mt-2">{copy.themeTitle}</CardTitle>
                   </div>
                   <Sun className="size-5 text-(--accent)" />
                 </CardHeader>
@@ -1646,6 +1777,62 @@ function SettingsView({
                         </ToggleGroupItem>
                       ))}
                     </ToggleGroup>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="lg:col-span-2">
+                <CardHeader>
+                  <div>
+                    <SectionLabel>{copy.updateSection}</SectionLabel>
+                    <CardTitle className="mt-2">{copy.updateTitle}</CardTitle>
+                  </div>
+                  <ArrowUpRight className="size-5 text-(--accent)" />
+                </CardHeader>
+                <CardContent>
+                  <CardDescription>{copy.updateDescription}</CardDescription>
+                  <div className="mt-5 flex flex-wrap items-center gap-3">
+                    <Button
+                      variant="secondary"
+                      onClick={onCheckForUpdates}
+                      disabled={isCheckingUpdates}
+                    >
+                      {isCheckingUpdates ? (
+                        <LoaderCircle className="size-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="size-4" />
+                      )}
+                      {isCheckingUpdates ? copy.updateChecking : copy.updateCheckNow}
+                    </Button>
+                    {manualUpdateFeedback === "current" && (
+                      <p className="text-sm text-(--muted-foreground)">{copy.updateCurrent}</p>
+                    )}
+                    {manualUpdateFeedback === "unavailable" && (
+                      <p className="text-sm text-(--destructive)">{copy.updateUnavailable}</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="lg:col-span-2">
+                <CardHeader>
+                  <div>
+                    <SectionLabel>{copy.communitySection}</SectionLabel>
+                    <CardTitle className="mt-2">{copy.communityTitle}</CardTitle>
+                  </div>
+                  <ArrowUpRight className="size-5 text-(--accent)" />
+                </CardHeader>
+                <CardContent>
+                  <CardDescription>{copy.communityDescription}</CardDescription>
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    <Button variant="secondary" onClick={() => onOpenCommunityPage("ideas")}>
+                      {copy.suggestFeature}
+                      <ArrowUpRight data-icon="inline-end" />
+                    </Button>
+                    <Button variant="secondary" onClick={() => onOpenCommunityPage("repository")}>
+                      <Star data-icon="inline-start" />
+                      {copy.starProject}
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -1988,6 +2175,90 @@ function SettingsView({
               </CardContent>
             </Card>
           )}
+          {activeTab === "mcp" && (
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <div>
+                  <SectionLabel>{copy.apiSection}</SectionLabel>
+                  <CardTitle className="mt-2">{copy.apiTitle}</CardTitle>
+                  <CardDescription className="mt-2">{copy.apiDescription}</CardDescription>
+                </div>
+                <Globe className="size-5 text-(--accent)" />
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <SectionLabel>{copy.apiStatusLabel}</SectionLabel>
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <span
+                      className={`size-2 rounded-full ${localApi?.running ? "bg-(--success)" : "bg-(--muted-foreground)"}`}
+                    />
+                    {localApi?.running ? copy.apiStatusRunning : copy.apiStatusStopped}
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <SectionLabel>{copy.apiBaseUrlLabel}</SectionLabel>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleCopyApiUrl}
+                      className="gap-1.5"
+                    >
+                      {copiedApiUrl ? (
+                        <>
+                          <Check className="size-3.5 text-(--success)" />
+                          <span className="text-(--success)">{copy.apiUrlCopied}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="size-3.5" />
+                          <span>{copy.copyApiUrl}</span>
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      variant={localApi?.running ? "secondary" : "default"}
+                      size="sm"
+                      onClick={localApi?.running ? onStopLocalApi : onStartLocalApi}
+                      disabled={!localApi || isStartingLocalApi || isStoppingLocalApi}
+                      className="gap-1.5"
+                    >
+                      {isStartingLocalApi || isStoppingLocalApi ? (
+                        <>
+                          <LoaderCircle className="size-3.5 animate-spin" />
+                          <span>{isStartingLocalApi ? copy.apiStarting : copy.apiStopping}</span>
+                        </>
+                      ) : localApi?.running ? (
+                        <>
+                          <CircleStop className="size-3.5" />
+                          <span>{copy.apiStop}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Play className="size-3.5" />
+                          <span>{copy.apiStart}</span>
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+                <code className="mt-3 block overflow-x-auto rounded-xl border border-(--border) bg-(--surface-muted) p-3.5 font-mono text-xs text-(--foreground)">
+                  {localApiUrl}
+                </code>
+                {localApiError && (
+                  <p className="mt-3 rounded-xl border border-(--destructive-border) bg-(--destructive-surface) px-3.5 py-3 text-sm leading-5 text-(--destructive)">
+                    {localApiError}
+                  </p>
+                )}
+                <p className="mt-3 text-sm leading-6 text-(--muted-foreground)">{copy.apiHelp}</p>
+                <div className="mt-4 rounded-xl border border-(--border) bg-(--surface-muted) p-4">
+                  <p className="text-sm leading-6 text-(--muted-foreground)">
+                    {copy.apiTrustWarning}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>
@@ -2085,9 +2356,11 @@ function AudioHistoryView({
   isLoadingMore,
   error,
   deletingFileName,
+  renamingFileName,
   onRetry,
   onLoadMore,
   onDelete,
+  onRename,
 }: {
   copy: UiCopy;
   appLanguage: AppLanguage;
@@ -2098,13 +2371,65 @@ function AudioHistoryView({
   isLoadingMore: boolean;
   error: string | null;
   deletingFileName: string | null;
+  renamingFileName: string | null;
   onRetry: () => void;
   onLoadMore: () => void;
   onDelete: (fileName: string) => void;
+  onRename: (fileName: string, newName: string) => Promise<void>;
 }) {
   const [confirmDeleteFileName, setConfirmDeleteFileName] = useState<string | null>(null);
+  const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [copiedFileName, setCopiedFileName] = useState<string | null>(null);
+  const [copyPathFailed, setCopyPathFailed] = useState(false);
   const confirmedItem = items.find((item) => item.id === confirmDeleteFileName);
+  const isRenaming = renameTargetId !== null && renamingFileName === renameTargetId;
   const locale = appLanguage === "vi" ? "vi-VN" : "en-US";
+
+  function openRenameDialog(item: AudioHistoryItem) {
+    setRenameTargetId(item.id);
+    setRenameDraft(item.id.replace(/\.[^.]+$/, ""));
+    setRenameError(null);
+  }
+
+  function closeRenameDialog() {
+    setRenameTargetId(null);
+    setRenameError(null);
+  }
+
+  async function submitRename() {
+    if (!renameTargetId) return;
+    const stem = renameDraft.trim();
+    const currentStem = renameTargetId.replace(/\.[^.]+$/, "");
+    if (!stem) {
+      setRenameError(copy.audioHistoryRenameInvalid);
+      return;
+    }
+    if (stem === currentStem) {
+      closeRenameDialog();
+      return;
+    }
+    try {
+      await onRename(renameTargetId, stem);
+      closeRenameDialog();
+    } catch (reason) {
+      setRenameError(reason instanceof Error ? reason.message : copy.audioHistoryRenameFailed);
+    }
+  }
+
+  async function copyAudioPath(item: AudioHistoryItem) {
+    try {
+      await navigator.clipboard.writeText(item.audio_path);
+      setCopyPathFailed(false);
+      setCopiedFileName(item.id);
+      window.setTimeout(() => {
+        setCopiedFileName((current) => (current === item.id ? null : current));
+      }, 2000);
+    } catch {
+      setCopyPathFailed(true);
+    }
+  }
 
   return (
     <div>
@@ -2135,6 +2460,12 @@ function AudioHistoryView({
       {error && (
         <div className="mb-5">
           <ErrorMessage>{error}</ErrorMessage>
+        </div>
+      )}
+
+      {copyPathFailed && (
+        <div className="mb-5">
+          <ErrorMessage>{copy.copyAudioPathFailed}</ErrorMessage>
         </div>
       )}
 
@@ -2177,6 +2508,11 @@ function AudioHistoryView({
                   dateStyle: "medium",
                   timeStyle: "short",
                 }).format(createdAt);
+            // Untouched takes are named by UUID; their script says more than the file name.
+            const scriptTitle =
+              /^[0-9a-f]{32}\.[a-z0-9]+$/.test(item.id) && item.metadata_available && item.text
+                ? item.text
+                : null;
 
             return (
               <Card key={item.id}>
@@ -2184,7 +2520,7 @@ function AudioHistoryView({
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="line-clamp-2 min-w-0 text-sm font-semibold leading-6">
-                        {item.id}
+                        {scriptTitle ?? item.id}
                       </h2>
                       <Badge variant="outline">{item.format}</Badge>
                     </div>
@@ -2194,26 +2530,61 @@ function AudioHistoryView({
                         <span>{item.provider === "vieneu" ? "VieNeu" : "OmniVoice"}</span>
                       )}
                       {voiceName && <span>{voiceName}</span>}
+                      {scriptTitle && <span className="font-mono">{item.id}</span>}
                     </div>
-                    {item.metadata_available && item.text && (
+                    {!scriptTitle && item.metadata_available && item.text && (
                       <p className="mt-2 line-clamp-2 text-xs leading-5 text-(--muted-foreground)">
                         {item.text}
                       </p>
                     )}
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
                     <InlineAudioPreview
-                      src={convertFileSrc(item.audio_path)}
+                      audioPath={item.audio_path}
                       label={copy.previewAudio}
                       pauseLabel={copy.pauseAudio}
                     />
                     <Button
                       type="button"
                       variant="ghost"
+                      size="sm"
+                      className="h-8 gap-1.5 px-2.5 text-xs"
+                      aria-label={`${copy.audioHistoryRename}: ${item.id}`}
+                      title={copy.audioHistoryRename}
+                      disabled={Boolean(deletingFileName) || Boolean(renamingFileName)}
+                      onClick={() => openRenameDialog(item)}
+                    >
+                      <Pencil className="size-3.5" />
+                      <span>{copy.audioHistoryRename}</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 gap-1.5 px-2.5 text-xs text-(--muted-foreground) hover:text-(--foreground)"
+                      aria-label={`${copy.copyAudioPath}: ${item.id}`}
+                      title={copiedFileName === item.id ? copy.copied : copy.copyAudioPath}
+                      onClick={() => void copyAudioPath(item)}
+                    >
+                      {copiedFileName === item.id ? (
+                        <>
+                          <Check className="size-3.5 text-(--success)" />
+                          <span className="text-(--success)">{copy.copied}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="size-3.5" />
+                          <span>{copy.copyAudioPath}</span>
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
                       size="icon"
                       aria-label={`${copy.audioHistoryDelete}: ${item.id}`}
                       title={copy.audioHistoryDelete}
-                      disabled={Boolean(deletingFileName)}
+                      disabled={Boolean(deletingFileName) || Boolean(renamingFileName)}
                       onClick={() => setConfirmDeleteFileName(item.id)}
                     >
                       <Trash2 className="size-4 text-(--destructive)" />
@@ -2250,6 +2621,56 @@ function AudioHistoryView({
         }}
         busy={deletingFileName === confirmDeleteFileName}
       />
+
+      <AlertDialog
+        open={Boolean(renameTargetId)}
+        onOpenChange={(open) => {
+          if (!open) closeRenameDialog();
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{copy.audioHistoryRenameTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{copy.audioHistoryRenameDescription}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <Field>
+            <FieldLabel htmlFor="audio-history-rename">{copy.audioHistoryRenameLabel}</FieldLabel>
+            <Input
+              id="audio-history-rename"
+              value={renameDraft}
+              disabled={isRenaming}
+              autoFocus
+              onChange={(event) => {
+                setRenameDraft(event.target.value);
+                setRenameError(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void submitRename();
+                }
+              }}
+            />
+            {renameTargetId && (
+              <p className="text-xs text-(--muted-foreground)">
+                {renameTargetId.slice(renameTargetId.lastIndexOf("."))}
+              </p>
+            )}
+            {renameError && <FieldError>{renameError}</FieldError>}
+          </Field>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isRenaming}>{copy.cancel}</AlertDialogCancel>
+            <AlertDialogAction
+              type="button"
+              disabled={isRenaming}
+              onClick={() => void submitRename()}
+            >
+              {isRenaming && <LoaderCircle className="size-4 animate-spin" />}
+              {copy.audioHistoryRename}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -2273,9 +2694,9 @@ function WorkspaceView({
   selectedVoice,
   refAudio,
   result,
-  audioUrl,
   error,
   isGenerating,
+  isImportingSeed,
   takes,
   activeTakeId,
   onSelectTake,
@@ -2288,6 +2709,7 @@ function WorkspaceView({
   onVoiceSelectionChange,
   onChooseReference,
   onSynthesize,
+  onCancelSynthesis,
   onExport,
 }: {
   copy: UiCopy;
@@ -2308,9 +2730,9 @@ function WorkspaceView({
   selectedVoice: string;
   refAudio: string | null;
   result: SynthesisResult | null;
-  audioUrl: string | null;
   error: string | null;
   isGenerating: boolean;
+  isImportingSeed: boolean;
   takes: TakeItem[];
   activeTakeId: string | null;
   onSelectTake: (take: TakeItem) => void;
@@ -2323,12 +2745,19 @@ function WorkspaceView({
   onVoiceSelectionChange: (name: string) => void;
   onChooseReference: () => void;
   onSynthesize: () => void;
+  onCancelSynthesis: () => void;
   onExport: () => void;
 }) {
   const isOmniVoice = provider === "omnivoice";
   const visibleVoices = isOmniVoice
     ? voices.filter((voice) => voice.kind !== "vieneu_preset" || Boolean(voice.ref_audio))
-    : voices.filter((voice) => voice.kind !== "design");
+    : // VieNeu preset profiles duplicate the preset entries listed above them.
+      voices.filter((voice) => voice.kind === "clone");
+  if (isOmniVoice) {
+    visibleVoices.sort(
+      (left, right) => Number(right.language === language) - Number(left.language === language),
+    );
+  }
   const selectedSource = isOmniVoice
     ? mode === "profile"
       ? `profile:${selectedVoice}`
@@ -2345,13 +2774,18 @@ function WorkspaceView({
     ...(!isOmniVoice ? [{ value: "file", label: copy.referenceFile }] : []),
     ...visibleVoices.map((voice) => ({
       value: `profile:${voice.name}`,
-      label: `${voice.name}${voice.kind === "vieneu_preset" ? (isOmniVoice && voice.ref_audio ? " · OmniVoice WAV" : ` · ${copy.providerVieNeu}`) : ` · ${voice.language?.toUpperCase() ?? ""}`}${voice.is_default ? ` · ${copy.defaultVoice}` : ""}`,
+      label:
+        voice.kind === "vieneu_preset"
+          ? (presetVoices.find((preset) => preset.id === voice.preset_id)?.label ?? voice.name)
+          : `${voice.name} · ${voice.language?.toUpperCase() ?? ""}${voice.is_default ? ` · ${copy.defaultVoice}` : ""}`,
     })),
   ];
   const speedPresets = [0.8, 1.0, 1.25, 1.5];
 
   const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
-  const estSeconds = Math.max(1, Math.round(wordCount / 2.5));
+  // Measured speaking rates: OmniVoice ~2.9 words/s at 1x, VieNeu presets ~3.9 words/s.
+  const wordsPerSecond = provider === "vieneu" ? 3.9 : 2.9 * speed;
+  const estSeconds = Math.max(1, Math.round(wordCount / wordsPerSecond));
   const [copiedText, setCopiedText] = useState(false);
   const [sampleMenuOpen, setSampleMenuOpen] = useState(false);
 
@@ -2366,14 +2800,8 @@ function WorkspaceView({
 
   const currentSamples = SAMPLE_SCRIPTS[language] || SAMPLE_SCRIPTS.en;
 
-  const activeVoiceName = useMemo(() => {
-    if (mode === "profile") return selectedVoice;
-    if (mode === "preset") {
-      return presetVoices.find((p) => p.id === selectedVoice)?.label ?? selectedVoice;
-    }
-    if (refAudio) return fileName(refAudio);
-    return copy.autoVoice;
-  }, [mode, selectedVoice, presetVoices, refAudio, copy.autoVoice]);
+  // Describe the take being played, not the current form selection.
+  const activeTake = takes.find((take) => take.id === activeTakeId);
 
   return (
     <div>
@@ -2393,7 +2821,7 @@ function WorkspaceView({
           </div>
         }
       />
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_370px]">
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_330px] xl:grid-cols-[minmax(0,1fr)_370px]">
         <Card className="overflow-hidden">
           <CardHeader className="border-b border-(--border) pb-4">
             <div className="flex flex-wrap items-center justify-between gap-4 w-full">
@@ -2415,7 +2843,9 @@ function WorkspaceView({
                   </span>
                   <span>·</span>
                   <span className="flex items-center gap-1 text-(--accent)">
-                    <Clock className="size-3" />~{estSeconds}s {copy.estimatedDuration}
+                    <Clock className="size-3" />~
+                    {estSeconds < 60 ? `${estSeconds}s` : formatDuration(estSeconds)}{" "}
+                    {copy.estimatedDuration}
                   </span>
                 </div>
 
@@ -2454,33 +2884,37 @@ function WorkspaceView({
                   )}
                 </div>
 
-                {/* Copy text */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleCopyText}
-                  className="h-8 px-2.5 text-xs text-(--muted-foreground) hover:text-(--foreground)"
-                  title={copy.copyScript}
-                >
-                  {copiedText ? (
-                    <Check className="size-3.5 text-(--success)" />
-                  ) : (
-                    <Copy className="size-3.5" />
-                  )}
-                </Button>
-
-                {/* Clear text */}
-                {text.length > 0 && (
+                <div className="flex items-center">
+                  {/* Copy text */}
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => onTextChange("")}
-                    className="h-8 px-2 text-xs text-(--muted-foreground) hover:text-(--destructive)"
-                    title={copy.clearScript}
+                    onClick={handleCopyText}
+                    className="h-8 px-2.5 text-xs text-(--muted-foreground) hover:text-(--foreground)"
+                    title={copy.copyScript}
+                    aria-label={copy.copyScript}
                   >
-                    <Trash2 className="size-3.5" />
+                    {copiedText ? (
+                      <Check className="size-3.5 text-(--success)" />
+                    ) : (
+                      <Copy className="size-3.5" />
+                    )}
                   </Button>
-                )}
+
+                  {/* Clear text */}
+                  {text.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onTextChange("")}
+                      className="h-8 px-2 text-xs text-(--muted-foreground) hover:text-(--destructive)"
+                      title={copy.clearScript}
+                      aria-label={copy.clearScript}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           </CardHeader>
@@ -2489,11 +2923,17 @@ function WorkspaceView({
               aria-label={copy.untitledSpeech}
               value={text}
               onChange={(event) => onTextChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !isGenerating) {
+                  event.preventDefault();
+                  onSynthesize();
+                }
+              }}
               className="min-h-[310px] resize-none rounded-none border-0 bg-transparent px-6 py-6 text-base leading-8 shadow-none focus-visible:ring-0"
               spellCheck={false}
             />
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-(--border) px-6 py-3 text-xs text-(--muted-foreground)">
-              <span>{copy.lineOne}</span>
+              <span>{copy.renderShortcut}</span>
               <span className="font-mono text-[10px] uppercase tracking-[0.08em]">
                 {language === "vi" ? copy.vietnameseDiacritics : copy.englishPronunciation}
               </span>
@@ -2509,20 +2949,38 @@ function WorkspaceView({
               <div>
                 <SectionLabel>{copy.outputPreview}</SectionLabel>
                 <h2 className="mt-1 text-base font-semibold">
-                  {result ? copy.renderedTake : copy.nothingRendered}
+                  {isGenerating
+                    ? copy.rendering
+                    : result
+                      ? copy.renderedTake
+                      : copy.nothingRendered}
                 </h2>
               </div>
-              {result && <Badge variant="success">{copy.ready}</Badge>}
+              {result && !isGenerating && <Badge variant="success">{copy.ready}</Badge>}
             </div>
 
-            {audioUrl && result ? (
+            {isGenerating ? (
+              <div
+                role="status"
+                className="mt-4 flex items-center gap-3 rounded-xl border border-dashed border-(--accent-border) bg-(--surface) px-4 py-6 text-sm text-(--muted-foreground)"
+              >
+                <div className="flex size-9 items-center justify-center rounded-xl bg-(--accent-soft) text-(--accent)">
+                  <LoaderCircle className="size-4 animate-spin" />
+                </div>
+                <span>{copy.rendering}</span>
+                <ElapsedTime />
+                <Button variant="ghost" size="sm" onClick={onCancelSynthesis}>
+                  <CircleStop data-icon="inline-start" />
+                  {copy.cancel}
+                </Button>
+              </div>
+            ) : result ? (
               <div className="mt-4">
                 <AudioPlayer
-                  src={audioUrl}
                   audioPath={result.audio_path}
                   format={result.format}
-                  sampleRate={provider === "vieneu" ? 48000 : 24000}
-                  voiceName={activeVoiceName}
+                  sampleRate={activeTake?.provider === "vieneu" ? 48000 : 24000}
+                  voiceName={activeTake?.voiceName}
                   copy={copy}
                   onExport={onExport}
                   autoPlay={false}
@@ -2546,7 +3004,7 @@ function WorkspaceView({
                     <SectionLabel>{copy.takeHistory}</SectionLabel>
                   </div>
                   <span className="font-mono text-[10px] text-(--muted-foreground)">
-                    {takes.length} {copy.take.toLowerCase()}(s)
+                    {takes.length} / {MAX_SESSION_TAKES}
                   </span>
                 </div>
                 <ToggleGroup
@@ -2694,7 +3152,7 @@ function WorkspaceView({
             <Separator />
             {isOmniVoice && (
               <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <Label htmlFor="speed">{copy.speed}</Label>
                   <div className="flex items-center gap-1.5">
                     <ToggleGroup
@@ -2772,16 +3230,15 @@ function WorkspaceView({
                     <Button
                       type="button"
                       variant="outline"
-                      size="xs"
+                      size="icon-sm"
                       onClick={(e) => {
                         e.stopPropagation();
                         onAdvancedChange(DEFAULT_ADVANCED);
                       }}
-                      className="gap-1"
                       title={copy.resetDefaults}
+                      aria-label={copy.resetDefaults}
                     >
-                      <RotateCcw data-icon="inline-start" />
-                      <span>{copy.resetDefaults}</span>
+                      <RotateCcw />
                     </Button>
                     <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
                   </div>
@@ -2929,16 +3386,15 @@ function WorkspaceView({
                     <Button
                       type="button"
                       variant="outline"
-                      size="xs"
+                      size="icon-sm"
                       onClick={(event) => {
                         event.stopPropagation();
                         onVieNeuAdvancedChange(DEFAULT_VIENEU);
                       }}
-                      className="gap-1"
                       title={copy.resetDefaults}
+                      aria-label={copy.resetDefaults}
                     >
-                      <RotateCcw data-icon="inline-start" />
-                      <span>{copy.resetDefaults}</span>
+                      <RotateCcw />
                     </Button>
                     <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
                   </div>
@@ -3026,22 +3482,23 @@ function WorkspaceView({
             {!isOmniVoice && vieneuAdvancedError && (
               <ErrorMessage>{vieneuAdvancedError}</ErrorMessage>
             )}
-            <div className="grid gap-2">
-              <Button size="lg" onClick={onSynthesize} disabled={isGenerating}>
-                {isGenerating ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : (
-                  <Play className="size-4 fill-current" />
-                )}
-                {isGenerating ? copy.rendering : copy.renderSpeech}
-              </Button>
-              {result && (
-                <Button variant="secondary" onClick={onExport}>
-                  <Download className="size-4" />
-                  {copy.export} {result.format.toUpperCase()}
-                </Button>
+            <Button
+              size="lg"
+              className="w-full"
+              onClick={onSynthesize}
+              disabled={isGenerating || isImportingSeed}
+            >
+              {isGenerating || isImportingSeed ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : (
+                <Play className="size-4 fill-current" />
               )}
-            </div>
+              {isGenerating
+                ? copy.rendering
+                : isImportingSeed
+                  ? copy.importingSeedFolder
+                  : copy.renderSpeech}
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -3076,13 +3533,9 @@ function TranscribeView({
   onCancel: () => void;
   onSave: () => void;
 }) {
-  const phaseLabel = progress
-    ? (copy.transcribePhases[progress.phase] ?? progress.phase)
-    : null;
+  const phaseLabel = progress ? (copy.transcribePhases[progress.phase] ?? progress.phase) : null;
   const percent =
-    progress && typeof progress.progress === "number"
-      ? Math.round(progress.progress * 100)
-      : null;
+    progress && typeof progress.progress === "number" ? Math.round(progress.progress * 100) : null;
   return (
     <div>
       <PageHeader
@@ -3103,44 +3556,49 @@ function TranscribeView({
       <div className="grid items-start gap-5">
         <Card className="overflow-hidden">
           <CardHeader className="border-b border-(--border) pb-4">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <SectionLabel>{copy.transcribeVideoLink}</SectionLabel>
-                <CardTitle className="mt-1">{copy.transcribeStart}</CardTitle>
-              </div>
-              <div className="flex items-center gap-2">
-                {isTranscribing && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={onCancel}
-                    disabled={isCancelling}
-                  >
-                    <CircleStop data-icon="inline-start" />
-                    {isCancelling ? copy.transcribeCancelling : copy.transcribeCancel}
-                  </Button>
-                )}
-                <Button size="sm" onClick={onStart} disabled={isTranscribing}>
-                  {isTranscribing ? (
-                    <LoaderCircle className="animate-spin" data-icon="inline-start" />
-                  ) : (
-                    <FileVideo data-icon="inline-start" />
-                  )}
-                  {isTranscribing ? copy.transcribeTranscribing : copy.transcribeStart}
-                </Button>
-              </div>
+            <div>
+              <SectionLabel>{copy.transcribeVideoLink}</SectionLabel>
+              <CardTitle className="mt-1">{copy.transcribeStart}</CardTitle>
             </div>
           </CardHeader>
           <CardContent className="space-y-4 p-5">
-            <Input
-              aria-label={copy.transcribeVideoLink}
-              value={url}
-              onChange={(event) => onUrlChange(event.target.value)}
-              placeholder={copy.transcribeVideoLinkPlaceholder}
-              disabled={isTranscribing}
-              inputMode="url"
-              spellCheck={false}
-            />
+            <form
+              className="flex flex-col gap-2 sm:flex-row"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!isTranscribing) onStart();
+              }}
+            >
+              <Input
+                className="flex-1"
+                aria-label={copy.transcribeVideoLink}
+                value={url}
+                onChange={(event) => onUrlChange(event.target.value)}
+                placeholder={copy.transcribeVideoLinkPlaceholder}
+                disabled={isTranscribing}
+                inputMode="url"
+                spellCheck={false}
+              />
+              {isTranscribing && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={onCancel}
+                  disabled={isCancelling}
+                >
+                  <CircleStop data-icon="inline-start" />
+                  {isCancelling ? copy.transcribeCancelling : copy.transcribeCancel}
+                </Button>
+              )}
+              <Button type="submit" disabled={isTranscribing}>
+                {isTranscribing ? (
+                  <LoaderCircle className="animate-spin" data-icon="inline-start" />
+                ) : (
+                  <FileVideo data-icon="inline-start" />
+                )}
+                {isTranscribing ? copy.transcribeTranscribing : copy.transcribeStart}
+              </Button>
+            </form>
             <p className="text-xs leading-5 text-(--muted-foreground)">
               {copy.transcribeAuthorizationNotice}
             </p>
@@ -3149,7 +3607,10 @@ function TranscribeView({
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs text-(--muted-foreground)">
                   <span>{phaseLabel ?? copy.transcribeTranscribing}</span>
-                  {percent !== null && <span className="font-mono">{percent}%</span>}
+                  <span className="flex items-center gap-3">
+                    {percent !== null && <span className="font-mono">{percent}%</span>}
+                    <ElapsedTime />
+                  </span>
                 </div>
                 <Progress value={percent ?? 0} />
               </div>
@@ -3174,8 +3635,7 @@ function TranscribeView({
                       : copy.transcribeSourceFacebook}
                   </Badge>
                   <Badge variant="secondary">
-                    {copy.transcribeDurationLabel} ·{" "}
-                    {formatDuration(result.duration_seconds)}
+                    {copy.transcribeDurationLabel} · {formatDuration(result.duration_seconds)}
                   </Badge>
                 </div>
               </div>
@@ -3239,6 +3699,7 @@ function App() {
   const [refAudio, setRefAudio] = useState<string | null>(null);
   const [refText, setRefText] = useState("");
   const [deletingAudioFile, setDeletingAudioFile] = useState<string | null>(null);
+  const [renamingAudioFile, setRenamingAudioFile] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [isCancellingSeed, setIsCancellingSeed] = useState(false);
   const [seedProgress, setSeedProgress] = useState<ProgressEvent | null>(null);
@@ -3270,8 +3731,19 @@ function App() {
   const [theme, setTheme] = useState<ThemeMode>(readTheme);
   const [takes, setTakes] = useState<TakeItem[]>([]);
   const [activeTakeId, setActiveTakeId] = useState<string | null>(null);
+  const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
+  const [dismissedUpdateTag, setDismissedUpdateTag] = useState<string | null>(() =>
+    readDismissedTag(),
+  );
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+  const [manualUpdateFeedback, setManualUpdateFeedback] = useState<
+    "none" | "current" | "unavailable"
+  >("none");
   const bundledSeedImportStarted = useRef(false);
+  const vieneuAutoSeedStarted = useRef(false);
+  const renderCancelled = useRef(false);
   const lastView = useRef<AppView>(view);
+  const sidecarStopped = useRef(false);
 
   useEffect(() => {
     applyTheme(theme);
@@ -3285,7 +3757,7 @@ function App() {
   const appLanguage: AppLanguage = translator.language === "vi" ? "vi" : "en";
   const copy: UiCopy = createUiCopy(t);
   const queryClient = useQueryClient();
-  const statusQuery = useQuery({
+  const statusQuery = useQuery<StatusResult | null>({
     queryKey: STATUS_QUERY_KEY,
     queryFn: () => client.request<StatusResult>({ type: "status" }),
   });
@@ -3419,6 +3891,31 @@ function App() {
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: VOICES_QUERY_KEY }),
   });
+  const apiStateQuery = useQuery({
+    queryKey: API_STATE_QUERY_KEY,
+    queryFn: () => client.apiStatus(),
+    enabled: view === "settings" && engineOnline,
+  });
+  const localApi = apiStateQuery.data ?? null;
+  const [localApiError, setLocalApiError] = useState<string | null>(null);
+  const apiStartMutation = useMutation({
+    mutationFn: () => client.startLocalApi(),
+    onSuccess: (state) => {
+      setLocalApiError(null);
+      queryClient.setQueryData(API_STATE_QUERY_KEY, state);
+    },
+    onError: (reason) =>
+      setLocalApiError(reason instanceof Error ? reason.message : copy.apiStartFailed),
+  });
+  const apiStopMutation = useMutation({
+    mutationFn: () => client.stopLocalApi(),
+    onSuccess: (state) => {
+      setLocalApiError(null);
+      queryClient.setQueryData(API_STATE_QUERY_KEY, state);
+    },
+    onError: (reason) =>
+      setLocalApiError(reason instanceof Error ? reason.message : copy.apiStopFailed),
+  });
   const synthesisMutation = useMutation({
     mutationFn: (request: { type: string; [key: string]: unknown }) =>
       client.request<SynthesisResult>(request),
@@ -3464,16 +3961,43 @@ function App() {
       }
     },
   });
+  const renameHistoryMutation = useMutation({
+    mutationFn: (request: { fileName: string; newName: string }) =>
+      client.request<RenameAudioHistoryResult>({
+        type: "rename_audio_history",
+        file_name: request.fileName,
+        new_name: request.newName,
+      }),
+    onSuccess: async (response, request) => {
+      await queryClient.resetQueries({ queryKey: AUDIO_HISTORY_QUERY_KEY, exact: true });
+      setTakes((current) =>
+        current.map((take) =>
+          fileName(take.audioPath) === request.fileName
+            ? { ...take, audioPath: response.audio_path }
+            : take,
+        ),
+      );
+      setResult((current) =>
+        current && fileName(current.audio_path) === request.fileName
+          ? { ...current, audio_path: response.audio_path }
+          : current,
+      );
+    },
+  });
   const historyLoadError = historyQuery.error
     ? historyQuery.error instanceof Error
       ? `${copy.audioHistoryLoadFailed}: ${historyQuery.error.message}`
       : copy.audioHistoryLoadFailed
     : null;
-  const audioHistoryError = deleteHistoryMutation.error
-    ? deleteHistoryMutation.error instanceof Error
-      ? `${copy.audioHistoryDeleteFailed}: ${deleteHistoryMutation.error.message}`
-      : copy.audioHistoryDeleteFailed
-    : historyLoadError;
+  const audioHistoryError = renameHistoryMutation.error
+    ? renameHistoryMutation.error instanceof Error
+      ? `${copy.audioHistoryRenameFailed}: ${renameHistoryMutation.error.message}`
+      : copy.audioHistoryRenameFailed
+    : deleteHistoryMutation.error
+      ? deleteHistoryMutation.error instanceof Error
+        ? `${copy.audioHistoryDeleteFailed}: ${deleteHistoryMutation.error.message}`
+        : copy.audioHistoryDeleteFailed
+      : historyLoadError;
   const isPreparing = preparingProviders.length > 0;
   const isSavingProfile = saveProfileMutation.isPending;
   const isImportingVoice = importVoiceMutation.isPending;
@@ -3497,7 +4021,10 @@ function App() {
     ? providerIsReady(providerStatuses.omnivoice)
     : Boolean(engineStatus?.model_ready);
   const presetVoices = engineStatus?.providers?.vieneu?.preset_voices ?? [];
-  const audioUrl = useMemo(() => (result ? convertFileSrc(result.audio_path) : null), [result]);
+  const visibleUpdate =
+    updateResult?.kind === "available" && updateResult.tag !== dismissedUpdateTag
+      ? updateResult
+      : null;
 
   async function importBundledSeedVoices() {
     if (bundledSeedImportStarted.current) return;
@@ -3524,12 +4051,37 @@ function App() {
         setModelProgress((current) => ({ ...current, [target]: event }));
       }
     });
-    const unsubscribeLogs = client.onLog(() => setLogs(client.getLogs()));
+    const unsubscribeLogs = client.onLog((entry) => {
+      setLogs(client.getLogs());
+      if (entry.operation === "sidecar_exit" && entry.id.startsWith("sidecar-exit-")) {
+        sidecarStopped.current = true;
+        queryClient.setQueryData<StatusResult | null>(STATUS_QUERY_KEY, null);
+      } else if (
+        sidecarStopped.current &&
+        entry.status === "success" &&
+        /^\d+$/.test(entry.id)
+      ) {
+        sidecarStopped.current = false;
+        if (entry.operation !== "status") {
+          void queryClient.invalidateQueries({ queryKey: STATUS_QUERY_KEY });
+        }
+      }
+    });
     return () => {
       unsubscribe();
       unsubscribeLogs();
       void client.stop();
     };
+  }, []);
+
+  useEffect(() => {
+    if (!automaticCheckDue()) return;
+    recordAutomaticCheck();
+    void getVersion()
+      .catch(() => null)
+      .then((version) => checkLatestRelease(version))
+      .then(setUpdateResult)
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -3564,13 +4116,10 @@ function App() {
     client.hydrateDiagnostics([...(engineStatus.diagnostics ?? []), ...getFrontendDiagnostics()]);
   }, [engineStatus]);
 
+  // Bundled OmniVoice seeds import whichever provider is selected.
   useEffect(() => {
-    if (!engineStatus) return;
-    const selectedReady = engineStatus.providers
-      ? providerIsReady(engineStatus.providers[provider])
-      : provider === "omnivoice" && engineStatus.model_ready;
-    if (selectedReady && provider === "omnivoice") void importBundledSeedVoices();
-  }, [engineStatus, provider]);
+    if (omniVoiceReady) void importBundledSeedVoices();
+  }, [omniVoiceReady]);
 
   useEffect(() => {
     const loadedVoices = voicesQuery.data?.voices;
@@ -3644,7 +4193,7 @@ function App() {
       requested.map(async (target) => {
         try {
           await prepareMutation.mutateAsync(target);
-          if (target === "omnivoice" && target === provider) {
+          if (target === "omnivoice") {
             await importBundledSeedVoices();
           } else if (target === provider) {
             await queryClient.invalidateQueries({ queryKey: VOICES_QUERY_KEY });
@@ -3677,6 +4226,61 @@ function App() {
     await statusQuery.refetch();
   }
 
+  async function checkForUpdatesManually() {
+    if (isCheckingUpdates) return;
+    setIsCheckingUpdates(true);
+    setManualUpdateFeedback("none");
+    const installedVersion = await getVersion().catch(() => null);
+    const result = await checkLatestRelease(installedVersion);
+    setUpdateResult(result);
+    setIsCheckingUpdates(false);
+    if (result.kind === "unavailable") {
+      setManualUpdateFeedback("unavailable");
+    } else if (result.kind !== "available") {
+      setManualUpdateFeedback("current");
+    } else if (result.tag === dismissedUpdateTag) {
+      clearDismissedTag();
+      setDismissedUpdateTag(null);
+    }
+  }
+
+  function dismissUpdateBanner() {
+    if (!visibleUpdate) return;
+    dismissUpdateTag(visibleUpdate.tag);
+    setDismissedUpdateTag(visibleUpdate.tag);
+  }
+
+  async function openUpdateRelease() {
+    if (!visibleUpdate) return;
+    try {
+      await shellOpen(visibleUpdate.url);
+    } catch {
+      recordFrontendDiagnostic(
+        "frontend_error",
+        "release_link_open_failed",
+        undefined,
+        "Could not open the release page.",
+      );
+    }
+  }
+
+  async function openCommunityPage(page: "ideas" | "repository") {
+    const url =
+      page === "ideas"
+        ? "https://github.com/az-forge/volo-ai/discussions/categories/ideas"
+        : "https://github.com/az-forge/volo-ai";
+    try {
+      await shellOpen(url);
+    } catch {
+      recordFrontendDiagnostic(
+        "frontend_error",
+        "community_link_open_failed",
+        undefined,
+        "Could not open the GitHub community page.",
+      );
+    }
+  }
+
   async function cancelModelPreparation() {
     if (!isPreparing) return;
     setIsCancelling(true);
@@ -3697,12 +4301,14 @@ function App() {
 
   async function refreshAudioHistory() {
     deleteHistoryMutation.reset();
+    renameHistoryMutation.reset();
     await queryClient.resetQueries({ queryKey: AUDIO_HISTORY_QUERY_KEY, exact: true });
   }
 
   async function loadMoreAudioHistory() {
     if (!historyQuery.hasNextPage || historyQuery.isFetchingNextPage) return;
     deleteHistoryMutation.reset();
+    renameHistoryMutation.reset();
     await historyQuery.fetchNextPage();
   }
 
@@ -3710,6 +4316,7 @@ function App() {
     if (nextView === view) return;
     if (nextView === "history") {
       deleteHistoryMutation.reset();
+      renameHistoryMutation.reset();
       queryClient.removeQueries({ queryKey: AUDIO_HISTORY_QUERY_KEY, exact: true });
     }
     setView(nextView);
@@ -3730,7 +4337,6 @@ function App() {
     if (next === "omnivoice") {
       setMode("auto");
       setSelectedVoice("auto");
-      if (omniVoiceReady) void importBundledSeedVoices();
     } else {
       setMode("preset");
       setSelectedVoice(engineStatus?.providers?.vieneu?.default_voice ?? "");
@@ -3858,7 +4464,7 @@ function App() {
     }
   }
 
-  async function seedVieNeuVoices() {
+  async function seedVieNeuVoices(): Promise<SeedVieNeuResult | null> {
     setIsCancellingSeed(false);
     setSeedProgress(null);
     setSeedResult(null);
@@ -3868,12 +4474,27 @@ function App() {
     try {
       const result = await seedVieNeuMutation.mutateAsync();
       setSeedResult(result);
+      return result;
     } catch (reason) {
       setSeedError(reason instanceof Error ? reason.message : copy.seedVieNeuFailed);
+      return null;
     } finally {
       setIsCancellingSeed(false);
     }
   }
+
+  // Once both models are ready, turn every VieNeu preset into a profile that
+  // OmniVoice can also clone, so a fresh install starts with a voice library.
+  useEffect(() => {
+    if (!allProvidersReady || vieneuAutoSeedStarted.current) return;
+    if (localStorage.getItem(VIENEU_SEEDED_KEY)) return;
+    vieneuAutoSeedStarted.current = true;
+    void seedVieNeuVoices().then((result) => {
+      if (result && !result.cancelled && !result.failed.length && !result.unfinished.length) {
+        localStorage.setItem(VIENEU_SEEDED_KEY, "1");
+      }
+    });
+  }, [allProvidersReady]);
 
   async function cancelSeedVieNeuVoices() {
     setIsCancellingSeed(true);
@@ -3953,7 +4574,6 @@ function App() {
     }
     setAdvancedError(null);
     setVieNeuAdvancedError(null);
-    setResult(null);
     try {
       const request: { type: string; [key: string]: unknown } = {
         type: "synthesize",
@@ -3982,13 +4602,19 @@ function App() {
           request.ref_audio = refAudio;
         }
       }
+      renderCancelled.current = false;
       const response = await synthesisMutation.mutateAsync(request);
       setResult(response);
-      const activeVoiceLabel =
-        mode === "profile"
+      const presetId =
+        mode === "preset"
           ? selectedVoice
-          : mode === "preset"
-            ? (presetVoices.find((p) => p.id === selectedVoice)?.label ?? selectedVoice)
+          : voices.find((voice) => voice.name === selectedVoice && voice.kind === "vieneu_preset")
+              ?.preset_id;
+      const activeVoiceLabel =
+        presetId
+          ? (presetVoices.find((p) => p.id === presetId)?.name ?? selectedVoice)
+          : mode === "profile"
+            ? selectedVoice
             : refAudio
               ? fileName(refAudio)
               : copy.autoVoice;
@@ -4001,11 +4627,23 @@ function App() {
         audioPath: response.audio_path,
         text,
       };
-      setTakes((prev) => [newTake, ...prev.slice(0, 4)]);
+      setTakes((prev) => [newTake, ...prev.slice(0, MAX_SESSION_TAKES - 1)]);
       setActiveTakeId(newTake.id);
     } catch (reason) {
+      if (renderCancelled.current) return;
       setError(reason instanceof Error ? reason.message : copy.synthesisFailed);
     }
+  }
+
+  async function cancelRender() {
+    renderCancelled.current = true;
+    if (await client.cancelSynthesis()) {
+      // Restarting the engine also stops the local API server it hosts.
+      void queryClient.invalidateQueries({ queryKey: API_STATE_QUERY_KEY });
+      return;
+    }
+    renderCancelled.current = false;
+    setError(copy.cancelRenderBusy);
   }
 
   function handleSelectTake(take: TakeItem) {
@@ -4121,25 +4759,26 @@ function App() {
       return;
     }
     setProfileError(null);
+    const name = toVoiceName(profileName) || profileName.trim();
     try {
       let request: SaveProfileRequest;
       if (profileKind === "vieneu_preset") {
         request = {
           kind: "vieneu_preset",
-          name: profileName.trim(),
+          name,
           presetId: profilePresetId,
         };
       } else if (profileKind === "design") {
         request = {
           kind: "design",
-          name: profileName.trim(),
+          name,
           instruction: designInstruction.trim(),
           language,
         };
       } else {
         request = {
           kind: "clone",
-          name: profileName.trim(),
+          name,
           refAudio: refAudio!,
           refText: refText || undefined,
           language,
@@ -4191,13 +4830,24 @@ function App() {
     }
   }
 
+  async function renameAudioHistory(fileName: string, newName: string) {
+    setRenamingAudioFile(fileName);
+    try {
+      await renameHistoryMutation.mutateAsync({ fileName, newName });
+    } finally {
+      setRenamingAudioFile(null);
+    }
+  }
+
   function useProfile(name: string) {
     const profile = voices.find((voice) => voice.name === name);
     if (provider === "vieneu" && profile?.kind === "design") {
       setError(copy.vieneuDesignUnsupported);
       return;
     }
-    if (profile?.kind === "vieneu_preset" && !profile.ref_audio && provider !== "vieneu") {
+    const switchToVieNeu =
+      profile?.kind === "vieneu_preset" && !profile.ref_audio && provider !== "vieneu";
+    if (switchToVieNeu) {
       setProvider("vieneu");
       localStorage.setItem("volo-ai.provider", "vieneu");
       setError(null);
@@ -4205,8 +4855,18 @@ function App() {
       setRefAudio(null);
       void queryClient.invalidateQueries({ queryKey: VOICES_QUERY_KEY });
     }
-    setSelectedVoice(name);
-    setMode("profile");
+    if (
+      profile?.kind === "vieneu_preset" &&
+      profile.preset_id &&
+      (switchToVieNeu || provider === "vieneu")
+    ) {
+      // VieNeu lists presets directly, so select the preset this profile stands for.
+      setSelectedVoice(profile.preset_id);
+      setMode("preset");
+    } else {
+      setSelectedVoice(name);
+      setMode("profile");
+    }
     navigateTo("workspace");
     setProfileError(null);
   }
@@ -4217,9 +4877,7 @@ function App() {
       if (localized) return localized;
       return reason.message || copy.transcribeErrors.transcription_failed;
     }
-    return reason instanceof Error
-      ? reason.message
-      : copy.transcribeErrors.transcription_failed;
+    return reason instanceof Error ? reason.message : copy.transcribeErrors.transcription_failed;
   }
 
   async function startTranscription() {
@@ -4263,9 +4921,7 @@ function App() {
       filters: [{ name: "SRT", extensions: ["srt"] }],
     });
     if (typeof destination !== "string") return;
-    const path = destination.toLowerCase().endsWith(".srt")
-      ? destination
-      : `${destination}.srt`;
+    const path = destination.toLowerCase().endsWith(".srt") ? destination : `${destination}.srt`;
     try {
       await writeTextFile(path, transcribeResult.srt);
       setTranscribeSaved(true);
@@ -4277,8 +4933,10 @@ function App() {
 
   async function exportAudio() {
     if (!result) return;
+    const script = takes.find((take) => take.id === activeTakeId)?.text ?? "";
+    const stem = toVoiceName(script.trim().split(/\s+/).slice(0, 6).join(" ")) || "volo-ai-output";
     const destination = await save({
-      defaultPath: `volo-ai-output.${result.format}`,
+      defaultPath: `${stem}.${result.format}`,
       filters: [{ name: result.format.toUpperCase(), extensions: [result.format] }],
     });
     if (typeof destination === "string") {
@@ -4299,24 +4957,40 @@ function App() {
     !(view === "transcribe" && omniVoiceReady)
   )
     return (
-      <SetupScreen
-        copy={copy}
-        providers={providerStatuses}
-        progressEvents={modelProgress}
-        providerErrors={modelPreparationErrors}
-        preparingProviders={preparingProviders}
-        isPreparing={isPreparing}
-        isCancelling={isCancelling}
-        setupError={setupError ?? modelStatusError}
-        canPrepare={canPrepareAllModels}
-        omniVoiceReady={omniVoiceReady}
-        onPrepareAll={() => void prepareBothModels()}
-        onCancel={() => void cancelModelPreparation()}
-        onOpenProfiles={() => navigateTo("profiles")}
-        onOpenHistory={() => navigateTo("history")}
-        onOpenSettings={() => navigateTo("settings")}
-        onOpenTranscribe={() => navigateTo("transcribe")}
-      />
+      <>
+        {visibleUpdate && (
+          <div className="bg-(--background) px-6 pt-6">
+            <div className="mx-auto max-w-4xl">
+              <UpdateBanner
+                copy={copy}
+                tag={visibleUpdate.tag}
+                onOpenRelease={() => void openUpdateRelease()}
+                onDismiss={dismissUpdateBanner}
+              />
+            </div>
+          </div>
+        )}
+        <SetupScreen
+          copy={copy}
+          providers={providerStatuses}
+          progressEvents={modelProgress}
+          providerErrors={modelPreparationErrors}
+          preparingProviders={preparingProviders}
+          isPreparing={isPreparing}
+          isCancelling={isCancelling}
+          setupError={setupError ?? modelStatusError}
+          canPrepare={canPrepareAllModels}
+          omniVoiceReady={omniVoiceReady}
+          engineFailed={!engineStatus && statusQuery.isError}
+          onRetryEngine={() => void refreshModelStatus()}
+          onPrepareAll={() => void prepareBothModels()}
+          onCancel={() => void cancelModelPreparation()}
+          onOpenProfiles={() => navigateTo("profiles")}
+          onOpenHistory={() => navigateTo("history")}
+          onOpenSettings={() => navigateTo("settings")}
+          onOpenTranscribe={() => navigateTo("transcribe")}
+        />
+      </>
     );
 
   const transition = { duration: prefersReducedMotion ? 0 : 0.22, ease: "easeOut" as const };
@@ -4330,8 +5004,8 @@ function App() {
   ];
   return (
     <MotionConfig reducedMotion="user">
-      <main className="flex min-h-screen bg-(--background) text-(--foreground)">
-        <aside className="hidden w-64 shrink-0 flex-col border-r border-(--border) bg-(--surface) px-4 py-5 md:flex">
+      <main className="flex h-screen overflow-hidden bg-(--background) text-(--foreground)">
+        <aside className="hidden w-64 shrink-0 flex-col overflow-y-auto border-r border-(--border) bg-(--surface) px-4 py-5 md:flex">
           <div className="flex items-center gap-3 px-2 pb-10">
             <div className="grid size-10 place-items-center rounded-xl bg-(--accent) text-white shadow-[0_8px_20px_rgb(191_95_69/20%)]">
               <AudioLines className="size-5" />
@@ -4412,8 +5086,16 @@ function App() {
             </p>
           </div>
         </aside>
-        <section className="min-w-0 flex-1 overflow-auto">
-          <div className="mx-auto w-full max-w-[1440px] px-5 py-6 sm:px-8 sm:py-8 lg:px-10">
+        <section className="flex min-w-0 flex-1 flex-col overflow-auto">
+          <div className="mx-auto w-full max-w-[1440px] flex-1 px-5 py-6 sm:px-8 sm:py-8 lg:px-10">
+            {visibleUpdate && (
+              <UpdateBanner
+                copy={copy}
+                tag={visibleUpdate.tag}
+                onOpenRelease={() => void openUpdateRelease()}
+                onDismiss={dismissUpdateBanner}
+              />
+            )}
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={view}
@@ -4448,6 +5130,12 @@ function App() {
                     isRefreshingStatus={isRefreshingStatus}
                     isPreparing={isPreparing}
                     preparingProviders={preparingProviders}
+                    localApi={localApi}
+                    localApiError={localApiError}
+                    isStartingLocalApi={apiStartMutation.isPending}
+                    isStoppingLocalApi={apiStopMutation.isPending}
+                    onStartLocalApi={() => apiStartMutation.mutate()}
+                    onStopLocalApi={() => apiStopMutation.mutate()}
                     onSelectProvider={changeProvider}
                     onPrepareProvider={(target) => void prepareModel(target)}
                     onCancelPrepare={() => void cancelModelPreparation()}
@@ -4461,6 +5149,10 @@ function App() {
                     }}
                     onCancelRuntime={cancelRuntimeInstall}
                     onRemoveRuntime={() => runtimeRemoveMutation.mutate()}
+                    isCheckingUpdates={isCheckingUpdates}
+                    manualUpdateFeedback={manualUpdateFeedback}
+                    onCheckForUpdates={() => void checkForUpdatesManually()}
+                    onOpenCommunityPage={(page) => void openCommunityPage(page)}
                     onBack={() => navigateTo("workspace")}
                   />
                 ) : view === "logs" ? (
@@ -4503,9 +5195,11 @@ function App() {
                     isLoadingMore={isLoadingMoreAudioHistory}
                     error={audioHistoryError}
                     deletingFileName={deletingAudioFile}
+                    renamingFileName={renamingAudioFile}
                     onRetry={() => void refreshAudioHistory()}
                     onLoadMore={() => void loadMoreAudioHistory()}
                     onDelete={(fileName) => void deleteAudioHistory(fileName)}
+                    onRename={renameAudioHistory}
                   />
                 ) : view === "profiles" ? (
                   <VoiceProfilesView
@@ -4571,9 +5265,9 @@ function App() {
                     selectedVoice={selectedVoice}
                     refAudio={refAudio}
                     result={result}
-                    audioUrl={audioUrl}
                     error={error}
                     isGenerating={isGenerating}
+                    isImportingSeed={isImportingSeed}
                     takes={takes}
                     activeTakeId={activeTakeId}
                     onSelectTake={handleSelectTake}
@@ -4590,20 +5284,25 @@ function App() {
                     onVoiceSelectionChange={changeVoiceSelection}
                     onChooseReference={() => void chooseReference()}
                     onSynthesize={() => void synthesize()}
+                    onCancelSynthesis={() => void cancelRender()}
                     onExport={() => void exportAudio()}
                   />
                 )}
               </motion.div>
             </AnimatePresence>
           </div>
-          <footer className="border-t border-(--border) bg-(--surface) px-5 py-3 sm:px-8 lg:px-10">
+          <footer className="sticky bottom-0 border-t border-(--border) bg-(--surface) px-5 py-3 sm:px-8 lg:px-10">
             <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-(--muted-foreground)">
-              <span className="flex items-center gap-2 text-(--success)">
-                <span className="size-1.5 rounded-full bg-(--success)" />
-                {copy.engineReady}
+              <span
+                className={`flex items-center gap-2 ${engineOnline && modelReady ? "text-(--success)" : "text-(--destructive)"}`}
+              >
+                <span
+                  className={`size-1.5 rounded-full ${engineOnline && modelReady ? "bg-(--success)" : "bg-(--destructive)"}`}
+                />
+                {engineOnline && modelReady ? copy.engineReady : copy.engineUnavailable}
               </span>
               <span>
-                {copy.device} / {engineOnline ? "AUTO" : "OFFLINE"}
+                {copy.device} / {engineOnline ? device.toUpperCase() : "OFFLINE"}
               </span>
               <span>
                 {copy.sampleRate} / {provider === "vieneu" ? 48000 : 24000} HZ

@@ -770,6 +770,75 @@ class EngineTests(unittest.TestCase):
                         Engine.record_audio_history(**{**valid, key: value})
                 self.assertEqual(Engine.list_audio_history(), [])
 
+    def test_audio_history_rename_preserves_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.storage_patches(Path(tmp)):
+                entry = {
+                    "file_name": "take.wav",
+                    "provider": "omnivoice",
+                    "voice_name": "auto",
+                    "format": "wav",
+                    "text": "hello",
+                    "created_at": "2026-10-08T12:00:00+00:00",
+                }
+                Engine.record_audio_history(**entry)
+
+                self.assertTrue(Engine.rename_audio_history("take.wav", "renamed.wav"))
+                self.assertEqual(
+                    Engine.list_audio_history(), [{**entry, "file_name": "renamed.wav"}]
+                )
+                self.assertFalse(Engine.rename_audio_history("take.wav", "other.wav"))
+                self.assertEqual(
+                    Engine.list_audio_history(), [{**entry, "file_name": "renamed.wav"}]
+                )
+
+    def test_audio_history_rename_rejects_invalid_names(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.storage_patches(Path(tmp)):
+                entry = {
+                    "file_name": "take.wav",
+                    "provider": "omnivoice",
+                    "voice_name": "auto",
+                    "format": "wav",
+                    "text": "hello",
+                    "created_at": "2026-10-08T12:00:00+00:00",
+                }
+                Engine.record_audio_history(**entry)
+
+                for old_name, new_name in (
+                    ("../take.wav", "renamed.wav"),
+                    ("take.flac", "renamed.wav"),
+                    ("take.wav", "../renamed.wav"),
+                    ("take.wav", "renamed.flac"),
+                    ("take.wav", ""),
+                    ("take.wav", "nested/renamed.wav"),
+                ):
+                    with self.subTest(old=old_name, new=new_name), self.assertRaises(
+                        ValueError
+                    ):
+                        Engine.rename_audio_history(old_name, new_name)
+                self.assertEqual(Engine.list_audio_history(), [entry])
+
+    def test_audio_history_rename_collision_keeps_existing_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.storage_patches(Path(tmp)):
+                base = {
+                    "provider": "omnivoice",
+                    "voice_name": "auto",
+                    "format": "wav",
+                    "text": "hello",
+                    "created_at": "2026-10-08T12:00:00+00:00",
+                }
+                Engine.record_audio_history(file_name="take.wav", **base)
+                Engine.record_audio_history(file_name="taken.wav", **base)
+
+                with self.assertRaises(sqlite3.IntegrityError):
+                    Engine.rename_audio_history("take.wav", "taken.wav")
+                self.assertEqual(
+                    [row["file_name"] for row in Engine.list_audio_history()],
+                    ["take.wav", "taken.wav"],
+                )
+
     def test_save_voice_copies_reference_and_persists_metadata(self):
         engine = Engine()
         engine._model = FakeModel()
@@ -1034,10 +1103,53 @@ class EngineTests(unittest.TestCase):
         model._asr_pipe.assert_called_once()
         inputs, kwargs = model._asr_pipe.call_args
         self.assertEqual(kwargs["return_timestamps"], True)
-        self.assertEqual(kwargs["chunk_length_s"], 30)
+        # Chunked decoding merged minutes of speech into one cue; long-form must stay sequential.
+        self.assertNotIn("chunk_length_s", kwargs)
         payload = inputs[0]
         self.assertEqual(payload["sampling_rate"], 16000)
         self.assertEqual(payload["array"].shape, (1600,))
+
+    def test_generation_and_transcription_never_run_concurrently(self):
+        # Concurrent model calls abort the process on MPS (Metal command buffer assertion).
+        import threading
+
+        import torch  # noqa: F401  # first import is slow and would stagger the threads
+
+        engine = Engine()
+        model = Mock()
+        active = []
+        overlap = []
+
+        both_inside = threading.Event()
+
+        def busy(*_args, **_kwargs):
+            active.append(1)
+            overlap.append(len(active))
+            if len(active) == 2:
+                both_inside.set()
+            # Without serialization the other call enters while this one waits here.
+            both_inside.wait(timeout=0.5)
+            active.pop()
+            return [np.zeros(1, dtype=np.float32)]
+
+        # Plain callables: Mock serializes its own calls and would hide the race.
+        model.generate = busy
+        model._asr_pipe = lambda *a, **k: busy() and {"text": "", "chunks": []}
+        with patch.object(engine, "_model", model):
+            threads = [
+                threading.Thread(target=lambda: engine.generate(text="hello")),
+                threading.Thread(
+                    target=lambda: engine.transcribe_with_timestamps(
+                        (np.zeros(1600, dtype=np.float32), 16000)
+                    )
+                ),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+        self.assertEqual(len(overlap), 2)
+        self.assertEqual(max(overlap), 1)
 
     def test_transcribe_with_timestamps_requires_loaded_pipeline(self):
         engine = Engine()

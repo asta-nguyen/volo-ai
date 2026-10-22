@@ -571,7 +571,18 @@ class MCPProtocolTests(unittest.IsolatedAsyncioTestCase):
                 )
 
         self.assertTrue(result.is_error)
+        self.assertIn("VieNeu model is not ready", result.content[0].text)
         engine.generate.assert_not_called()
+
+    async def test_validation_error_text_reaches_mcp_client(self):
+        async with Client(server) as client:
+            result = await client.call_tool(
+                "speak",
+                {"text": "hello", "output_path": "/tmp/speech.wav", "provider": "nope"},
+            )
+
+        self.assertTrue(result.is_error)
+        self.assertIn("Unknown provider", result.content[0].text)
 
     async def test_calls_clone_with_saved_design_profile(self):
         engine = Mock()
