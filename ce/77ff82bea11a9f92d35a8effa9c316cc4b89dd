@@ -1,0 +1,21 @@
+docs/agent-devkit/INDEX.md
+  s_c312af879b9676::t_95d6c216aa80c1 7
+docs/agent-devkit/changes/archive/2026-10-22-9-linux-media-reliability/design.md
+  s_c312af879b9676::t_87625c3d40664d 59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ce77ff82bea11a9f92d35a8effa9c316cc4b89dd",
+  "prompts": {},
+  "sessions": {
+    "s_c312af879b9676": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "continuous-challenge",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
