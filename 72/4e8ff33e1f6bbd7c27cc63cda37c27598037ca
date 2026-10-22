@@ -1,0 +1,14 @@
+.gitignore
+  h_611058a46223af 49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "724e8ff33e1f6bbd7c27cc63cda37c27598037ca",
+  "prompts": {},
+  "humans": {
+    "h_611058a46223af": {
+      "author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
