@@ -1,0 +1,100 @@
+docs/agent-devkit/changes/archive/2026-10-22-desktop-feedback-links/design.md
+  s_5bdbace62889e7::t_ca3281ac7a2fd7 1-52
+apps/desktop/src-tauri/tauri.conf.json
+  s_62de744ec2ada8::t_cb653399aa1be8 37-42
+  s_5bdbace62889e7::t_5769404debccc6 46
+apps/desktop/src/components/AudioPlayer.tsx
+  s_62de744ec2ada8::t_512023700f422b 2-3
+  s_62de744ec2ada8::t_49353b63f45545 499-507
+  s_62de744ec2ada8::t_9da0f2d7034499 30-48,50,72-100,498
+  s_62de744ec2ada8::t_c62c293f6b1b8d 446,450,455-456,458-464,469,471-475,477-495
+  s_8024d04858070e::t_abfd2bfcfd632c 360
+docs/llm/INDEX.md
+  s_5bdbace62889e7::t_4705ab238677a4 57-59
+docs/agent-devkit/changes/2026-10-22-9-linux-media-reliability/design.md
+  s_3986025d6679af::t_a4bc1dcf37411f 25
+  s_3986025d6679af::t_483cabe65fd02a 1-24,26-59
+docs/agent-devkit/INDEX.md
+  s_3986025d6679af::t_6a9af046f45c09 5-6
+  s_5bdbace62889e7::t_ca3281ac7a2fd7 9
+docs/agent-devkit/changes/archive/2026-10-22-desktop-feedback-links/tasks.md
+  s_5bdbace62889e7::t_04ede5c23ecb35 1-94
+apps/desktop/src-tauri/capabilities/default.json
+  s_62de744ec2ada8::t_b330c88e3c6a5e 13-15,18
+  s_3986025d6679af::t_d9d0aba3803d52 12
+docs/agent-devkit/changes/2026-10-22-9-linux-media-reliability/tasks.md
+  s_3986025d6679af::t_6a9af046f45c09 65-69
+  s_3986025d6679af::t_942144acfa10f1 35,44,53
+  s_3986025d6679af::t_a4bc1dcf37411f 3-4,42
+  s_3986025d6679af::t_483cabe65fd02a 1-2,5-34,36-41,43,45-52,54-64,70-73
+apps/desktop/src/App.tsx
+  s_62de744ec2ada8::t_cbe02394693131 2543
+  s_5bdbace62889e7::t_5769404debccc6 86,1583,1628,1816-1838,4267,4272-4283,5155
+  s_62de744ec2ada8::t_b1a0c5860f5127 1341
+  s_62de744ec2ada8::t_83deaf2a88175b 2977
+  s_62de744ec2ada8::t_cbd6cd77d44651 1446
+  s_5bdbace62889e7::t_51ad7ac379cdf9 4268-4271
+CONTRIBUTING.md
+  s_30102eaf878eb9::t_3b489850bafc9f 1-16,34-78,81-86
+  s_30102eaf878eb9::t_2529b3790413f5 17-33
+  s_30102eaf878eb9::t_7cf5424fef2e5f 79-80
+docs/llm/architecture/overview.md
+  s_62de744ec2ada8::t_05456db88371a6 167-174
+  s_5bdbace62889e7::t_4705ab238677a4 156,158-166,222
+  s_3986025d6679af::t_cba4c44a26654c 175-180
+README.md
+  s_30102eaf878eb9::t_7f9461f54ff27b 7-8
+  s_30102eaf878eb9::t_3bdab242d0dca4 9
+README.vi.md
+  s_30102eaf878eb9::t_3bdab242d0dca4 1-50
+apps/desktop/src/lib/i18n.ts
+  s_5bdbace62889e7::t_5769404debccc6 262-267,777-782,1292-1296
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9cf1487aae8ef1a416e4d56d4a503dd619c9e82b",
+  "prompts": {},
+  "sessions": {
+    "s_30102eaf878eb9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1641e-fbbc-7430-9919-d6b8ecb4b388",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_3986025d6679af": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a162d3-26a4-7b11-ab10-fb95d077f2d9",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_5bdbace62889e7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a163f9-e8f2-7d53-a92a-64336f9d2544",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_62de744ec2ada8": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "bright-abstract",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_8024d04858070e": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "delightful-surprise",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
