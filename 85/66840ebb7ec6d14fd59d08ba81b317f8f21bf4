@@ -1,0 +1,25 @@
+release.md
+  s_c312af879b9676::t_f33c7beac0dc3d 1,5-11
+apps/desktop/package.json
+  s_c312af879b9676::t_9bb0c20fdfd067 3
+apps/desktop/src-tauri/tauri.conf.json
+  s_c312af879b9676::t_64f6a84abb6160 4
+apps/desktop/src-tauri/Cargo.toml
+  s_c312af879b9676::t_03e12f5ee72b1e 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8566840ebb7ec6d14fd59d08ba81b317f8f21bf4",
+  "prompts": {},
+  "sessions": {
+    "s_c312af879b9676": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "continuous-challenge",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
