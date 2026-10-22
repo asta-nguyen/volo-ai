@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { IconArrowRight, IconDownload } from "@/components/icons";
+import { IconArrowRight, IconDownload, IconGithub } from "@/components/icons";
 import { SiteFooter, SiteHeader } from "@/components/site-chrome";
+import { GITHUB_REPOSITORY } from "@/lib/releases";
 import { copy, isLocale } from "@/lib/site-copy";
 
 export const runtime = "nodejs";
@@ -70,6 +71,24 @@ export default async function FeaturesPage({ params }: PageProps) {
               );
             })}
           </div>
+
+          <section className="community-section" aria-labelledby="community-title">
+            <p className="eyebrow">{text.communityEyebrow}</p>
+            <h2 id="community-title">{text.communityTitle}</h2>
+            <p className="community-description">{text.communityBody}</p>
+            <div className="hero-actions">
+              <a
+                className="button button-primary"
+                href={`https://github.com/${GITHUB_REPOSITORY}/discussions/categories/ideas`}
+              >
+                {text.suggestFeature}<IconArrowRight />
+              </a>
+              <a className="button button-secondary" href={`https://github.com/${GITHUB_REPOSITORY}`}>
+                <IconGithub />{text.starProject}
+              </a>
+            </div>
+            <p className="community-note">{text.communityNotice}</p>
+          </section>
 
           <div className="release-banner release-available features-outro">
             <div className="release-mark" aria-hidden="true"><IconDownload /></div>

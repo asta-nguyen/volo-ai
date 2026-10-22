@@ -200,6 +200,14 @@ export const copy = {
       },
     ],
     featuresOutroTitle: "Ready when you are.",
+    communityEyebrow: "BUILD WITH US",
+    communityTitle: "What would make Volo AI better for you?",
+    communityBody:
+      "Share a feature idea, vote for suggestions you want, or support the project with a star on GitHub.",
+    communityNotice:
+      "Feature ideas are public on GitHub. Sign in to post, vote, or star the project.",
+    suggestFeature: "Suggest a feature",
+    starProject: "Star Volo AI",
     featuresOutroBody:
       "Download Volo AI for macOS, Windows, or Linux and keep your voice work local.",
     platforms: {
@@ -438,6 +446,14 @@ export const copy = {
       },
     ],
     featuresOutroTitle: "Sẵn sàng khi bạn cần.",
+    communityEyebrow: "CÙNG PHÁT TRIỂN VOLO AI",
+    communityTitle: "Bạn muốn Volo AI có thêm tính năng gì?",
+    communityBody:
+      "Gửi ý tưởng, bình chọn cho đề xuất bạn muốn hoặc ủng hộ dự án bằng một Star trên GitHub.",
+    communityNotice:
+      "Đề xuất được đăng công khai trên GitHub. Đăng nhập để gửi ý tưởng, bình chọn hoặc Star dự án.",
+    suggestFeature: "Đề xuất tính năng",
+    starProject: "Star Volo AI",
     featuresOutroBody:
       "Tải Volo AI cho macOS, Windows hoặc Linux và giữ công việc giọng nói trên máy của bạn.",
     platforms: {

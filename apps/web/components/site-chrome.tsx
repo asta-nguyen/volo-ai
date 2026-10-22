@@ -1,4 +1,6 @@
-import { IconDownload, IconGithub } from "@/components/icons";
+import Image from "next/image";
+import logo from "@/app/icon.png";
+import { IconArrowRight, IconDownload, IconGithub } from "@/components/icons";
 import { GITHUB_REPOSITORY } from "@/lib/releases";
 import { copy, type Locale } from "@/lib/site-copy";
 
@@ -40,7 +42,7 @@ export function SiteHeader({
   return (
     <header className="site-header page-shell">
       <a className="brand" href={`/${locale}`} aria-label={homeLabel}>
-        <span className="brand-mark" aria-hidden="true">v</span>
+        <Image className="brand-mark" src={logo} alt="" width={48} height={48} sizes="48px" />
         <span className="brand-name">volo<span>ai</span></span>
       </a>
 
@@ -89,15 +91,19 @@ export function SiteFooter({ locale, text }: { locale: Locale; text: SiteText })
   return (
     <footer className="site-footer page-shell">
       <a className="brand footer-brand" href={`/${locale}`} aria-label={homeLabel}>
-        <span className="brand-mark" aria-hidden="true">v</span>
+        <Image className="brand-mark" src={logo} alt="" width={48} height={48} sizes="48px" />
         <span className="brand-name">volo<span>ai</span></span>
       </a>
       <p>{text.footerText}</p>
       <div className="footer-meta">
         <span>{text.footerNote}</span>
+        <a href={`https://github.com/${GITHUB_REPOSITORY}/discussions/categories/ideas`}>
+          {text.suggestFeature}
+          <IconArrowRight />
+        </a>
         <a href={`https://github.com/${GITHUB_REPOSITORY}`}>
           <IconGithub />
-          GitHub
+          {text.starProject}
         </a>
       </div>
     </footer>

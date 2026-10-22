@@ -85,7 +85,12 @@ the Python worker as a Tauri sidecar and stores model/audio data locally.
 - The localized `/en/features` and `/vi/features` pages summarize the main
   desktop and companion-tool capabilities. The route renders the English and
   Vietnamese copy defined in `apps/web/lib/site-copy.ts` and links to the
-  existing localized download page.
+  existing localized download page. A localized community section links to the
+  public GitHub Ideas category and repository homepage for manually starring
+  the project, with a notice about public suggestions and GitHub sign-in.
+  The shared footer exposes both links on every localized page. Header/footer
+  branding uses the supplied Volo logo PNG through Next.js Image optimization;
+  the same `apps/web/app/icon.png` supplies the browser icon.
 - The website includes localized macOS Gatekeeper guidance: an Apple-supported
   Open Anyway path for trusted official downloads, redownload/stop advice for
   a damaged-app warning, and a separate advanced disclosure explaining the
@@ -174,10 +179,12 @@ directory, and native open/save dialogs grant only their selected paths for the
 session; there is no global `$HOME/**` fs scope. The Linux AppImage
 configuration sets `bundleMediaFramework` to true; `.deb` and `.rpm` remain
 configured to use system GStreamer.
-`[~] Verification limit: the Ubuntu 24.04 amd64-emulation build reached
-linuxdeploy but `linuxdeploy-plugin-appimage --plugin-api-version` exited 2
-before an AppImage was produced, so bundled contents and Linux runtime
-playback remain unverified.
+`[~] Verification limit: an Ubuntu 24.04 amd64-emulation build produced a
+157.97 MiB AppImage after invoking the extracted linuxdeploy plugin because
+QEMU could not execute the plugin AppImage. Inspection found 265 GStreamer
+plugins, including WAV parsing, playback, typefind, and the plugin scanner. The
+artifact used placeholder sidecars, so release installation and Linux runtime
+playback remain unverified; Windows/macOS playback was not retested.
 The React root provides one in-memory TanStack Query client. `App.tsx` queries
 sidecar status and voice profiles, and loads cursor-paginated Audio History
 only while that view is active. Successful profile and preparation mutations
@@ -269,6 +276,8 @@ The app interface supports English and Vietnamese through `i18next` and
 synthesis target remains `volo-ai.synthesis-language`.
 
 ## Sources
+
+- `apps/web/app/icon.png`
 
 - `pyproject.toml`
 - `src/tts_mcp/engine.py`

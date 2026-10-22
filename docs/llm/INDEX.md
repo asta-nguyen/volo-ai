@@ -89,7 +89,9 @@ overview but do not yet have dedicated wiki feature pages:
   tag's validated installer assets, and show a localized status when no
   verified installer is available. See the
   [architecture overview](architecture/overview.md), which also maps the
-  localized feature overview route.
+  localized feature overview route. The Features page and shared footer link to
+  GitHub Ideas and the repository for manual starring; header/footer branding
+  and the browser icon use the supplied Volo logo.
 - [x] Desktop local REST API — Settings starts and stops an opt-in API bound to
   `127.0.0.1:8765`; it reuses the MCP tools and app data and stops with the
   desktop sidecar. See the [API reference](../desktop-local-api.md) for routes
