@@ -34,11 +34,16 @@
     "targets": "all",
     "icon": ["icons/icon.png", "icons/icon.ico"],
     "resources": ["resources/seed-voices"],
-    "externalBin": ["binaries/tts-sidecar", "binaries/audiocpp-cli"]
+    "externalBin": ["binaries/tts-sidecar", "binaries/audiocpp-cli"],
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    }
   },
   "plugins": {
     "shell": {
-      "open": "https://github\\.com/az-forge/volo-ai/releases/tag/v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)"
+      "open": "^https://github\\.com/az-forge/volo-ai(/discussions/categories/ideas|/releases/tag/v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*))?$"
     }
   }
 }

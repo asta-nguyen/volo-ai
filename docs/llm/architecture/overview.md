@@ -153,10 +153,31 @@ The React UI also checks GitHub's latest stable release at startup without
 blocking rendering, with a five-second timeout and a 24-hour automatic-check
 cooldown. A newer version appears in an in-app banner; Settings > General can
 check manually, and a manual check can resurface a dismissed release. Dismissals
-are stored by release tag. The Tauri shell-open scope accepts only the exact
+are stored by release tag. The Tauri shell-open scope accepts the exact
 `https://github.com/az-forge/volo-ai/releases/tag/vMAJOR.MINOR.PATCH` URL (strict
-SemVer, no leading-zero components); the app opens only that validated release
-URL and does not download or install updates.
+SemVer, no leading-zero components), the repository homepage, and its
+`/discussions/categories/ideas` page. Update notices open the validated release
+URL and do not download or install updates.
+Settings > General includes a localized community card with separate actions
+for suggesting a feature and starring Volo AI. These open the fixed public
+Ideas category and repository homepage in the system browser. The card explains
+that ideas are public and GitHub sign-in is required to post, vote, or star.
+The app stores no feedback, makes no feedback API calls, and records a frontend
+diagnostic if the browser opener fails; interactions happen on GitHub.
+Local audio playback branches by platform in the shared
+`AudioPlayer`/`InlineAudioPreview` components, which receive local file paths:
+on Linux WebKitGTK they read the file through `tauri-plugin-fs` into a
+MIME-typed `blob:` URL — inline previews read lazily on play, and Blob URLs are
+revoked on path change or unmount — while Windows and macOS keep `convertFileSrc`
+asset-protocol URLs. The fs capability scopes `read_file` to the app-data
+directory, and native open/save dialogs grant only their selected paths for the
+session; there is no global `$HOME/**` fs scope. The Linux AppImage
+configuration sets `bundleMediaFramework` to true; `.deb` and `.rpm` remain
+configured to use system GStreamer.
+`[~] Verification limit: the Ubuntu 24.04 amd64-emulation build reached
+linuxdeploy but `linuxdeploy-plugin-appimage --plugin-api-version` exited 2
+before an AppImage was produced, so bundled contents and Linux runtime
+playback remain unverified.
 The React root provides one in-memory TanStack Query client. `App.tsx` queries
 sidecar status and voice profiles, and loads cursor-paginated Audio History
 only while that view is active. Successful profile and preparation mutations
@@ -198,7 +219,7 @@ Public video-link transcription to SRT is documented in
 | Desktop local API | Optional `127.0.0.1:8765` REST server delegates status, preparation, synthesis, and voice-profile operations to the existing MCP tools; Settings owns start/stop and the sidecar stops it on exit |
 | Seed profiles | `Engine.import_seed_voices`, the `import_seed_voices` sidecar request, and bundled seed manifests |
 | Audio history | `Engine.record_audio_history` and `list_audio_history`/`rename_audio_history`/`delete_audio_history` sidecar operations index files from `outputs`; React plays and renames files, copies their local path, and confirms deletion |
-| Desktop settings | `App.tsx` and `i18n.ts` expose General, Model, Storage, and MCP tabs; General supports manual stable-release checks, Linux x64 Model settings manage the optional NVIDIA sidecar, and Logs exports local diagnostics; MCP generates copyable client-specific setup for Codex CLI, Claude Code, Claude Desktop, Cursor, VS Code / GitHub Copilot, and Zed using the app-data path |
+| Desktop settings | `App.tsx` and `i18n.ts` expose General, Model, Storage, and MCP tabs; General supports manual stable-release checks and public GitHub Ideas/Star links, Linux x64 Model settings manage the optional NVIDIA sidecar, and Logs exports local diagnostics; MCP generates copyable client-specific setup for Codex CLI, Claude Code, Claude Desktop, Cursor, VS Code / GitHub Copilot, and Zed using the app-data path |
 | Video transcription | `transcribe_video` validates approved public video hosts, fetches audio with yt-dlp into a temporary directory, normalizes with bundled FFmpeg, reuses `Engine.transcribe_with_timestamps` on the loaded Whisper pipeline, and returns transcript + SRT for the Transcribe view's native save flow |
 | Desktop shell | React UI, Tauri plugins, JSONL sidecar, optional Linux CUDA worker, and target-matched audio.cpp CLI |
 | Public download site | `apps/web` serves English and Vietnamese product/download, feature overview, and changelog pages, reads versioned notes from the root `changelog.md`, resolves validated stable GitHub Releases, and exposes only direct installer URLs for downloads |

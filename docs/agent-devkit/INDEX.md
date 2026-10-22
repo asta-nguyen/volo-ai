@@ -2,8 +2,11 @@
 
 ## Changes
 
+- [Linux media reliability — Issue #9](changes/2026-10-22-9-linux-media-reliability/design.md) — [tasks](changes/2026-10-22-9-linux-media-reliability/tasks.md)
+
 ## Archived changes
 
+- [Desktop feature feedback links](changes/archive/2026-10-22-desktop-feedback-links/design.md) — [tasks](changes/archive/2026-10-22-desktop-feedback-links/tasks.md)
 - [YouTube-first Video Transcription to SRT (#6)](changes/archive/2026-10-21-facebook-video-srt/design.md) — [tasks](changes/archive/2026-10-21-facebook-video-srt/tasks.md), [wiki delta](changes/archive/2026-10-21-facebook-video-srt/delta.md)
 - [Website Changelog Page](changes/archive/2026-10-21-5-web-changelog-page/design.md) — [tasks](changes/archive/2026-10-21-5-web-changelog-page/tasks.md)
 - [Desktop Update Notice](changes/archive/2026-10-21-4-desktop-update-notice/design.md) — [tasks](changes/archive/2026-10-21-4-desktop-update-notice/tasks.md)

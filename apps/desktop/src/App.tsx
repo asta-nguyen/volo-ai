@@ -7,7 +7,6 @@ import {
   useQueryClient,
   type InfiniteData,
 } from "@tanstack/react-query";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { appDataDir, resolveResource } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -84,6 +83,7 @@ import {
   Search,
   Settings2,
   ShieldCheck,
+  Star,
   SlidersHorizontal,
   Sparkles,
   Sun,
@@ -1338,7 +1338,7 @@ function VoiceProfilesView({
                           <div className="flex items-center gap-2">
                             {voice.ref_audio && (
                               <InlineAudioPreview
-                                src={convertFileSrc(voice.ref_audio)}
+                                audioPath={voice.ref_audio}
                                 label={copy.previewAudio}
                                 pauseLabel={copy.pauseAudio}
                               />
@@ -1443,7 +1443,7 @@ function VoiceProfilesView({
                         {refAudio && (
                           <div className="flex items-center gap-2">
                             <InlineAudioPreview
-                              src={convertFileSrc(refAudio)}
+                              audioPath={refAudio}
                               label={copy.previewAudio}
                               pauseLabel={copy.pauseAudio}
                             />
@@ -1580,6 +1580,7 @@ function SettingsView({
   onCancelRuntime,
   onRemoveRuntime,
   onCheckForUpdates,
+  onOpenCommunityPage,
   onBack,
 }: {
   copy: UiCopy;
@@ -1624,6 +1625,7 @@ function SettingsView({
   onCancelRuntime: () => void;
   onRemoveRuntime: () => void;
   onCheckForUpdates: () => void;
+  onOpenCommunityPage: (page: "ideas" | "repository") => void;
   onBack: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("model");
@@ -1808,6 +1810,29 @@ function SettingsView({
                     {manualUpdateFeedback === "unavailable" && (
                       <p className="text-sm text-(--destructive)">{copy.updateUnavailable}</p>
                     )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="lg:col-span-2">
+                <CardHeader>
+                  <div>
+                    <SectionLabel>{copy.communitySection}</SectionLabel>
+                    <CardTitle className="mt-2">{copy.communityTitle}</CardTitle>
+                  </div>
+                  <ArrowUpRight className="size-5 text-(--accent)" />
+                </CardHeader>
+                <CardContent>
+                  <CardDescription>{copy.communityDescription}</CardDescription>
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    <Button variant="secondary" onClick={() => onOpenCommunityPage("ideas")}>
+                      {copy.suggestFeature}
+                      <ArrowUpRight data-icon="inline-end" />
+                    </Button>
+                    <Button variant="secondary" onClick={() => onOpenCommunityPage("repository")}>
+                      <Star data-icon="inline-start" />
+                      {copy.starProject}
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -2515,7 +2540,7 @@ function AudioHistoryView({
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
                     <InlineAudioPreview
-                      src={convertFileSrc(item.audio_path)}
+                      audioPath={item.audio_path}
                       label={copy.previewAudio}
                       pauseLabel={copy.pauseAudio}
                     />
@@ -2669,7 +2694,6 @@ function WorkspaceView({
   selectedVoice,
   refAudio,
   result,
-  audioUrl,
   error,
   isGenerating,
   isImportingSeed,
@@ -2706,7 +2730,6 @@ function WorkspaceView({
   selectedVoice: string;
   refAudio: string | null;
   result: SynthesisResult | null;
-  audioUrl: string | null;
   error: string | null;
   isGenerating: boolean;
   isImportingSeed: boolean;
@@ -2951,10 +2974,9 @@ function WorkspaceView({
                   {copy.cancel}
                 </Button>
               </div>
-            ) : audioUrl && result ? (
+            ) : result ? (
               <div className="mt-4">
                 <AudioPlayer
-                  src={audioUrl}
                   audioPath={result.audio_path}
                   format={result.format}
                   sampleRate={activeTake?.provider === "vieneu" ? 48000 : 24000}
@@ -3999,7 +4021,6 @@ function App() {
     ? providerIsReady(providerStatuses.omnivoice)
     : Boolean(engineStatus?.model_ready);
   const presetVoices = engineStatus?.providers?.vieneu?.preset_voices ?? [];
-  const audioUrl = useMemo(() => (result ? convertFileSrc(result.audio_path) : null), [result]);
   const visibleUpdate =
     updateResult?.kind === "available" && updateResult.tag !== dismissedUpdateTag
       ? updateResult
@@ -4239,6 +4260,23 @@ function App() {
         "release_link_open_failed",
         undefined,
         "Could not open the release page.",
+      );
+    }
+  }
+
+  async function openCommunityPage(page: "ideas" | "repository") {
+    const url =
+      page === "ideas"
+        ? "https://github.com/az-forge/volo-ai/discussions/categories/ideas"
+        : "https://github.com/az-forge/volo-ai";
+    try {
+      await shellOpen(url);
+    } catch {
+      recordFrontendDiagnostic(
+        "frontend_error",
+        "community_link_open_failed",
+        undefined,
+        "Could not open the GitHub community page.",
       );
     }
   }
@@ -5114,6 +5152,7 @@ function App() {
                     isCheckingUpdates={isCheckingUpdates}
                     manualUpdateFeedback={manualUpdateFeedback}
                     onCheckForUpdates={() => void checkForUpdatesManually()}
+                    onOpenCommunityPage={(page) => void openCommunityPage(page)}
                     onBack={() => navigateTo("workspace")}
                   />
                 ) : view === "logs" ? (
@@ -5226,7 +5265,6 @@ function App() {
                     selectedVoice={selectedVoice}
                     refAudio={refAudio}
                     result={result}
-                    audioUrl={audioUrl}
                     error={error}
                     isGenerating={isGenerating}
                     isImportingSeed={isImportingSeed}

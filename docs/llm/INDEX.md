@@ -54,7 +54,9 @@ overview but do not yet have dedicated wiki feature pages:
   Storage, and MCP tabs. The MCP tab generates copyable setup for Codex CLI,
   Claude Code, Claude Desktop, Cursor, VS Code / GitHub Copilot, and Zed,
   including the app data path; Settings is also reachable from the first-run
-  setup screen.
+  setup screen. General also opens the public GitHub Ideas category for feature
+  suggestions and the repository homepage for manually starring the project;
+  the localized notice explains public visibility and GitHub sign-in.
 - [x] Desktop audio history — the app lists and plays WAV/MP3 files from its
   output directory, including older files without synthesis metadata; it can
   rename an output while preserving its extension and metadata, copy its local

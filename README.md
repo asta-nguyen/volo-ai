@@ -4,6 +4,9 @@ Local text-to-speech desktop app powered by OmniVoice. It runs on Apple
 Silicon macOS, Windows, and Linux through Tauri, with a bundled Python sidecar
 for release builds.
 
+[Đọc README bằng tiếng Việt](README.vi.md) · [Download the latest stable release
+for macOS (Apple Silicon), Windows x64, or Linux x64](https://voloai.n2q.site/).
+
 ## Current release scope
 
 - Download OmniVoice assets on first launch with progress feedback.
