@@ -56,4 +56,4 @@ Delivery note: as of 2026-10-22, PR #10 is `CONFLICTING`/`DIRTY` and its compari
 
 ## Related context
 
-- [Architecture overview](../../../llm/architecture/overview.md)
+- [Architecture overview](../../../../llm/architecture/overview.md)
