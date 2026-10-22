@@ -1,0 +1,43 @@
+docs/llm/INDEX.md
+  s_5bdbace62889e7::t_93130dc32adffa 92-94
+apps/web/app/[locale]/features/page.tsx
+  s_5bdbace62889e7::t_8c852999e45523 3,5,75-91
+  s_5bdbace62889e7::t_144e846df5d86a 92
+docs/agent-devkit/changes/2026-10-22-9-linux-media-reliability/tasks.md
+  s_3986025d6679af::t_9fef9767f27178 35
+  s_3986025d6679af::t_45f5b751b6721d 34,43-44,52-53
+apps/web/app/globals.css
+  s_5bdbace62889e7::t_8c852999e45523 162-165,1156-1157,1167,1172-1176,1485-1512,1699-1700
+docs/llm/architecture/overview.md
+  s_3986025d6679af::t_cd6fd10d1d16d0 182-187
+  s_5bdbace62889e7::t_93130dc32adffa 88-93,280
+  s_5bdbace62889e7::t_270a025116edb9 281
+apps/web/components/site-chrome.tsx
+  s_5bdbace62889e7::t_8c852999e45523 1-3,45,94,100-103,106
+apps/web/lib/site-copy.ts
+  s_5bdbace62889e7::t_8c852999e45523 203-210,449-456
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fd6c474f307298793016dde7e4eedd7de6eae8aa",
+  "prompts": {},
+  "sessions": {
+    "s_3986025d6679af": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a162d3-26a4-7b11-ab10-fb95d077f2d9",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_5bdbace62889e7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a163f9-e8f2-7d53-a92a-64336f9d2544",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
