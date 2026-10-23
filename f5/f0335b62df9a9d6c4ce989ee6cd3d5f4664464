@@ -1,0 +1,110 @@
+apps/desktop/src/lib/sidecar.ts
+  s_c3f420d9a970f0::t_8d0ce9cad3a279 264
+scripts/build_sidecar.py
+  s_8cd3de1897d411::t_1bec432bd17620 66
+  s_8cd3de1897d411::t_3ad0d55ac06584 127-128,132-142,145
+  s_8cd3de1897d411::t_dc5f00a1ee0808 98
+  s_8cd3de1897d411::t_6257ac3598e038 1
+  s_8cd3de1897d411::t_9e13dd0066fd6e 18
+.github/workflows/release.yml
+  s_8cd3de1897d411::t_5ae578cc15385b 256-260,274-277
+  s_8cd3de1897d411::t_3d60516d78e4b7 332-333,335-338
+  s_8cd3de1897d411::t_179804ac2f6a9d 465
+  s_8cd3de1897d411::t_066dd849c630e1 278
+apps/desktop/src-tauri/tauri.conf.json
+  s_c3f420d9a970f0::t_4c98ca15f09c40 36-39
+.gitignore
+  s_566cc754230ee0::t_927ca6778844b8 23
+  s_c3f420d9a970f0::t_e19a1a26be6c24 22
+docs/agent-devkit/INDEX.md
+  s_729585d497baab::t_68e29a214b5fdb 7
+docs/agent-devkit/changes/2026-10-23-desktop-perf-visibility/design.md
+  s_791a3091951173::t_9e4188127235d4 1-216
+docs/agent-devkit/changes/2026-10-23-desktop-perf-visibility/delta.md
+  s_791a3091951173::t_caa943383b3d22 1-96
+tests/test_build_sidecar.py
+  s_8cd3de1897d411::t_9d9957be245216 73,80-83,87,115-116,119-121,123,125-160,162-163
+  s_8cd3de1897d411::t_cc3042880ddcc6 171-173,177,201-204,206,211,217-218,246,249
+docs/agent-devkit/changes/archive/2026-10-23-sidecar-onedir/design.md
+  s_729585d497baab::t_7219dbd9825422 125
+  s_729585d497baab::t_edf38765a80010 131
+  s_729585d497baab::t_0a18192a3681b6 133
+  s_729585d497baab::t_89c852b7e846d6 122-124
+  s_729585d497baab::t_b374c51a0a6c60 126-130
+  s_729585d497baab::t_d119fabc4c8083 132
+  s_729585d497baab::t_30cd8534b1d1bf 134
+docs/llm/workflows/desktop-runtime-diagnostics.md
+  s_8cd3de1897d411::t_5387c91a2f5cb1 133-135
+docs/llm/architecture/overview.md
+  s_8cd3de1897d411::t_0fc45bde8f20e4 122-125
+scripts/smoke_sidecar.py
+  s_8cd3de1897d411::t_e47bf269e60d17 1-120
+docs/desktop-development.md
+  s_8cd3de1897d411::t_2ced264cefaa5c 30-31
+  s_566cc754230ee0::t_3a3af991be36aa 136-139
+  s_8cd3de1897d411::t_0b5fe93b94bdf6 171-177
+  s_8cd3de1897d411::t_939bf134e0190d 132-135
+  s_8cd3de1897d411::t_9c423a51029edc 118-121
+apps/desktop/src-tauri/capabilities/default.json
+  s_c3f420d9a970f0::t_8a9ee5e4a68d00 24-26
+docs/agent-devkit/changes/2026-10-23-desktop-perf-visibility/tasks.md
+  s_791a3091951173::t_ae4aeed8d34303 1-276
+docs/agent-devkit/changes/archive/2026-10-23-sidecar-onedir/tasks.md
+  s_42a83303036664::t_872007b5a34f3b 1-113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f5f0335b62df9a9d6c4ce989ee6cd3d5f4664464",
+  "prompts": {},
+  "sessions": {
+    "s_42a83303036664": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "sudsy-tuesday",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_566cc754230ee0": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "absorbing-spoonbill",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_729585d497baab": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "understood-modem",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_791a3091951173": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "congruous-christmas",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_8cd3de1897d411": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "military-bubbler",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_c3f420d9a970f0": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "opposite-sense",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
