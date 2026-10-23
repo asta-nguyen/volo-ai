@@ -1,0 +1,36 @@
+apps/web/app/[locale]/layout.tsx
+  s_5bdbace62889e7::t_22f0f3f055ff35 5,39
+apps/desktop/src-tauri/tauri.conf.json
+  s_5bdbace62889e7::t_22f0f3f055ff35 46
+docs/llm/architecture/overview.md
+  s_5bdbace62889e7::t_da90d6899bd976 180-182
+  s_5bdbace62889e7::t_24636e6edc44c6 99-101,172-174,176-179
+  s_5bdbace62889e7::t_0da7aa5ee70726 345
+apps/desktop/src/App.tsx
+  s_5bdbace62889e7::t_22f0f3f055ff35 63,1629,1837-1840,4272,4276-4278
+  s_5bdbace62889e7::t_d28a9920c18a6d 4286
+docs/llm/INDEX.md
+  s_5bdbace62889e7::t_c11d1fd885dc9a 59-60,95-96
+apps/web/components/kofi-widget.tsx
+  s_5bdbace62889e7::t_22f0f3f055ff35 1-6,17-23,25-26,28-32,39-42
+  s_5bdbace62889e7::t_2ede759f1ca4c1 24
+  s_5bdbace62889e7::t_b429c673854653 7-16,27,33-38
+apps/desktop/src/lib/i18n.ts
+  s_5bdbace62889e7::t_22f0f3f055ff35 268,784,1299
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a545fd5af796c2b8cc26a3f685180d612b043a24",
+  "prompts": {},
+  "sessions": {
+    "s_5bdbace62889e7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a163f9-e8f2-7d53-a92a-64336f9d2544",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
