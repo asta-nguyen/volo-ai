@@ -70,20 +70,21 @@ class SidecarBuildTests(unittest.TestCase):
             self.assertEqual(raised.exception.code, 2)
             run.assert_not_called()
 
-    def test_builder_stages_both_binaries_for_target(self):
+    def test_builder_stages_onedir_with_audiocpp_inside_folder(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             ffmpeg = root / "ffmpeg"
             ffmpeg.write_bytes(b"ffmpeg")
             audiocpp = root / "audiocpp_cli"
             audiocpp.write_bytes(b"audio.cpp")
-            dist_dir = root / "build" / "sidecar-dist" / "tts-sidecar"
-            dist_dir.mkdir(parents=True)
-            (dist_dir / "tts-sidecar").write_bytes(b"sidecar")
+            onedir = root / "build" / "sidecar-dist" / "tts-sidecar" / "tts-sidecar"
+            (onedir / "_internal").mkdir(parents=True)
+            (onedir / "tts-sidecar").write_bytes(b"sidecar")
+            (onedir / "_internal" / "lib.bin").write_bytes(b"library")
 
             with (
                 patch.object(build_sidecar, "ROOT", root),
-                patch.object(build_sidecar, "BINARIES", root / "binaries"),
+                patch.object(build_sidecar, "SIDECAR_DIR", root / "sidecar"),
                 patch.object(build_sidecar, "host_triple", return_value="aarch64-apple-darwin"),
                 patch.object(build_sidecar, "_check_build_environment", return_value=[]),
                 patch.object(build_sidecar.subprocess, "run") as run,
@@ -111,15 +112,55 @@ class SidecarBuildTests(unittest.TestCase):
                 collected,
                 ["omnivoice", "vieneu", "vieneu_utils", "sea_g2p", "onnxruntime", "yt_dlp"],
             )
-            self.assertIn("--onefile", command)
+            self.assertIn("--onedir", command)
+            self.assertNotIn("--onefile", command)
             self.assertIn("--add-binary", command)
             self.assertIn(f"{ffmpeg.resolve()}:.", command)
-            binaries = root / "binaries"
+            staged = root / "sidecar" / "tts-sidecar"
+            self.assertEqual((staged / "tts-sidecar").read_bytes(), b"sidecar")
+            self.assertEqual((staged / "_internal" / "lib.bin").read_bytes(), b"library")
             self.assertEqual(
-                (binaries / "tts-sidecar-aarch64-apple-darwin").read_bytes(), b"sidecar"
+                (staged / "audiocpp-cli-aarch64-apple-darwin").read_bytes(), b"audio.cpp"
             )
+
+    def test_builder_names_windows_executables(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ffmpeg = root / "ffmpeg"
+            ffmpeg.write_bytes(b"ffmpeg")
+            audiocpp = root / "audiocpp_cli.exe"
+            audiocpp.write_bytes(b"audio.cpp")
+            onedir = root / "build" / "sidecar-dist" / "tts-sidecar" / "tts-sidecar"
+            (onedir / "_internal").mkdir(parents=True)
+            (onedir / "tts-sidecar.exe").write_bytes(b"sidecar")
+
+            with (
+                patch.object(build_sidecar, "ROOT", root),
+                patch.object(build_sidecar, "SIDECAR_DIR", root / "sidecar"),
+                patch.object(build_sidecar, "host_triple", return_value="x86_64-pc-windows-msvc"),
+                patch.object(build_sidecar, "_check_build_environment", return_value=[]),
+                patch.object(build_sidecar.subprocess, "run"),
+                patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "build_sidecar.py",
+                        "--ffmpeg",
+                        str(ffmpeg),
+                        "--audiocpp",
+                        str(audiocpp),
+                        "--target",
+                        "x86_64-pc-windows-msvc",
+                    ],
+                ),
+            ):
+                build_sidecar.main()
+
+            staged = root / "sidecar" / "tts-sidecar"
+            self.assertEqual((staged / "tts-sidecar.exe").read_bytes(), b"sidecar")
             self.assertEqual(
-                (binaries / "audiocpp-cli-aarch64-apple-darwin").read_bytes(), b"audio.cpp"
+                (staged / "audiocpp-cli-x86_64-pc-windows-msvc.exe").read_bytes(),
+                b"audio.cpp",
             )
 
     def test_cuda_builder_can_skip_audiocpp_and_stage_outside_tauri(self):
@@ -127,13 +168,13 @@ class SidecarBuildTests(unittest.TestCase):
             root = Path(tmp)
             ffmpeg = root / "ffmpeg"
             ffmpeg.write_bytes(b"ffmpeg")
-            dist_dir = root / "build" / "sidecar-dist" / "tts-sidecar-cuda"
-            dist_dir.mkdir(parents=True)
-            (dist_dir / "tts-sidecar-cuda").write_bytes(b"cuda sidecar")
+            onedir = root / "build" / "sidecar-dist" / "tts-sidecar-cuda" / "tts-sidecar-cuda"
+            (onedir / "_internal").mkdir(parents=True)
+            (onedir / "tts-sidecar-cuda").write_bytes(b"cuda sidecar")
 
             with (
                 patch.object(build_sidecar, "ROOT", root),
-                patch.object(build_sidecar, "BINARIES", root / "binaries"),
+                patch.object(build_sidecar, "SIDECAR_DIR", root / "sidecar"),
                 patch.object(build_sidecar, "host_triple", return_value="x86_64-unknown-linux-gnu"),
                 patch.object(build_sidecar, "_check_build_environment", return_value=[]),
                 patch.object(build_sidecar.subprocess, "run") as run,
@@ -157,24 +198,24 @@ class SidecarBuildTests(unittest.TestCase):
 
             command = run.call_args.args[0]
             self.assertIn("tts-sidecar-cuda", command)
-            self.assertEqual(
-                (root / "cuda-out" / "tts-sidecar-cuda-x86_64-unknown-linux-gnu").read_bytes(),
-                b"cuda sidecar",
-            )
-            self.assertFalse((root / "binaries").exists())
+            staged = root / "cuda-out" / "tts-sidecar-cuda"
+            self.assertEqual((staged / "tts-sidecar-cuda").read_bytes(), b"cuda sidecar")
+            self.assertEqual(list(staged.glob("audiocpp-cli-*")), [])
+            self.assertFalse((root / "sidecar").exists())
 
-    def test_cuda_builder_stages_onedir_output_without_changing_onefile_default(self):
+    def test_cuda_builder_stages_onedir_output(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             ffmpeg = root / "ffmpeg"
             ffmpeg.write_bytes(b"ffmpeg")
-            dist_dir = root / "build" / "sidecar-dist" / "tts-sidecar-cuda"
-            onedir = dist_dir / "tts-sidecar-cuda"
+            onedir = root / "build" / "sidecar-dist" / "tts-sidecar-cuda" / "tts-sidecar-cuda"
             (onedir / "_internal").mkdir(parents=True)
             executable = onedir / "tts-sidecar-cuda"
             executable.write_bytes(b"cuda executable")
             library = onedir / "_internal" / "libtorch.so"
             library.write_bytes(b"cuda library")
+            link = onedir / "_internal" / "libtorch-link.so"
+            link.symlink_to(library.name)
 
             with (
                 patch.object(build_sidecar, "ROOT", root),
@@ -192,7 +233,6 @@ class SidecarBuildTests(unittest.TestCase):
                         "x86_64-unknown-linux-gnu",
                         "--sidecar-name",
                         "tts-sidecar-cuda",
-                        "--onedir",
                         "--output-dir",
                         str(root / "cuda-out"),
                     ],
@@ -203,9 +243,10 @@ class SidecarBuildTests(unittest.TestCase):
             command = run.call_args.args[0]
             self.assertIn("--onedir", command)
             self.assertNotIn("--onefile", command)
-            staged = root / "cuda-out" / "tts-sidecar-cuda-x86_64-unknown-linux-gnu"
+            staged = root / "cuda-out" / "tts-sidecar-cuda"
             self.assertEqual((staged / "tts-sidecar-cuda").read_bytes(), b"cuda executable")
             self.assertEqual((staged / "_internal" / "libtorch.so").read_bytes(), b"cuda library")
+            self.assertTrue((staged / "_internal" / "libtorch-link.so").is_symlink())
 
 
 if __name__ == "__main__":

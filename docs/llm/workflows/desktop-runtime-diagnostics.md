@@ -130,8 +130,9 @@ Install, update, and remove actions take effect after the app restarts.
 - `tests/test_package_cuda_runtime.py` checks onedir PAX archiving, splitting,
   part and archive hashes, unsafe archive rejection, release target validation,
   and missing installer targets.
-- `tests/test_build_sidecar.py` checks the normal paired binaries, the CUDA
-  onedir output, and the unchanged onefile default without audio.cpp staging.
+- `tests/test_build_sidecar.py` checks the onedir staging layout with the
+  audio.cpp CLI inside the folder, Windows executable naming, and the CUDA
+  build's onedir tree staged outside Tauri without audio.cpp.
 - `tests/test_desktop.py` checks JSONL cancellation of an optional runtime
   install.
 

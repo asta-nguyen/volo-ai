@@ -27,8 +27,8 @@ npm --prefix apps/desktop run tauri dev
 ```
 
 The desktop sidecar is launched by Tauri. The development launcher can use the
-repository sidecar wrapper, but release packaging must use the target-named
-PyInstaller executable produced below.
+repository sidecar wrapper, but release packaging must use the PyInstaller
+onedir folder produced below.
 
 The first-run screen requires both OmniVoice and VieNeu-TTS to be ready before
 the synthesis workspace opens. One explicit preparation action starts all
@@ -115,9 +115,10 @@ scripts\build_windows.ps1 -Preset windows-cpu-release -ModelSet custom -Models "
 For local development, set `TTS_MCP_AUDIOCPP_PATH` to the resulting CLI path.
 The release packaging script accepts that path as `--audiocpp`.
 
-The packaging script stages target-named Python and audio.cpp executables under
-`apps/desktop/src-tauri/binaries/`. Tauri expects native binaries; build each
-official desktop target on its matching host:
+The packaging script always builds a PyInstaller onedir folder at
+`apps/desktop/src-tauri/sidecar/tts-sidecar/` — the executable, its `_internal`
+payload, FFmpeg, and `audiocpp-cli-<target triple>` inside it — and the folder
+is git-ignored. Build each official desktop target on its matching host:
 
 - `aarch64-apple-darwin`
 - `x86_64-pc-windows-msvc`
@@ -128,10 +129,14 @@ audio.cpp CLI can still be built locally on Intel macOS.
 
 ## Build the desktop app
 
-Tauri packages the target-named sidecars already under
-`apps/desktop/src-tauri/binaries/`; it does not rebuild the Python worker.
-Rebuild the sidecar after changing `src/tts_mcp/desktop.py` or its packaged
-dependencies, then build the app.
+The Tauri build copies the staged `apps/desktop/src-tauri/sidecar/tts-sidecar/`
+folder into the bundle as a resource; it does not rebuild the Python worker.
+Rebuild the folder after changing `src/tts_mcp/desktop.py` or its packaged
+dependencies, then build the app. The first launch after install or update is
+slower than later ones, and the installed size is about three times larger on
+disk (1.1 GB vs 365 MB) while the macOS installer is about 1.3 times larger
+(468.5 MiB vs 363.1 MiB for v0.2.0); Windows and Linux installers were not
+measured.
 
 ### Publish a release
 
@@ -162,6 +167,13 @@ manifest. The app downloads and extracts that archive into app data only after
 the user installs NVIDIA support from Settings. The website lists only
 installer assets. A failed run can resume an existing draft; rerunning a tag
 with an already published release leaves that release unchanged.
+
+Release checklist before publishing:
+
+- Launch a CI-built installer on Windows and on Linux (AppImage), and a
+  quarantined macOS download, and confirm the engine comes online on each.
+- If a Windows build cannot spawn the sidecar from the shared scope path, add
+  a platform-specific capability entry that names `tts-sidecar.exe`.
 
 Release bundles include the native Python sidecar, the audio.cpp VieNeu CLI,
 and FFmpeg. They exclude model weights and app data; users download model

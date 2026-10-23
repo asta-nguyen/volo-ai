@@ -261,7 +261,7 @@ export class SidecarClient {
         "The local engine is available in the Volo AI desktop app. Run `npm run tauri dev`.",
       );
     }
-    const command = Command.sidecar("binaries/tts-sidecar", [], {
+    const command = Command.create("tts-sidecar", [], {
       env: {
         TTS_MCP_DATA_DIR: await appDataDir(),
         TTS_MCP_APP_VERSION: await getVersion(),

@@ -4,6 +4,7 @@
 
 ## Archived changes
 
+- [Ship the desktop sidecar as PyInstaller onedir](changes/archive/2026-10-23-sidecar-onedir/design.md) — [tasks](changes/archive/2026-10-23-sidecar-onedir/tasks.md)
 - [Linux media reliability — Issue #9](changes/archive/2026-10-22-9-linux-media-reliability/design.md) — [tasks](changes/archive/2026-10-22-9-linux-media-reliability/tasks.md)
 - [Desktop feature feedback links](changes/archive/2026-10-22-desktop-feedback-links/design.md) — [tasks](changes/archive/2026-10-22-desktop-feedback-links/tasks.md)
 - [YouTube-first Video Transcription to SRT (#6)](changes/archive/2026-10-21-facebook-video-srt/design.md) — [tasks](changes/archive/2026-10-21-facebook-video-srt/tasks.md), [wiki delta](changes/archive/2026-10-21-facebook-video-srt/delta.md)

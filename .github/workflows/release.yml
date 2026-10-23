@@ -253,6 +253,11 @@ jobs:
             --audiocpp "$audiocpp_cli" \
             --target "$TARGET_TRIPLE"
 
+      - name: Smoke-test the packaged sidecar on macOS and Linux
+        if: matrix.os != 'windows'
+        shell: bash
+        run: python scripts/smoke_sidecar.py apps/desktop/src-tauri/sidecar/tts-sidecar
+
       - name: Package the desktop sidecar on Windows
         if: matrix.os == 'windows'
         shell: pwsh
@@ -265,6 +270,11 @@ jobs:
           $ffmpeg = (Get-Command ffmpeg.exe -ErrorAction Stop).Source
           python scripts\build_sidecar.py --ffmpeg "$ffmpeg" --audiocpp "$audiocppCli" --target $env:TARGET_TRIPLE
           if ($LASTEXITCODE -ne 0) { throw "Sidecar packaging failed" }
+
+      - name: Smoke-test the packaged sidecar on Windows
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: python scripts/smoke_sidecar.py apps/desktop/src-tauri/sidecar/tts-sidecar
 
       - name: Build Tauri desktop bundles
         run: npm --prefix apps/desktop run tauri build
@@ -319,8 +329,13 @@ jobs:
               )
               if destination.exists():
                   raise SystemExit(f"More than one bundle has the same asset extension: {extension}")
-              if package.stat().st_size == 0:
+              size = package.stat().st_size
+              if size == 0:
                   raise SystemExit(f"Tauri produced an empty release bundle: {package}")
+              if size >= 2147483648:
+                  raise SystemExit(
+                      f"Release bundle meets GitHub's 2 GiB per-asset limit: {package} ({size} bytes)"
+                  )
               shutil.copy2(package, destination)
               print(f"Staged {package} as {destination}")
           PY
@@ -441,14 +456,13 @@ jobs:
             --ffmpeg "$(command -v ffmpeg)" \
             --target x86_64-unknown-linux-gnu \
             --sidecar-name tts-sidecar-cuda \
-            --onedir \
             --output-dir build/cuda-runtime
 
       - name: Split and validate the CUDA sidecar
         run: |
           mkdir -p release-assets
           python scripts/package_cuda_runtime.py split \
-            build/cuda-runtime/tts-sidecar-cuda-x86_64-unknown-linux-gnu \
+            build/cuda-runtime/tts-sidecar-cuda \
             release-assets "${RELEASE_TAG#v}"
           python scripts/package_cuda_runtime.py verify-cuda release-assets "${RELEASE_TAG#v}"
 

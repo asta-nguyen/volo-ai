@@ -119,8 +119,10 @@ the Python worker as a Tauri sidecar and stores model/audio data locally.
   to the existing seed importer. Setup is therefore independent of the source
   repository or the original sample-audio path.
 - `scripts/build_sidecar.py` packages the desktop worker and FFmpeg into a
-  target-named executable and can stage the matching audio.cpp CLI beside the
-  regular worker. The separate CUDA build omits that CLI and Tauri bundle.
+  PyInstaller onedir folder under `apps/desktop/src-tauri/sidecar/` and can
+  stage the matching audio.cpp CLI inside it; the Tauri bundle ships that
+  folder as a resource. The separate CUDA build omits that CLI and Tauri
+  bundle.
 
 ## Runtime boundaries
 
