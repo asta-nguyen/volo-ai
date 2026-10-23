@@ -96,7 +96,9 @@ the Python worker as a Tauri sidecar and stores model/audio data locally.
   the project, with a notice about public suggestions and GitHub sign-in.
   The shared footer exposes both links on every localized page. Header/footer
   branding uses the supplied Volo logo PNG through Next.js Image optimization;
-  the same `apps/web/app/icon.png` supplies the browser icon.
+  the same `apps/web/app/icon.png` supplies the browser icon. The localized
+  root layout loads a Ko-fi Floating Button for `n2q1910`, with the Volo
+  terracotta color and localized button text.
 - The website includes localized macOS Gatekeeper guidance: an Apple-supported
   Open Anyway path for trusted official downloads, redownload/stop advice for
   a damaged-app warning, and a separate advanced disclosure explaining the
@@ -167,14 +169,17 @@ check manually, and a manual check can resurface a dismissed release. Dismissals
 are stored by release tag. The Tauri shell-open scope accepts the exact
 `https://github.com/az-forge/volo-ai/releases/tag/vMAJOR.MINOR.PATCH` URL (strict
 SemVer, no leading-zero components), the repository homepage, and its
-`/discussions/categories/ideas` page. Update notices open the validated release
-URL and do not download or install updates.
+`/discussions/categories/ideas` page, plus `https://ko-fi.com/n2q1910`.
+Update notices open the validated release URL and do not download or install
+updates.
 Settings > General includes a localized community card with separate actions
-for suggesting a feature and starring Volo AI. These open the fixed public
-Ideas category and repository homepage in the system browser. The card explains
-that ideas are public and GitHub sign-in is required to post, vote, or star.
-The app stores no feedback, makes no feedback API calls, and records a frontend
-diagnostic if the browser opener fails; interactions happen on GitHub.
+for suggesting a feature, starring Volo AI, and supporting it on Ko-fi. These
+open the fixed public Ideas category, repository homepage, or Ko-fi page in the
+system browser. The card explains that ideas are public and GitHub sign-in is
+required to post, vote, or star.
+The app stores no feedback and makes no feedback or donation API calls. Feature
+suggestions and stars happen on GitHub; donations happen on Ko-fi. It records a
+frontend diagnostic if the system browser opener fails.
 Local audio playback branches by platform in the shared
 `AudioPlayer`/`InlineAudioPreview` components, which receive local file paths:
 on Linux WebKitGTK they read the file through `tauri-plugin-fs` into a
@@ -337,6 +342,7 @@ synthesis target remains `volo-ai.synthesis-language`.
 - `apps/web/app/(default)/layout.tsx`
 - `apps/web/app/(default)/page.tsx`
 - `apps/web/app/[locale]/layout.tsx`
+- `apps/web/components/kofi-widget.tsx`
 - `apps/web/app/[locale]/page.tsx`
 - `apps/web/app/[locale]/changelog/page.tsx`
 - `apps/web/app/[locale]/features/page.tsx`

@@ -60,6 +60,7 @@ import {
   ChevronRight,
   CircleStop,
   Clock,
+  Coffee,
   Copy,
   Download,
   FileAudio,
@@ -1625,7 +1626,7 @@ function SettingsView({
   onCancelRuntime: () => void;
   onRemoveRuntime: () => void;
   onCheckForUpdates: () => void;
-  onOpenCommunityPage: (page: "ideas" | "repository") => void;
+  onOpenCommunityPage: (page: "ideas" | "repository" | "kofi") => void;
   onBack: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("model");
@@ -1832,6 +1833,10 @@ function SettingsView({
                     <Button variant="secondary" onClick={() => onOpenCommunityPage("repository")}>
                       <Star data-icon="inline-start" />
                       {copy.starProject}
+                    </Button>
+                    <Button variant="secondary" onClick={() => onOpenCommunityPage("kofi")}>
+                      <Coffee data-icon="inline-start" />
+                      {copy.supportOnKofi}
                     </Button>
                   </div>
                 </CardContent>
@@ -4264,11 +4269,13 @@ function App() {
     }
   }
 
-  async function openCommunityPage(page: "ideas" | "repository") {
+  async function openCommunityPage(page: "ideas" | "repository" | "kofi") {
     const url =
       page === "ideas"
         ? "https://github.com/az-forge/volo-ai/discussions/categories/ideas"
-        : "https://github.com/az-forge/volo-ai";
+        : page === "kofi"
+          ? "https://ko-fi.com/n2q1910"
+          : "https://github.com/az-forge/volo-ai";
     try {
       await shellOpen(url);
     } catch {
@@ -4276,7 +4283,7 @@ function App() {
         "frontend_error",
         "community_link_open_failed",
         undefined,
-        "Could not open the GitHub community page.",
+        "Could not open the community page.",
       );
     }
   }

@@ -56,7 +56,8 @@ overview but do not yet have dedicated wiki feature pages:
   including the app data path; Settings is also reachable from the first-run
   setup screen. General also opens the public GitHub Ideas category for feature
   suggestions and the repository homepage for manually starring the project;
-  the localized notice explains public visibility and GitHub sign-in.
+  a Ko-fi action opens the Volo AI support page in the system browser. The
+  localized notice explains public visibility and GitHub sign-in.
 - [x] Desktop audio history — the app lists and plays WAV/MP3 files from its
   output directory, including older files without synthesis metadata; it can
   rename an output while preserving its extension and metadata, copy its local
@@ -91,7 +92,8 @@ overview but do not yet have dedicated wiki feature pages:
   [architecture overview](architecture/overview.md), which also maps the
   localized feature overview route. The Features page and shared footer link to
   GitHub Ideas and the repository for manual starring; header/footer branding
-  and the browser icon use the supplied Volo logo.
+  and the browser icon use the supplied Volo logo. A Ko-fi Floating Button is
+  available across the localized web pages and opens the Volo AI support panel.
 - [x] Desktop local REST API — Settings starts and stops an opt-in API bound to
   `127.0.0.1:8765`; it reuses the MCP tools and app data and stops with the
   desktop sidecar. See the [API reference](../desktop-local-api.md) for routes

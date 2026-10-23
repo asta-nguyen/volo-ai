@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Manrope } from "next/font/google";
 import { notFound } from "next/navigation";
 import Script from "next/script";
+import { KofiWidget } from "@/components/kofi-widget";
 import { copy, isLocale } from "@/lib/site-copy";
 import "../globals.css";
 
@@ -35,6 +36,7 @@ export default async function LocaleRootLayout({
     <html lang={locale}>
       <body className={manrope.className}>
         {children}
+        <KofiWidget />
         <Script
           defer
           src="https://umami.n2q.site/script.js"
