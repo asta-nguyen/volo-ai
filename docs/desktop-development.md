@@ -197,3 +197,81 @@ The first-run screen downloads incomplete OmniVoice and VieNeu assets only
 after the user starts setup, and runs those downloads concurrently. Later runs
 reuse complete assets from the platform app-data directory. Keep model weights
 out of the installer.
+
+## Local release builds
+
+`scripts/build_local_<os>_<arch>.sh` runs the full official build pipeline on
+the matching native host: it stages the pinned audio.cpp v0.9.0 CPU CLI and a
+real FFmpeg into the PyInstaller sidecar, smoke-tests the staged folder, and
+runs `npm --prefix apps/desktop run tauri build`. Each official bundle must be
+produced on its own OS — PyInstaller is not a cross-compiler — so the scripts
+reject a non-matching host before any network or build side effects. Intel
+macOS is not a supported desktop target.
+
+### Prerequisites
+
+The scripts assume the system toolchain and Tauri OS prerequisites are already
+installed. They never install system software; a missing prerequisite fails
+with an install hint instead.
+
+- macOS arm64 (`scripts/build_local_macos_arm64.sh`): Apple Silicon Mac with
+  Xcode Command Line Tools (`xcode-select --install`), Homebrew CMake and
+  FFmpeg (`brew install cmake ffmpeg`), Rust on `aarch64-apple-darwin`,
+  Node.js 22+, and Python 3.10+.
+- Linux x64 (`scripts/build_local_linux_x64.sh`): the release package set —
+  `sudo apt-get update && sudo apt-get install --yes build-essential cmake
+  curl file ffmpeg libasound2-dev libayatana-appindicator3-dev libssl-dev
+  libwebkit2gtk-4.1-dev libxdo-dev librsvg2-dev patchelf pkg-config wget` —
+  plus Rust on `x86_64-unknown-linux-gnu`, Node.js 22+, and Python 3.10+.
+- Windows x64 (`scripts/build_local_windows_x64.sh`): Visual Studio Build
+  Tools with the C++ workload, Rust `stable-x86_64-pc-windows-msvc`, Node.js
+  22+, 64-bit Python 3.10+, PowerShell (`pwsh` or `powershell.exe`), and a
+  real `ffmpeg.exe`. A Chocolatey FFmpeg install works: the script resolves
+  the real binary under `<ChocolateyInstall>\lib\ffmpeg\tools` and never
+  bundles the `chocolatey\bin` ShimGen launcher.
+
+### Invocation
+
+Run the matching script from the repository root with bash (each script
+locates the repository root itself, so invoking it by absolute path also works
+from any directory):
+
+```sh
+bash scripts/build_local_macos_arm64.sh    # Apple Silicon macOS
+bash scripts/build_local_linux_x64.sh      # native x86_64 Linux
+bash scripts/build_local_windows_x64.sh    # Git Bash on native Windows x64
+```
+
+On Windows the script must run inside Git Bash (or MSYS2/Cygwin) on native
+64-bit Windows — not in WSL, PowerShell, or CMD. Git Bash ships with Git for
+Windows; open "Git Bash" from the Start menu in the cloned repository and run
+the command above. The script itself rejects a non-Windows host before doing
+any work.
+
+### Output
+
+The script prints the generated installer path(s) under
+`apps/desktop/src-tauri/target/release/bundle/` (`.dmg` on macOS, `.msi`/`.exe`
+on Windows, `.AppImage`/`.deb`/`.rpm` on Linux).
+
+### What the scripts do
+
+1. Reject a non-matching native host via `uname` before any side effects, then
+   verify required tools, the Rust host triple, and a real FFmpeg.
+2. Create `.venv` if absent — an existing `.venv` is reused and never deleted
+   or recreated — and install the same Python dependencies as the release
+   workflow: `.[mp3,desktop-vieneu]` plus `requirements-build.txt`, with
+   CPU-only `torch`/`torchaudio` on Linux.
+3. Clone `audio.cpp` `v0.9.0` into the git-ignored `build/audio.cpp` if absent;
+   an existing checkout must be exactly `v0.9.0` and clean or the script
+   stops. It never deletes or resets a checkout.
+4. Build `audiocpp_cli` with the same pinned CPU commands as the release
+   workflow: the CMake flag set on macOS, `scripts/build_linux.sh` on Linux,
+   and `scripts/build_windows.ps1` through PowerShell on Windows.
+5. Stage the sidecar plus audio.cpp CLI and FFmpeg through
+   `scripts/build_sidecar.py` with the exact native target triple, then run
+   `scripts/smoke_sidecar.py` on the staged resources.
+6. Ensure `apps/desktop` Node dependencies with `npm install` (an existing
+   `node_modules` is never wiped) and run
+   `npm --prefix apps/desktop run tauri build`.
+7. Print the generated bundle path(s).
