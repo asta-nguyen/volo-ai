@@ -1,0 +1,192 @@
+docs/llm/INDEX.md
+  s_5ebb194958a8cb::t_0e8a91f4e670c9 13-14,24,32-34,64-67
+tests/test_smoke_sidecar.py
+  s_63fe9a73b2d4f0::t_b4d730aae406c6 1-43,134-141,145-174
+  s_32954ba5ba166d::t_7f0d03ba1a98a1 44-133,142-144
+apps/desktop/src/App.tsx
+  s_5ebb194958a8cb::t_569d8cab3d54a3 2707
+  s_5ebb194958a8cb::t_b015a59003ca17 2410-2412,2422-2425,2431-2432,2438,2446-2447,2453
+  s_5ebb194958a8cb::t_33833c9a903881 2679-2686,2690-2706,2708-2722,2726-2733
+  s_5ebb194958a8cb::t_9c52e68b53473f 2522,2524-2525,2536
+  s_5ebb194958a8cb::t_c28f2359fbc476 3801,3901-3903,3907,3911-3913,3915-3923
+  s_5ebb194958a8cb::t_a0400f2a7d7321 5324-5325,5331
+  s_5ebb194958a8cb::t_261909e82ee4c5 40-47
+  s_5ebb194958a8cb::t_114dc14978abdb 2406-2409,2413-2421
+  s_5ebb194958a8cb::t_ebdfaa8371dd16 2466-2467,2687-2689,2723-2725
+  s_5ebb194958a8cb::t_8e02775eb287ad 4067-4068,4070,4073-4074
+  s_5ebb194958a8cb::t_60a9afd737d3c5 4048-4051,4066,4078,4094,4429,4432-4433,4436,4444-4445
+  s_8c9198b85204ab::t_38e1cf66de295f 39
+scripts/smoke_sidecar.py
+  s_32954ba5ba166d::t_b886138ac40e8c 7,19-20
+  s_32954ba5ba166d::t_b54166babb9202 77-112
+  s_8c9198b85204ab::t_d81a513da86e49 72-73
+  s_32954ba5ba166d::t_5a28514d4f3447 124-126
+  s_63fe9a73b2d4f0::t_b320690f73bf3c 141
+  s_8c9198b85204ab::t_5be10c7ef55ed1 55-62,64-71,74-76,117,119,123
+  s_8c9198b85204ab::t_bd17e1f22e3ee1 63
+src/tts_mcp/desktop_vieneu.py
+  s_32954ba5ba166d::t_3c153ffd304ca1 184-187
+tests/test_build_sidecar.py
+  s_8c44fc11cdbe26::t_16d51e504d2666 73-131
+  s_8c9198b85204ab::t_209654b4d85b36 420-422,453,455-460
+  s_304b6d9eecca9c::t_8601e1f80c1c24 547-585
+  s_fd24a0f933852a::t_bc58854c900828 586-746,786-797,801-805,807-811
+  s_304b6d9eecca9c::t_ea5deb13262423 747-785
+  s_fd24a0f933852a::t_d5bd27d4a86fd6 798-800,806
+  s_8c9198b85204ab::t_face4c3e9c3072 147-149,190
+  s_8c9198b85204ab::t_e2ca77b89828fc 413,464,532
+  s_fd24a0f933852a::t_6c9a8be595c9ee 151-153,169-171,184-185
+  s_fd24a0f933852a::t_285f7f5a75e143 383
+  s_bfb8b57fbf41cd::t_6418d52629f62c 233-323
+  s_fd24a0f933852a::t_b75ef987dd24ce 338
+  s_8c9198b85204ab::t_e6c9c222c4743f 411-412,414-419,423-452,454,461-463,465-531,533-546
+tests/test_desktop.py
+  s_5ebb194958a8cb::t_1590fdaa60f9d8 664-682,704-714,716,719,721-725,729,735
+scripts/build_sidecar.py
+  s_fd24a0f933852a::t_5b93190ac9fa97 161-217,219-223,227-242
+  s_fd24a0f933852a::t_1f60dfea210c9a 21,25-47
+  s_fd24a0f933852a::t_878ac960992d7a 345-347
+  s_8c9198b85204ab::t_3362a110628845 395-401
+  s_bfb8b57fbf41cd::t_e2fce3a6778697 22
+  s_8c9198b85204ab::t_fddb0118b500d0 378
+  s_8c44fc11cdbe26::t_7630b63b60aebf 305,307-312
+  s_8c44fc11cdbe26::t_4e951a3694a9e3 306
+  s_304b6d9eecca9c::t_e9eea67959fbee 135,144
+  s_304b6d9eecca9c::t_8e98d371f6b936 218,224-226
+  s_8c9198b85204ab::t_0d998a0561d7f4 23-24,48-98,100-102,104-134,136-143,145-158
+  s_8c9198b85204ab::t_625edcb9c21898 342-343
+  s_fd24a0f933852a::t_a0f5886f6a198b 103
+  s_8c9198b85204ab::t_2df89c1c36901d 340
+  s_bfb8b57fbf41cd::t_72937ecf8d91d6 318-335
+  s_bfb8b57fbf41cd::t_9e3cfe1768601f 10
+  s_8c9198b85204ab::t_d827451ed98b70 99
+  s_8c9198b85204ab::t_5b415d94e37b60 341,344
+  s_60e94f5312d3ba::t_ec843f76f49eff 159-160
+apps/desktop/src/lib/i18n.ts
+  s_5ebb194958a8cb::t_9c8ebad83cc112 231-234,756-759,1283-1286
+.github/workflows/ci.yml
+  s_ca2b5b05d78cae::t_fd1893581e4dee 89-250
+apps/desktop/src/lib/sidecar.ts
+  s_5ebb194958a8cb::t_40d56424cc2318 164-165
+.github/workflows/release.yml
+  s_fd24a0f933852a::t_65c3161d553f2a 270,272-273,275
+  s_fd24a0f933852a::t_2b10d276434f09 271
+  s_8c44fc11cdbe26::t_0d77a252c8b3bb 274,276
+  s_fd24a0f933852a::t_785b48e7e34ab6 439
+docs/llm/workflows/desktop-audio-history.md
+  s_5ebb194958a8cb::t_4032503439e5f0 1-22,24-52
+  s_5ebb194958a8cb::t_94696d7be66a77 23
+tests/test_desktop_vieneu.py
+  s_32954ba5ba166d::t_27e2fdfb525855 245-294
+docs/llm/workflows/desktop-vieneu.md
+  s_32954ba5ba166d::t_a2007666f39af7 421,424
+  s_32954ba5ba166d::t_a55d09508e86a9 403-406
+  s_32954ba5ba166d::t_f3d93127e2bcd7 323-326
+docs/llm/architecture/overview.md
+  s_02ee82b36d8b66::t_760b19df697859 56-65
+  s_bfb8b57fbf41cd::t_df020cc338e264 139-143
+  s_5ebb194958a8cb::t_010cc8acac432b 48-50,223-231,284-286,353
+  s_02ee82b36d8b66::t_e59e8e63ca1766 345
+  s_02ee82b36d8b66::t_b240cfb98e24a7 370
+src/tts_mcp/desktop.py
+  s_5ebb194958a8cb::t_fe13ffbf3e2878 41,428-430,433-435,437-439,441-442,999-1003
+apps/desktop/src/components/ui/pagination.tsx
+  s_5ebb194958a8cb::t_65bd13b1648032 1-4,14,24,28,32,34,52,70,88,91,96-99,105,116
+  s_5ebb194958a8cb::t_d37000e4688727 5-13,15-23,25-27,29-31,33,35-51,53-69,71-87,89-90,92-95,100-104,106-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a29ec304d17fcb42452f5901c48d56b1b4e75107",
+  "prompts": {},
+  "sessions": {
+    "s_02ee82b36d8b66": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "camp-lace",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_304b6d9eecca9c": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "wheat-generation",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_32954ba5ba166d": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "prickly-pocket",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_5ebb194958a8cb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16c5c-c00c-7f92-a6dd-d7e6e83c8340",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_60e94f5312d3ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16c20-85f1-7800-942d-192117a8036b",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_63fe9a73b2d4f0": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "rigorous-data",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_8c44fc11cdbe26": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "lydian-beanie",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_8c9198b85204ab": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "cord-earthquake",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_bfb8b57fbf41cd": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "checker-primrose",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_ca2b5b05d78cae": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "savory-ping",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    },
+    "s_fd24a0f933852a": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "fluff-dryosaurus",
+        "model": "unknown"
+      },
+      "human_author": "asta-nguyen <asta.dev.520@gmail.com>"
+    }
+  }
+}
