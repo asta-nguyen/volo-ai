@@ -21,8 +21,9 @@
       "identifier": "shell:allow-spawn",
       "allow": [
         {
-          "name": "binaries/tts-sidecar",
-          "sidecar": true,
+          "name": "tts-sidecar",
+          "cmd": "$RESOURCE/sidecar/tts-sidecar",
+          "sidecar": false,
           "args": true
         }
       ]

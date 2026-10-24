@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import tempfile
 import threading
@@ -120,6 +121,71 @@ class VieNeuAssetTests(VieNeuAssetFixture, unittest.TestCase):
         self.assertIsNone(status["default_voice"])
         self.assertFalse(status["model_ready"])
         self.assertIn("prepare_model(provider='vieneu')", status["unavailable_reason"])
+
+    def test_status_caches_expensive_probes(self):
+        self.write_complete_assets()
+        binary = self.root / "audiocpp-cli"
+        binary.write_text("#!/bin/sh\n", encoding="utf-8")
+        binary.chmod(0o755)
+        with patch.dict(os.environ, {"TTS_MCP_AUDIOCPP_PATH": str(binary)}):
+            with (
+                patch(
+                    "tts_mcp.desktop_vieneu.subprocess.run",
+                    return_value=subprocess.CompletedProcess([str(binary)], 0, "", ""),
+                ) as run,
+                patch.object(
+                    self.provider, "_manifest", wraps=self.provider._manifest
+                ) as manifest_probe,
+            ):
+                first = self.provider.status()
+                second = self.provider.status()
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(manifest_probe.call_count, 1)
+        self.assertEqual(first, second)
+
+    def test_status_revalidates_when_a_probed_file_changes(self):
+        self.write_complete_assets()
+        binary = self.root / "audiocpp-cli"
+        binary.write_text("#!/bin/sh\n", encoding="utf-8")
+        binary.chmod(0o755)
+        with patch.dict(os.environ, {"TTS_MCP_AUDIOCPP_PATH": str(binary)}):
+            with patch(
+                "tts_mcp.desktop_vieneu.subprocess.run",
+                return_value=subprocess.CompletedProcess([str(binary)], 0, "", ""),
+            ) as run:
+                self.provider.status()
+                binary.write_text("#!/bin/sh\n# changed binary\n", encoding="utf-8")
+                self.provider.status()
+        self.assertEqual(run.call_count, 2)
+
+    def test_download_progress_throttled_but_cancellation_checked_every_update(self):
+        events = []
+        cancel_checks = []
+        ticks = iter(i * 0.01 for i in range(200))
+
+        def fake_download(*, tqdm_class, **_kwargs):
+            bar = tqdm_class(total=50)
+            for _ in range(50):
+                bar.update(1)
+
+        with (
+            patch("huggingface_hub.snapshot_download", side_effect=fake_download),
+            patch(
+                "tts_mcp.desktop_vieneu.time.monotonic",
+                side_effect=lambda: next(ticks),
+            ),
+        ):
+            self.provider._download_patterns(
+                [MODEL_FILE],
+                events.append,
+                lambda: cancel_checks.append(1) or False,
+            )
+
+        self.assertEqual(len(cancel_checks), 51)
+        self.assertEqual(events[0]["progress"], 0.0)
+        self.assertLessEqual(len(events), 7)
+        self.assertGreaterEqual(len(events), 3)
+        self.assertEqual(events[-1]["progress"], 1.0)
 
     def test_cancelled_download_stays_not_ready_then_retry_completes(self):
         calls = []
@@ -340,13 +406,14 @@ class VieNeuSynthesisTests(VieNeuAssetFixture, unittest.TestCase):
             def __init__(self):
                 self.lock = threading.Lock()
 
-            def __enter__(self):
+            def acquire(self, timeout=None):
                 if threading.current_thread().name == "second-synthesis":
                     second_attempting.set()
-                self.lock.acquire()
-                return self
+                if timeout is None:
+                    return self.lock.acquire()
+                return self.lock.acquire(timeout=timeout)
 
-            def __exit__(self, *_args):
+            def release(self):
                 self.lock.release()
 
         def synthesize(_request, _voices, _output_dir, _output_path):

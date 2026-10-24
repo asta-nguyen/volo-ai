@@ -1,4 +1,4 @@
-"""Build the Python desktop worker as a Tauri target-named sidecar."""
+"""Build the Python desktop worker as a PyInstaller onedir sidecar folder."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from packaging.requirements import Requirement
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BINARIES = ROOT / "apps" / "desktop" / "src-tauri" / "binaries"
+SIDECAR_DIR = ROOT / "apps" / "desktop" / "src-tauri" / "sidecar"
 BUILD_EXTRAS = ("mp3", "desktop-vieneu")
 
 
@@ -63,10 +63,7 @@ def main() -> int:
     )
     parser.add_argument("--sidecar-name", default="tts-sidecar", help="PyInstaller executable name")
     parser.add_argument(
-        "--onedir", action="store_true", help="stage PyInstaller's onedir output instead of onefile"
-    )
-    parser.add_argument(
-        "--output-dir", type=Path, default=BINARIES, help="Directory for packaged executables"
+        "--output-dir", type=Path, default=SIDECAR_DIR, help="Directory for the staged sidecar folder"
     )
     args = parser.parse_args()
     if not re.fullmatch(r"[A-Za-z0-9_-]+", args.sidecar_name):
@@ -88,7 +85,6 @@ def main() -> int:
 
     target = args.target or host_triple()
     extension = ".exe" if target.endswith("windows-msvc") else ""
-    output_name = f"tts-sidecar-{target}{extension}"
     dist_dir = ROOT / "build" / "sidecar-dist" / args.sidecar_name
     work_dir = ROOT / "build" / "sidecar-work"
     separator = ";" if os.name == "nt" else ":"
@@ -99,7 +95,7 @@ def main() -> int:
         "PyInstaller",
         "--noconfirm",
         "--clean",
-        "--onedir" if args.onedir else "--onefile",
+        "--onedir",
         "--name",
         args.sidecar_name,
         "--paths",
@@ -128,36 +124,25 @@ def main() -> int:
     ]
     subprocess.run(command, cwd=ROOT, check=True)
 
-    built = (
-        dist_dir / args.sidecar_name
-        if args.onedir
-        else dist_dir / f"{args.sidecar_name}{extension}"
-    )
-    if args.onedir and not built.is_dir():
+    built = dist_dir / args.sidecar_name
+    if not built.is_dir():
         raise RuntimeError(f"PyInstaller did not produce onedir output at {built}")
-    if not args.onedir and not built.is_file():
-        raise RuntimeError(f"PyInstaller did not produce {built}")
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    destination = output_dir / output_name.replace("tts-sidecar", args.sidecar_name, 1)
-    if args.onedir:
-        if destination.exists() or destination.is_symlink():
-            if destination.is_dir() and not destination.is_symlink():
-                shutil.rmtree(destination)
-            else:
-                destination.unlink()
-        shutil.copytree(built, destination, symlinks=True)
-        executable = destination / f"{args.sidecar_name}{extension}"
-        if not executable.is_file() or executable.is_symlink():
-            raise RuntimeError(f"PyInstaller onedir output has no regular executable: {executable}")
-        executable.chmod(executable.stat().st_mode | 0o111)
-    else:
-        shutil.copy2(built, destination)
-        if not destination.name.endswith(".exe"):
-            destination.chmod(destination.stat().st_mode | 0o111)
+    destination = output_dir / args.sidecar_name
+    if destination.exists() or destination.is_symlink():
+        if destination.is_dir() and not destination.is_symlink():
+            shutil.rmtree(destination)
+        else:
+            destination.unlink()
+    shutil.copytree(built, destination, symlinks=True)
+    executable = destination / f"{args.sidecar_name}{extension}"
+    if not executable.is_file() or executable.is_symlink():
+        raise RuntimeError(f"PyInstaller onedir output has no regular executable: {executable}")
+    executable.chmod(executable.stat().st_mode | 0o111)
     print(destination)
     if audiocpp is not None:
-        audiocpp_destination = output_dir / f"audiocpp-cli-{target}{extension}"
+        audiocpp_destination = destination / f"audiocpp-cli-{target}{extension}"
         shutil.copy2(audiocpp, audiocpp_destination)
         if not audiocpp_destination.name.endswith(".exe"):
             audiocpp_destination.chmod(audiocpp_destination.stat().st_mode | 0o111)

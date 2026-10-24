@@ -18,14 +18,19 @@ Evidence: `apps/desktop/src/App.tsx`, `apps/desktop/src/lib/sidecar.ts`, `src/tt
 
 ### DSET-local-diagnostics
 
-The desktop app SHALL keep bounded local diagnostic events and export a
-home-path-redacted report only after the user chooses Export.
+The desktop app SHALL retain bounded local diagnostic events, make Logs and user-triggered export available from first-run setup before providers are ready, and include sanitized failed-request context in home-path-redacted reports without request payloads or generated content.
 
-#### Scenario: A user exports an error report
+#### Scenario: Open Logs during setup
 
-- GIVEN local desktop errors or runtime events have been recorded
-- WHEN the user exports diagnostics from Logs
-- THEN the saved JSON contains app, platform, runtime, and error details without request payloads, synthesized text, audio, or voice content
+- GIVEN one or more providers are not ready or the sidecar is unavailable
+- WHEN the user opens Logs from first-run setup
+- THEN the app opens Logs and allows an explicit export, using a frontend-only report marked incomplete when the sidecar cannot respond
+
+#### Scenario: Export a failed request
+
+- GIVEN a failed request has diagnostic details
+- WHEN the user chooses Export
+- THEN the report includes its timestamp, operation, request ID, provider and last-known setup stage or asset when available, error code, sanitized error message, elapsed time, and sanitized stack details, while excluding request payloads, synthesized text, audio, and voice content
 
 Evidence: `apps/desktop/src/App.tsx`, `apps/desktop/src/lib/diagnostics.ts`, `apps/desktop/src/lib/sidecar.ts`, `src/tts_mcp/desktop.py`, `src/tts_mcp/desktop_diagnostics.py`, `tests/test_desktop_diagnostics.py`
 
@@ -65,6 +70,14 @@ keeps that worker active and records the fallback reason. A legacy format-1
 single-file runtime is not selected; users can install the current archive.
 Install, update, and remove actions take effect after the app restarts.
 
+The first-run setup screen can open Logs even while a provider is not ready or
+the sidecar failed to start. Logs combines the sidecar request history with
+frontend events from browser local storage when status data is available. When
+the user chooses Export, the app sends path-redacted frontend events to the
+sidecar for a combined report, then writes the JSON only to the destination
+chosen in the save dialog. If the sidecar request fails, it saves only the
+frontend events in an explicitly incomplete report.
+
 ## State changes
 
 - The extracted runtime directory and `current.json` live below the Tauri
@@ -73,19 +86,27 @@ Install, update, and remove actions take effect after the app restarts.
   cancelled download or extraction removes its staging directory and leaves the
   previously selected runtime intact.
 - Python diagnostics are stored in `diagnostics.jsonl`, bounded to 500 events
-  and 1 MB. Frontend and process diagnostics are stored separately in bounded
-  browser local storage.
+  and 1 MB. Frontend diagnostics are stored separately in browser local storage,
+  bounded to 500 events and 1 MB. Sidecar stderr bursts are deduplicated to one
+  recorded event per five-second window, and the next recorded message notes
+  how many similar messages were suppressed.
 - Export creates a JSON file only at the path selected by the user. Clearing
   Logs clears both local histories.
+- Failed request events retain the operation, request ID, error code and type,
+  elapsed time, and, for model preparation, the provider and latest preparation
+  phase and asset when available. Detailed error messages are retained for
+  `status` and `prepare_model`; other request failures retain the exception type
+  to limit collection of operation input.
 
 ## Side effects
 
 - Runtime installation downloads versioned release assets from
   `az-forge/volo-ai`; it does not send app data or synthesis content.
 - Reports include the app version, operating system, architecture, runtime
-  state, and recent error events. Home-directory paths are redacted. The report
-  excludes request payloads, synthesized text, audio, and voice content, and is
-  never uploaded automatically.
+  state, and recent error events. Home-directory paths are redacted in messages,
+  asset names, and stack details. The report excludes request payloads,
+  synthesized text, audio, and voice content, and is never uploaded
+  automatically.
 - Logging and report collection failures do not interrupt synthesis or runtime
   operations. The Logs view marks diagnostics as incomplete when collection or
   export fails.
@@ -114,9 +135,12 @@ Install, update, and remove actions take effect after the app restarts.
 - A failed CUDA startup health check, missing driver/device, stale version, or
   changed extracted-tree hash records a CPU fallback reason and leaves synthesis
   on the bundled worker. A missing optional runtime is the default CPU state.
-- If the sidecar cannot respond during report export, the app can save an
-  explicitly incomplete frontend-only report. Filesystem or diagnostics-store
-  failures are surfaced in Logs.
+- Logs remains available from first-run setup while providers are not ready or
+  the sidecar is unavailable. If the sidecar cannot respond during report
+  export, the app can save an explicitly incomplete frontend-only report. If the
+  home directory cannot be resolved, frontend freeform messages, stack details,
+  and asset names are omitted from that export and it is marked incomplete.
+  Filesystem or diagnostics-store failures are surfaced in Logs.
 
 ## Tests
 
@@ -126,14 +150,16 @@ Install, update, and remove actions take effect after the app restarts.
   atomic update behavior, extracted-tree tampering, legacy fallback, GPU
   health-check selection, and managed removal scope.
 - `tests/test_desktop_diagnostics.py` checks bounded persistence, home-path
-  redaction, export field exclusions, clearing, and write failures.
+  redaction, failed-request context in reports, export field exclusions,
+  clearing, and write failures.
 - `tests/test_package_cuda_runtime.py` checks onedir PAX archiving, splitting,
   part and archive hashes, unsafe archive rejection, release target validation,
   and missing installer targets.
-- `tests/test_build_sidecar.py` checks the normal paired binaries, the CUDA
-  onedir output, and the unchanged onefile default without audio.cpp staging.
-- `tests/test_desktop.py` checks JSONL cancellation of an optional runtime
-  install.
+- `tests/test_build_sidecar.py` checks the onedir staging layout with the
+  audio.cpp CLI inside the folder, Windows executable naming, and the CUDA
+  build's onedir tree staged outside Tauri without audio.cpp.
+- `tests/test_desktop.py` checks failed model-preparation context and JSONL
+  cancellation of an optional runtime install.
 
 ## Related
 

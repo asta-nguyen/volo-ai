@@ -14,6 +14,15 @@ for MP3 export during source development.
 - For web development, install dependencies with `npm ci --prefix apps/web`
   and start the app with `npm --prefix apps/web run dev`.
 
+## GitHub issue tracking
+
+Before starting a contribution, create a GitHub issue for it or reuse an
+existing issue that already tracks the work. Record its number as `#<number>`
+in the active task description or plan, include the numeric ID in any Agent
+Devkit change folder name according to the
+[using-devkit workflow](.agents/skills/using-devkit/SKILL.md), and reference
+the issue in the pull request.
+
 ## AI-assisted contributions
 
 When using an AI coding agent, read [`AGENTS.md`](AGENTS.md) and follow the

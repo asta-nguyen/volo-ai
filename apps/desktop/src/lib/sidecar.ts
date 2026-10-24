@@ -108,6 +108,10 @@ export type StatusResult = {
   nvidia_runtime?: NvidiaRuntimeStatus;
   diagnostics?: DiagnosticEvent[];
   diagnostics_complete?: boolean;
+  resources?: {
+    peak_rss_bytes: number | null;
+    gpu_memory_bytes: number | null;
+  };
 };
 
 export type NvidiaRuntimeStatus = {
@@ -127,6 +131,7 @@ export type ProviderStatus = {
   unavailable_reason: string | null;
   preset_voices?: Array<{ id: string; name: string; label: string }>;
   default_voice?: string | null;
+  backend?: string;
 };
 
 export type SynthesisResult = {
@@ -186,6 +191,7 @@ export type RequestLogStatus = "pending" | "success" | "error";
 
 export type RequestLog = {
   id: string;
+  requestId?: string;
   operation: string;
   status: RequestLogStatus;
   startedAt: number;
@@ -193,6 +199,9 @@ export type RequestLog = {
   durationMs?: number;
   errorCode?: string;
   errorMessage?: string;
+  provider?: string;
+  stage?: string;
+  asset?: string;
 };
 
 function isTauriRuntime(): boolean {
@@ -218,6 +227,9 @@ export class SidecarClient {
   private logs: RequestLog[] = [];
   private outputBuffer = "";
   private diagnosticsHydrated = false;
+  private preparationProgress = new Map<string, Pick<DiagnosticEvent, "provider" | "stage" | "asset">>();
+  private stderrDedupeUntil = 0;
+  private stderrSuppressed = 0;
 
   async start(): Promise<void> {
     if (this.child) return;
@@ -238,7 +250,11 @@ export class SidecarClient {
       "sidecar_exit",
       reason.code,
       undefined,
-      "The local engine stopped unexpectedly.",
+      reason.message,
+      {
+        error_type: reason.constructor.name,
+        traceback: reason.stack,
+      },
     );
     this.addLog({
       id: `sidecar-exit-${stoppedAt}-${this.nextId++}`,
@@ -261,22 +277,34 @@ export class SidecarClient {
         "The local engine is available in the Volo AI desktop app. Run `npm run tauri dev`.",
       );
     }
-    const command = Command.sidecar("binaries/tts-sidecar", [], {
+    const command = Command.create("tts-sidecar", [], {
       env: {
         TTS_MCP_DATA_DIR: await appDataDir(),
         TTS_MCP_APP_VERSION: await getVersion(),
       },
     });
     this.command = command;
+    this.stderrDedupeUntil = 0;
+    this.stderrSuppressed = 0;
     command.stdout.on("data", (line) => this.consume(String(line)));
-    command.stderr.on("data", () =>
+    command.stderr.on("data", () => {
+      const now = Date.now();
+      if (now < this.stderrDedupeUntil) {
+        this.stderrSuppressed += 1;
+        return;
+      }
+      const suppressed = this.stderrSuppressed;
+      this.stderrSuppressed = 0;
+      this.stderrDedupeUntil = now + 5000;
       recordFrontendDiagnostic(
         "sidecar_stderr",
         "sidecar_stderr",
         undefined,
-        "The local engine reported an error.",
-      ),
-    );
+        suppressed > 0
+          ? `The local engine reported an error. (${suppressed} similar messages suppressed)`
+          : "The local engine reported an error.",
+      );
+    });
     command.on("error", (message) =>
       this.handleStopped(
         command,
@@ -303,7 +331,11 @@ export class SidecarClient {
         "sidecar_start_failed",
         "sidecar_unavailable",
         undefined,
-        "Could not start the local engine.",
+        reason instanceof Error ? reason.message : String(reason),
+        {
+          error_type: reason instanceof Error ? reason.constructor.name : undefined,
+          traceback: reason instanceof Error ? reason.stack : undefined,
+        },
       );
       throw new SidecarError(
         "sidecar_unavailable",
@@ -363,8 +395,10 @@ export class SidecarClient {
   }
 
   /**
-   * The sidecar renders inline and cannot interrupt a model call, so cancelling
-   * restarts the engine. Returns false, without stopping, while other long work would be lost.
+   * Cancellation works while a render waits on the provider lock; a render that
+   * already entered the model call cannot be interrupted, so the engine is
+   * restarted as a fallback. Returns false, without stopping, while other long
+   * work would be lost.
    */
   async cancelSynthesis(): Promise<boolean> {
     const otherWork =
@@ -374,7 +408,16 @@ export class SidecarClient {
       this.activeTranscriptionId !== null;
     if (this.activeSynthesisIds.size === 0) return true;
     if (otherWork) return false;
-    await this.stop();
+    await Promise.allSettled(
+      [...this.activeSynthesisIds].map((request_id) =>
+        this.request({ type: "cancel", request_id }),
+      ),
+    );
+    const deadline = Date.now() + 750;
+    while (this.activeSynthesisIds.size > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    if (this.activeSynthesisIds.size > 0) await this.stop();
     return true;
   }
 
@@ -421,12 +464,17 @@ export class SidecarClient {
       ].includes(event.category);
       return {
         id: `diagnostic-${startedAt}-${index}`,
+        requestId: event.request_id,
         operation: event.operation ?? event.category,
         status: failure ? "error" : "success",
         startedAt,
         finishedAt: startedAt,
+        durationMs: event.duration_ms,
         errorCode: failure ? (event.code ?? event.category) : undefined,
         errorMessage: event.message,
+        provider: event.provider,
+        stage: event.stage,
+        asset: event.asset,
       };
     });
     this.logs = [...historic, ...this.logs].slice(-MAX_REQUEST_LOGS);
@@ -449,6 +497,10 @@ export class SidecarClient {
 
   async request<T>(payload: Omit<Request, "id">): Promise<T> {
     const id = String(this.nextId++);
+    const startedAt = Date.now();
+    const provider = payload.provider === "omnivoice" || payload.provider === "vieneu"
+      ? payload.provider
+      : undefined;
     const isPreparation = payload.type === "prepare_model";
     const isSeed = payload.type === "seed_vieneu_voices";
     const isRuntimeInstall = payload.type === "install_nvidia_runtime";
@@ -461,9 +513,11 @@ export class SidecarClient {
     if (isTranscription) this.activeTranscriptionId = id;
     this.addLog({
       id,
+      requestId: id,
       operation: String(payload.type ?? "unknown"),
       status: "pending",
-      startedAt: Date.now(),
+      startedAt,
+      provider,
     });
     let retried = false;
     try {
@@ -490,12 +544,28 @@ export class SidecarClient {
               code: "request_failed",
               message: reason instanceof Error ? reason.message : String(reason),
             };
-      this.completeLog(id, "error", error);
+      const progress = this.preparationProgress.get(id);
+      this.completeLog(id, "error", error, {
+        requestId: id,
+        provider: provider ?? progress?.provider,
+        stage: progress?.stage,
+        asset: progress?.asset,
+      });
+      const detailedError = payload.type === "prepare_model" || payload.type === "status";
       recordFrontendDiagnostic(
         "request_failed",
         error.code,
         String(payload.type ?? "unknown"),
-        "A local operation failed.",
+        detailedError ? error.message : "A local operation failed.",
+        {
+          request_id: id,
+          provider: provider ?? progress?.provider,
+          stage: progress?.stage,
+          asset: progress?.asset,
+          error_type: reason instanceof Error ? reason.constructor.name : undefined,
+          duration_ms: Date.now() - startedAt,
+          traceback: reason instanceof Error ? reason.stack : undefined,
+        },
       );
       throw reason;
     } finally {
@@ -506,6 +576,7 @@ export class SidecarClient {
       if (isTranscription && this.activeTranscriptionId === id)
         this.activeTranscriptionId = null;
       this.activeSynthesisIds.delete(id);
+      this.preparationProgress.delete(id);
     }
   }
 
@@ -565,6 +636,7 @@ export class SidecarClient {
     id: string,
     status: Exclude<RequestLogStatus, "pending">,
     error?: { code: string; message: string },
+    details?: Pick<RequestLog, "requestId" | "provider" | "stage" | "asset">,
   ): void {
     const finishedAt = Date.now();
     this.logs = this.logs.map((entry) =>
@@ -575,6 +647,7 @@ export class SidecarClient {
             finishedAt,
             durationMs: finishedAt - entry.startedAt,
             ...(error ? { errorCode: error.code, errorMessage: error.message } : {}),
+            ...(details ?? {}),
           }
         : entry,
     );
@@ -598,6 +671,13 @@ export class SidecarClient {
 
   private handle(message: Response<unknown> | ProgressEvent): void {
     if (!("ok" in message)) {
+      if (this.activePreparationIds.has(message.id)) {
+        this.preparationProgress.set(message.id, {
+          ...(message.provider ? { provider: message.provider } : {}),
+          stage: message.phase,
+          ...(message.asset ? { asset: message.asset } : {}),
+        });
+      }
       this.progressListeners.forEach((listener) => listener(message));
       return;
     }

@@ -15,8 +15,11 @@ the Python worker as a Tauri sidecar and stores model/audio data locally.
   default provider. VieNeu supports manifest presets through `speak` and saved
   Clone or one-off reference audio through `clone`; `design` and profile
   management remain OmniVoice/library operations.
-- `tts_mcp.desktop:main` consumes JSONL requests for the Tauri desktop app.
-  `status` reports OmniVoice and VieNeu readiness; `prepare_model` and
+- `tts_mcp.desktop:main` consumes JSONL requests for the Tauri desktop app
+  after switching process stdin, stdout, and stderr to UTF-8 so localized
+  text survives non-UTF-8 Windows console encodings.
+  `status` reports OmniVoice and VieNeu readiness, each provider's compute
+  backend, and best-effort engine memory usage; `prepare_model` and
   `synthesize` require an explicit provider ID. It also reports Linux x64
   optional NVIDIA runtime state and serves runtime install/remove and
   diagnostics export/clear requests. It owns the opt-in loopback REST API
@@ -41,8 +44,8 @@ the Python worker as a Tauri sidecar and stores model/audio data locally.
 - Audio History uses `list_audio_history`, `rename_audio_history`, and
   `delete_audio_history` sidecar operations. It plays generated files, includes
   legacy WAV/MP3 files without synthesis metadata, lets users rename an output
-  while keeping its extension, copies the output's local path, and asks for
-  confirmation before deleting it.
+  to an unaccented ASCII stem while keeping its extension, copies the output's
+  local path, and asks for confirmation before deleting it.
   Workspace separately retains only the five latest takes for the current app
   session; pruning that list does not delete files.
 - `apps/desktop/src/components/ui/` contains source-owned shadcn components
@@ -119,8 +122,10 @@ the Python worker as a Tauri sidecar and stores model/audio data locally.
   to the existing seed importer. Setup is therefore independent of the source
   repository or the original sample-audio path.
 - `scripts/build_sidecar.py` packages the desktop worker and FFmpeg into a
-  target-named executable and can stage the matching audio.cpp CLI beside the
-  regular worker. The separate CUDA build omits that CLI and Tauri bundle.
+  PyInstaller onedir folder under `apps/desktop/src-tauri/sidecar/` and can
+  stage the matching audio.cpp CLI inside it; the Tauri bundle ships that
+  folder as a resource. The separate CUDA build omits that CLI and Tauri
+  bundle.
 
 ## Runtime boundaries
 
@@ -149,16 +154,19 @@ accepted same-machine process trust boundary and route contract.
 while unsupported output extensions are rejected.
 The frontend `SidecarClient` gives ordinary requests a five-minute timeout,
 model preparation and seeding a one-hour timeout, and optional runtime
-installation and video transcription a three-hour timeout. Synthesis runs inline
-on the sidecar's request loop, so a `synthesize` request and any request sent
-while one is pending get a one-hour timeout; a long OmniVoice script can take
-several minutes. Because a model call cannot be interrupted, cancelling a render
-(`SidecarClient.cancelSynthesis`) restarts the sidecar; it is refused while a
+installation and video transcription a three-hour timeout. Synthesis runs on a
+sidecar worker thread, so the request loop stays responsive during a render; a
+`synthesize` request and any request sent while one is pending get a one-hour
+timeout, and a long OmniVoice script can take several minutes. Cancelling a
+render (`SidecarClient.cancelSynthesis`) first sends a `cancel` request, which
+aborts a synthesis still waiting for its provider lock; a render already in the
+model call cannot be interrupted, so the client restarts the sidecar when it
+does not settle within a short grace period. Cancellation is refused while a
 model download, seed import, runtime install, or transcription is running, and
 the restart also stops the local API server. `Engine` serializes OmniVoice generation,
 Whisper transcription, and clone-prompt creation behind one class-level
-`_inference_lock`, because the sidecar runs synthesis on its request loop while
-transcription and seed imports run on worker threads, and concurrent MPS work
+`_inference_lock`, and VieNeu renders behind the provider's synthesis lock,
+because concurrent MPS work
 aborts the process; a render requested during a transcription waits for it. Runtime downloads emit progress and support
 cancellation. Startup checks the exact app version and performs a CUDA health
 check; a stale or unusable runtime leaves CPU synthesis available.
@@ -236,7 +244,7 @@ Public video-link transcription to SRT is documented in
 | MCP voice generation | `status`, `prepare_model`, `speak`, `clone`, and `list_voices` expose provider setup, VieNeu presets, and saved Clone/Design or external-reference workflows; MCP shares the app library when configured with the app-data path |
 | Desktop local API | Optional `127.0.0.1:8765` REST server delegates status, preparation, synthesis, and voice-profile operations to the existing MCP tools; Settings owns start/stop and the sidecar stops it on exit |
 | Seed profiles | `Engine.import_seed_voices`, the `import_seed_voices` sidecar request, and bundled seed manifests |
-| Audio history | `Engine.record_audio_history` and `list_audio_history`/`rename_audio_history`/`delete_audio_history` sidecar operations index files from `outputs`; React plays and renames files, copies their local path, and confirms deletion |
+| Audio history | `Engine.record_audio_history` and `list_audio_history`/`rename_audio_history`/`delete_audio_history` sidecar operations index files from `outputs`; React plays and renames files to ASCII stems, copies their local path, and confirms deletion |
 | Desktop settings | `App.tsx` and `i18n.ts` expose General, Model, Storage, and MCP tabs; General supports manual stable-release checks and public GitHub Ideas/Star links, Linux x64 Model settings manage the optional NVIDIA sidecar, and Logs exports local diagnostics; MCP generates copyable client-specific setup for Codex CLI, Claude Code, Claude Desktop, Cursor, VS Code / GitHub Copilot, and Zed using the app-data path |
 | Video transcription | `transcribe_video` validates approved public video hosts, fetches audio with yt-dlp into a temporary directory, normalizes with bundled FFmpeg, reuses `Engine.transcribe_with_timestamps` on the loaded Whisper pipeline, and returns transcript + SRT for the Transcribe view's native save flow |
 | Desktop shell | React UI, Tauri plugins, JSONL sidecar, optional Linux CUDA worker, and target-matched audio.cpp CLI |
@@ -252,7 +260,10 @@ WAV/MP3 files directly in `outputs` and stores synthesis metadata in the
 SQLite `audio_history` table using only each file's basename. Files without a
 metadata row remain visible with their file date. Renaming an item moves the
 output without replacing an occupied filename and updates only its basename in
-`audio_history`, preserving the synthesis metadata; Copy path copies its local
+`audio_history`, preserving the synthesis metadata. The UI, sidecar, and engine
+all require the new stem to use only ASCII letters, digits, spaces, hyphens,
+and underscores, while existing files keep any Unicode names for listing,
+deletion, or renaming to a valid stem. Copy path copies its local
 absolute path. Deleting a history item removes the selected output and its
 metadata. The SQLite database is `volo.db`.
 Voice metadata lives in `voice_profiles` and

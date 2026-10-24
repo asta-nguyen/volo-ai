@@ -1,9 +1,10 @@
 # Agent Devkit Artifacts
 
-## Changes
-
 ## Archived changes
 
+- [First-run model diagnostics — Issue #15](changes/archive/2026-10-24-15-first-run-diagnostics/delta.md)
+- [Desktop responsiveness and resource visibility](changes/archive/2026-10-23-desktop-perf-visibility/design.md) — [tasks](changes/archive/2026-10-23-desktop-perf-visibility/tasks.md), [wiki delta](changes/archive/2026-10-23-desktop-perf-visibility/delta.md)
+- [Ship the desktop sidecar as PyInstaller onedir](changes/archive/2026-10-23-sidecar-onedir/design.md) — [tasks](changes/archive/2026-10-23-sidecar-onedir/tasks.md)
 - [Linux media reliability — Issue #9](changes/archive/2026-10-22-9-linux-media-reliability/design.md) — [tasks](changes/archive/2026-10-22-9-linux-media-reliability/tasks.md)
 - [Desktop feature feedback links](changes/archive/2026-10-22-desktop-feedback-links/design.md) — [tasks](changes/archive/2026-10-22-desktop-feedback-links/tasks.md)
 - [YouTube-first Video Transcription to SRT (#6)](changes/archive/2026-10-21-facebook-video-srt/design.md) — [tasks](changes/archive/2026-10-21-facebook-video-srt/tasks.md), [wiki delta](changes/archive/2026-10-21-facebook-video-srt/delta.md)

@@ -33,8 +33,10 @@
     "active": true,
     "targets": "all",
     "icon": ["icons/icon.png", "icons/icon.ico"],
-    "resources": ["resources/seed-voices"],
-    "externalBin": ["binaries/tts-sidecar", "binaries/audiocpp-cli"],
+    "resources": {
+      "resources/seed-voices": "resources/seed-voices",
+      "sidecar/tts-sidecar": "sidecar"
+    },
     "linux": {
       "appimage": {
         "bundleMediaFramework": true
