@@ -158,12 +158,11 @@ export type TranscribeVideoResult = {
   srt: string;
 };
 
-export type AudioHistoryCursor = { created_at: string; id: string };
-
 export type AudioHistoryPage = {
   items: AudioHistoryItem[];
   total: number;
-  next_cursor: AudioHistoryCursor | null;
+  page: number;
+  page_count: number;
 };
 
 export type RenameAudioHistoryResult = {

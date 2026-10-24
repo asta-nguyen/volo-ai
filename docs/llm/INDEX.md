@@ -10,6 +10,8 @@
 - [Desktop speech providers](workflows/desktop-vieneu.md) — provider selection,
   on-demand asset setup, provider-aware saved VieNeu profiles, batch preset
   seeding, and synthesis through the native audio.cpp CLI.
+- [Desktop audio history](workflows/desktop-audio-history.md) — local WAV/MP3
+  history with numbered pagination and existing playback/file actions.
 - [Desktop video transcription](workflows/desktop-video-transcription.md) —
   public YouTube-first (Facebook secondary) video links fetched with yt-dlp,
   normalized through bundled FFmpeg, transcribed locally into timestamped SRT,
@@ -19,6 +21,7 @@
 
 | Prefix | Domain |
 | --- | --- |
+| DAH | Desktop audio history |
 | DSET | Desktop settings and diagnostics |
 | DVP | Desktop voice providers |
 | DVT | Desktop video transcription |
@@ -26,9 +29,9 @@
 
 ## Feature inventory
 
-The desktop provider and MCP voice-library workflows have source-backed deep
-coverage below. The remaining desktop behaviors are mapped in the architecture
-overview but do not yet have dedicated wiki feature pages:
+The desktop provider, audio-history, and MCP voice-library workflows have
+source-backed deep coverage below. The remaining desktop behaviors are mapped
+in the architecture overview but do not yet have dedicated wiki feature pages:
 
 - [x] Desktop provider setup and offline synthesis — the desktop sidecar reports
   both providers, the first-run screen prepares all missing providers
@@ -58,10 +61,10 @@ overview but do not yet have dedicated wiki feature pages:
   suggestions and the repository homepage for manually starring the project;
   a Ko-fi action opens the Volo AI support page in the system browser. The
   localized notice explains public visibility and GitHub sign-in.
-- [x] Desktop audio history — the app lists and plays WAV/MP3 files from its
-  output directory, including older files without synthesis metadata; it can
-  rename an output while preserving its extension and metadata, copy its local
-  path, confirm deletion, and keep the five latest session takes in Workspace.
+- [x] Desktop audio history — the app lists local WAV/MP3 files, including
+  legacy outputs without synthesis metadata, in newest-first numbered pages of
+  20 items; it plays, renames, copies paths, and confirms deletion. See the
+  [Desktop audio history workflow](workflows/desktop-audio-history.md).
 - [x] Desktop update notices — startup checks the latest stable GitHub release
   without blocking app startup, at most once per 24 hours; Settings supports a
   manual check that can resurface a dismissed update, and a localized banner

@@ -38,7 +38,7 @@ from tts_mcp.desktop_vieneu import VieNeuProvider
 from tts_mcp.transcribe import TranscriptionError, transcribe_video
 
 OUTPUT_DIR = DATA_DIR / "outputs"
-AUDIO_HISTORY_PAGE_SIZE = 50
+AUDIO_HISTORY_PAGE_SIZE = 20
 ALLOWED_FORMATS = {"wav", "mp3"}
 GENERATION_BOOLEAN_KEYS = {"denoise", "preprocess_prompt", "postprocess_output"}
 GENERATION_POSITIVE_KEYS = {"audio_chunk_duration", "audio_chunk_threshold"}
@@ -425,35 +425,21 @@ def _list_audio_history() -> list[dict[str, Any]]:
     return [_history_item(*item) for item in _scan_audio_history()]
 
 
-def _list_audio_history_page(cursor: Any) -> dict[str, Any]:
-    if cursor is not None and (
-        not isinstance(cursor, dict)
-        or set(cursor) != {"created_at", "id"}
-        or not isinstance(cursor["created_at"], str)
-        or not cursor["created_at"].strip()
-        or not isinstance(cursor["id"], str)
-        or not cursor["id"].strip()
-    ):
-        raise ValueError("Audio history cursor must contain created_at and id strings")
-
+def _list_audio_history_page(page: Any) -> dict[str, Any]:
+    if type(page) is not int or page < 1:
+        raise ValueError("Audio history page must be a positive integer")
     items = _scan_audio_history()
     total = len(items)
-    if cursor is not None:
-        items = [
-            item
-            for item in items
-            if item[2] < cursor["created_at"]
-            or (item[2] == cursor["created_at"] and item[0] > cursor["id"])
-        ]
-    page = [_history_item(*item) for item in items[:AUDIO_HISTORY_PAGE_SIZE]]
-    has_more = len(items) > AUDIO_HISTORY_PAGE_SIZE
-    last_item = page[-1] if has_more else None
+    page_count = (total + AUDIO_HISTORY_PAGE_SIZE - 1) // AUDIO_HISTORY_PAGE_SIZE
+    page = min(page, page_count) if page_count else 1
+    start = (page - 1) * AUDIO_HISTORY_PAGE_SIZE
     return {
-        "items": page,
+        "items": [
+            _history_item(*item) for item in items[start : start + AUDIO_HISTORY_PAGE_SIZE]
+        ],
         "total": total,
-        "next_cursor": (
-            {"created_at": last_item["created_at"], "id": last_item["id"]} if last_item else None
-        ),
+        "page": page,
+        "page_count": page_count,
     }
 
 
@@ -1009,11 +995,12 @@ def dispatch_request(
             paginated = request.get("paginated", False)
             if not isinstance(paginated, bool):
                 raise ValueError("paginated must be a boolean")
-            cursor = request.get("cursor")
             if paginated:
-                return _ok(request_id, _list_audio_history_page(cursor))
-            if cursor is not None:
-                raise ValueError("cursor requires paginated audio history")
+                if "cursor" in request:
+                    raise ValueError("cursor-based audio history is no longer supported")
+                return _ok(request_id, _list_audio_history_page(request.get("page", 1)))
+            if "page" in request or "cursor" in request:
+                raise ValueError("page and cursor require paginated audio history")
             return _ok(request_id, {"items": _list_audio_history()})
         if operation == "delete_audio_history":
             if "file_name" not in request:

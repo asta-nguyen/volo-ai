@@ -267,7 +267,13 @@ jobs:
           if (-not $audiocppCli) {
             throw "audio.cpp did not produce audiocpp_cli.exe"
           }
-          $ffmpeg = (Get-Command ffmpeg.exe -ErrorAction Stop).Source
+          # chocolatey\bin\ffmpeg.exe is a ShimGen launcher; bundle the real binary instead.
+          $ffmpeg = Get-ChildItem -Path "$env:ChocolateyInstall\lib\ffmpeg\tools" -Recurse -File -Filter ffmpeg.exe -ErrorAction SilentlyContinue |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $ffmpeg) {
+            throw "Real ffmpeg.exe not found under $env:ChocolateyInstall\lib\ffmpeg\tools; the chocolatey\bin ShimGen launcher cannot be bundled"
+          }
+          Write-Host "Bundling FFmpeg from $ffmpeg"
           python scripts\build_sidecar.py --ffmpeg "$ffmpeg" --audiocpp "$audiocppCli" --target $env:TARGET_TRIPLE
           if ($LASTEXITCODE -ne 0) { throw "Sidecar packaging failed" }
 
@@ -430,7 +436,7 @@ jobs:
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes ffmpeg
+          sudo apt-get install --yes ffmpeg patchelf
 
       - name: Install CUDA Python dependencies
         run: |

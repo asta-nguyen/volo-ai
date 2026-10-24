@@ -86,3 +86,165 @@ jobs:
 
       - name: Check Tauri Rust dependencies
         run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+
+  windows-installer:
+    name: Build and verify Windows installer
+    runs-on: windows-2025
+    timeout-minutes: 120
+    env:
+      TARGET_TRIPLE: x86_64-pc-windows-msvc
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Set up stable Rust
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2
+        with:
+          toolchain: stable
+          cache: false
+
+      - name: Install Windows build dependencies
+        run: choco install ffmpeg --no-progress --yes
+
+      - name: Check out audio.cpp v0.9.0
+        run: git clone --depth 1 --branch v0.9.0 https://github.com/0xShug0/audio.cpp.git audio.cpp
+
+      - name: Build audio.cpp CLI
+        shell: pwsh
+        run: |
+          & .\audio.cpp\scripts\build_windows.ps1 `
+            -Preset windows-cpu-release `
+            -ModelSet custom `
+            -Models "vieneu_v3_turbo" `
+            -Target audiocpp_cli `
+            -CpuArch baseline
+          if ($LASTEXITCODE -ne 0) {
+            throw "audio.cpp build failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Install Python desktop dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -e ".[mp3,desktop-vieneu]"
+          if ($LASTEXITCODE -ne 0) { throw "Desktop dependency install failed" }
+          python -m pip install -r requirements-build.txt
+          if ($LASTEXITCODE -ne 0) { throw "Build dependency install failed" }
+
+      - name: Install desktop Node dependencies
+        run: npm ci --prefix apps/desktop
+
+      - name: Package the desktop sidecar
+        shell: pwsh
+        run: |
+          $audiocppCli = Get-ChildItem -Path audio.cpp\build -Recurse -File -Filter audiocpp_cli.exe |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $audiocppCli) {
+            throw "audio.cpp did not produce audiocpp_cli.exe"
+          }
+          # chocolatey\bin\ffmpeg.exe is a ShimGen launcher; bundle the real binary instead.
+          $ffmpeg = Get-ChildItem -Path "$env:ChocolateyInstall\lib\ffmpeg\tools" -Recurse -File -Filter ffmpeg.exe -ErrorAction SilentlyContinue |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $ffmpeg) {
+            throw "Real ffmpeg.exe not found under $env:ChocolateyInstall\lib\ffmpeg\tools; the chocolatey\bin ShimGen launcher cannot be bundled"
+          }
+          Write-Host "Bundling FFmpeg from $ffmpeg"
+          python scripts\build_sidecar.py --ffmpeg "$ffmpeg" --audiocpp "$audiocppCli" --target $env:TARGET_TRIPLE
+          if ($LASTEXITCODE -ne 0) { throw "Sidecar packaging failed" }
+
+      - name: Smoke-test the packaged sidecar
+        shell: pwsh
+        run: python scripts/smoke_sidecar.py apps/desktop/src-tauri/sidecar/tts-sidecar
+
+      - name: Build the Tauri installer
+        run: npm --prefix apps/desktop run tauri build
+
+      - name: Install the MSI silently
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem -Path apps\desktop\src-tauri\target\release\bundle\msi -Filter *.msi -File |
+            Select-Object -First 1
+          if (-not $msi) {
+            throw "Tauri produced no MSI under apps\desktop\src-tauri\target\release\bundle\msi"
+          }
+          $log = Join-Path $env:TEMP "volo-ai-msi-install.log"
+          Write-Host "Installing $($msi.FullName) (log: $log)"
+          $install = Start-Process msiexec.exe -Wait -PassThru -ArgumentList `
+            '/i', "`"$($msi.FullName)`"", '/qn', '/norestart', '/L*v', "`"$log`""
+          if ($install.ExitCode -ne 0) {
+            if (Test-Path $log) { Get-Content $log -Tail 40 }
+            throw "msiexec failed with exit code $($install.ExitCode)"
+          }
+
+      - name: Resolve the installed app location
+        shell: pwsh
+        run: |
+          $candidates = @(
+            (Join-Path $env:ProgramFiles 'Volo AI'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\Volo AI')
+          )
+          $entry = Get-ItemProperty `
+            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', `
+            'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*', `
+            'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' `
+            -ErrorAction SilentlyContinue |
+            Where-Object { $_.DisplayName -like 'Volo AI*' } |
+            Select-Object -First 1
+          if ($entry -and $entry.InstallLocation) {
+            $candidates += $entry.InstallLocation.TrimEnd('\')
+          }
+          $installDir = $candidates |
+            Where-Object { Test-Path (Join-Path $_ 'Volo AI.exe') } |
+            Select-Object -First 1
+          if (-not $installDir) {
+            throw "Installed Volo AI.exe not found; checked: $($candidates -join ', ')"
+          }
+          "INSTALL_DIR=$installDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Installed at $installDir"
+
+      - name: Smoke-test the installed sidecar resources
+        shell: pwsh
+        run: |
+          python scripts/smoke_sidecar.py "$env:INSTALL_DIR\sidecar"
+          if ($LASTEXITCODE -ne 0) { throw "Installed sidecar smoke test failed" }
+
+      - name: Launch the installed app and verify the sidecar
+        shell: pwsh
+        run: |
+          $appPath = Join-Path $env:INSTALL_DIR 'Volo AI.exe'
+          $sidecarPath = Join-Path $env:INSTALL_DIR 'sidecar\tts-sidecar.exe'
+          $app = Start-Process -FilePath $appPath -PassThru
+          $deadline = (Get-Date).AddSeconds(120)
+          $sidecar = $null
+          try {
+            while ((Get-Date) -lt $deadline) {
+              if ($app.HasExited) {
+                throw "Volo AI exited with code $($app.ExitCode) before the sidecar was observed"
+              }
+              $sidecar = Get-CimInstance Win32_Process -Filter "Name = 'tts-sidecar.exe'" -ErrorAction SilentlyContinue |
+                Where-Object { $_.ParentProcessId -eq $app.Id -and $_.ExecutablePath -eq $sidecarPath } |
+                Select-Object -First 1
+              if ($sidecar) { break }
+              Start-Sleep -Seconds 5
+            }
+            if (-not $sidecar) {
+              $others = Get-CimInstance Win32_Process -Filter "Name = 'tts-sidecar.exe'" -ErrorAction SilentlyContinue |
+                ForEach-Object { "PID $($_.ProcessId) (parent $($_.ParentProcessId)): $($_.ExecutablePath)" }
+              throw "No tts-sidecar.exe child of Volo AI (PID $($app.Id)) within 120s. Seen: $($others -join '; ')"
+            }
+            Write-Host "Volo AI (PID $($app.Id)) spawned $($sidecar.ExecutablePath) (PID $($sidecar.ProcessId))"
+          } finally {
+            if (-not $app.HasExited) {
+              Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+            }
+            Get-Process -Name tts-sidecar -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          }

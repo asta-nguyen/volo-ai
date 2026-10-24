@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
-  type InfiniteData,
 } from "@tanstack/react-query";
 import { getVersion } from "@tauri-apps/api/app";
 import { appDataDir, homeDir, resolveResource } from "@tauri-apps/api/path";
@@ -38,6 +36,15 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 import {
   Select,
   SelectContent,
@@ -96,7 +103,6 @@ import {
 import {
   SidecarClient,
   SidecarError,
-  type AudioHistoryCursor,
   type AudioHistoryItem,
   type AudioHistoryPage,
   type AudioFormat,
@@ -2397,19 +2403,39 @@ function ConfirmDialog({
 // unaccented ASCII letters, digits, spaces, hyphens, and underscores.
 const AUDIO_HISTORY_STEM_PATTERN = /^[A-Za-z0-9 _-]+$/;
 
+function getAudioHistoryPageItems(
+  page: number,
+  pageCount: number,
+): Array<number | "ellipsis"> {
+  if (pageCount <= 7) return Array.from({ length: pageCount }, (_, index) => index + 1);
+  if (page <= 4) return [1, 2, 3, 4, 5, "ellipsis", pageCount];
+  if (page >= pageCount - 3) {
+    return [
+      1,
+      "ellipsis",
+      pageCount - 4,
+      pageCount - 3,
+      pageCount - 2,
+      pageCount - 1,
+      pageCount,
+    ];
+  }
+  return [1, "ellipsis", page - 1, page, page + 1, "ellipsis", pageCount];
+}
+
 function AudioHistoryView({
   copy,
   appLanguage,
   items,
   total,
-  nextCursor,
+  page,
+  pageCount,
   isLoading,
-  isLoadingMore,
   error,
   deletingFileName,
   renamingFileName,
   onRetry,
-  onLoadMore,
+  onPageChange,
   onDelete,
   onRename,
 }: {
@@ -2417,14 +2443,14 @@ function AudioHistoryView({
   appLanguage: AppLanguage;
   items: AudioHistoryItem[];
   total: number;
-  nextCursor: AudioHistoryCursor | null;
+  page: number;
+  pageCount: number;
   isLoading: boolean;
-  isLoadingMore: boolean;
   error: string | null;
   deletingFileName: string | null;
   renamingFileName: string | null;
   onRetry: () => void;
-  onLoadMore: () => void;
+  onPageChange: (page: number) => void;
   onDelete: (fileName: string) => void;
   onRename: (fileName: string, newName: string) => Promise<void>;
 }) {
@@ -2437,6 +2463,8 @@ function AudioHistoryView({
   const confirmedItem = items.find((item) => item.id === confirmDeleteFileName);
   const isRenaming = renameTargetId !== null && renamingFileName === renameTargetId;
   const locale = appLanguage === "vi" ? "vi-VN" : "en-US";
+  const previousPageDisabled = page <= 1 || isLoading;
+  const nextPageDisabled = page >= pageCount || isLoading;
 
   function openRenameDialog(item: AudioHistoryItem) {
     setRenameTargetId(item.id);
@@ -2491,10 +2519,10 @@ function AudioHistoryView({
         action={
           <div className="flex items-center gap-3">
             <span className="hidden text-xs text-(--muted-foreground) sm:inline">
-              {items.length} / {total} {copy.audioHistoryCount}
+              {total} {copy.audioHistoryCount}
             </span>
-            <Button variant="secondary" onClick={onRetry} disabled={isLoading || isLoadingMore}>
-              {isLoading || isLoadingMore ? (
+            <Button variant="secondary" onClick={onRetry} disabled={isLoading}>
+              {isLoading ? (
                 <LoaderCircle className="size-4 animate-spin" />
               ) : (
                 <RotateCcw className="size-4" />
@@ -2505,7 +2533,7 @@ function AudioHistoryView({
         }
       />
       <p className="mb-4 text-xs text-(--muted-foreground) sm:hidden">
-        {items.length} / {total} {copy.audioHistoryCount}
+        {total} {copy.audioHistoryCount}
       </p>
 
       {error && (
@@ -2648,13 +2676,61 @@ function AudioHistoryView({
         </div>
       )}
 
-      {nextCursor && (
-        <div className="mt-4 flex justify-center">
-          <Button variant="secondary" onClick={onLoadMore} disabled={isLoading || isLoadingMore}>
-            {isLoadingMore && <LoaderCircle className="size-4 animate-spin" />}
-            <span>{isLoadingMore ? copy.audioHistoryLoadingMore : copy.audioHistoryLoadMore}</span>
-          </Button>
-        </div>
+      {pageCount > 1 && (
+        <Pagination className="mt-6" aria-label={copy.audioHistoryPagination}>
+          <PaginationContent>
+            <PaginationItem>
+              <PaginationPrevious
+                href="#"
+                text={copy.audioHistoryPreviousPage}
+                aria-label={copy.audioHistoryPreviousPage}
+                aria-disabled={previousPageDisabled}
+                tabIndex={previousPageDisabled ? -1 : undefined}
+                className={cn(previousPageDisabled && "pointer-events-none opacity-50")}
+                onClick={(event) => {
+                  event.preventDefault();
+                  if (page > 1 && !isLoading) onPageChange(page - 1);
+                }}
+              />
+            </PaginationItem>
+            {getAudioHistoryPageItems(page, pageCount).map((pageItem, index) => (
+              <PaginationItem key={`${pageItem}-${index}`}>
+                {pageItem === "ellipsis" ? (
+                  <PaginationEllipsis />
+                ) : (
+                  <PaginationLink
+                    href="#"
+                    isActive={pageItem === page}
+                    aria-label={`${copy.audioHistoryPage} ${pageItem}`}
+                    aria-disabled={isLoading}
+                    tabIndex={isLoading ? -1 : undefined}
+                    className={cn(isLoading && "pointer-events-none opacity-50")}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      if (!isLoading && pageItem !== page) onPageChange(pageItem);
+                    }}
+                  >
+                    {pageItem}
+                  </PaginationLink>
+                )}
+              </PaginationItem>
+            ))}
+            <PaginationItem>
+              <PaginationNext
+                href="#"
+                text={copy.audioHistoryNextPage}
+                aria-label={copy.audioHistoryNextPage}
+                aria-disabled={nextPageDisabled}
+                tabIndex={nextPageDisabled ? -1 : undefined}
+                className={cn(nextPageDisabled && "pointer-events-none opacity-50")}
+                onClick={(event) => {
+                  event.preventDefault();
+                  if (page < pageCount && !isLoading) onPageChange(page + 1);
+                }}
+              />
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
       )}
 
       <ConfirmDialog
@@ -3722,6 +3798,7 @@ function App() {
   const { t, i18n: translator } = useTranslation();
   const prefersReducedMotion = useReducedMotion();
   const [view, setView] = useState<AppView>("workspace");
+  const [audioHistoryPage, setAudioHistoryPage] = useState(1);
   const [provider, setProvider] = useState<ProviderId>(readProvider);
   const [modelProgress, setModelProgress] = useState<Record<ProviderId, ProgressEvent | null>>({
     omnivoice: null,
@@ -3821,31 +3898,29 @@ function App() {
     enabled: engineOnline,
   });
   const voices = voicesQuery.data?.voices ?? [];
-  const historyQuery = useInfiniteQuery({
-    queryKey: AUDIO_HISTORY_QUERY_KEY,
-    queryFn: ({ pageParam }) =>
+  const historyQuery = useQuery<AudioHistoryPage>({
+    queryKey: [...AUDIO_HISTORY_QUERY_KEY, audioHistoryPage],
+    queryFn: () =>
       client.request<AudioHistoryPage>({
         type: "list_audio_history",
         paginated: true,
-        cursor: pageParam ?? undefined,
+        page: audioHistoryPage,
       }),
-    initialPageParam: null as AudioHistoryCursor | null,
-    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: view === "history",
   });
-  const audioHistory = useMemo(() => {
-    const seen = new Set<string>();
-    return (historyQuery.data?.pages.flatMap((page) => page.items) ?? []).filter((item) => {
-      if (seen.has(item.id)) return false;
-      seen.add(item.id);
-      return true;
-    });
-  }, [historyQuery.data]);
-  const lastHistoryPage = historyQuery.data?.pages.at(-1);
-  const audioHistoryTotal = lastHistoryPage?.total ?? 0;
-  const audioHistoryCursor = lastHistoryPage?.next_cursor ?? null;
+  const audioHistory = historyQuery.data?.items ?? [];
+  const audioHistoryTotal = historyQuery.data?.total ?? 0;
+  const audioHistoryPageCount = historyQuery.data?.page_count ?? 0;
   const isLoadingAudioHistory = historyQuery.isLoading || historyQuery.isRefetching;
-  const isLoadingMoreAudioHistory = historyQuery.isFetchingNextPage;
+  useEffect(() => {
+    if (
+      !historyQuery.isFetching &&
+      historyQuery.data &&
+      historyQuery.data.page !== audioHistoryPage
+    ) {
+      setAudioHistoryPage(historyQuery.data.page);
+    }
+  }, [audioHistoryPage, historyQuery.data, historyQuery.isFetching]);
   const isLoadingVoices = voicesQuery.isFetching;
   const voiceListError = voicesQuery.error
     ? voicesQuery.error instanceof Error
@@ -3970,7 +4045,10 @@ function App() {
   const synthesisMutation = useMutation({
     mutationFn: (request: { type: string; [key: string]: unknown }) =>
       client.request<SynthesisResult>(request),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: AUDIO_HISTORY_QUERY_KEY }),
+    onSuccess: () => {
+      setAudioHistoryPage(1);
+      return queryClient.invalidateQueries({ queryKey: AUDIO_HISTORY_QUERY_KEY });
+    },
   });
   const transcribeMutation = useMutation({
     mutationFn: (url: string) =>
@@ -3985,26 +4063,19 @@ function App() {
       if (!response.deleted) throw new Error(copy.audioHistoryDeleteFailed);
       return audioId;
     },
-    onSuccess: (_, audioId) => {
-      queryClient.setQueryData<InfiniteData<AudioHistoryPage, AudioHistoryCursor | null>>(
-        AUDIO_HISTORY_QUERY_KEY,
+    onSuccess: async (_, audioId) => {
+      queryClient.setQueryData<AudioHistoryPage>(
+        [...AUDIO_HISTORY_QUERY_KEY, audioHistoryPage],
         (current) => {
-          if (
-            !current ||
-            !current.pages.some((page) => page.items.some((item) => item.id === audioId))
-          ) {
-            return current;
-          }
+          if (!current?.items.some((item) => item.id === audioId)) return current;
           return {
             ...current,
-            pages: current.pages.map((page) => ({
-              ...page,
-              items: page.items.filter((item) => item.id !== audioId),
-              total: Math.max(0, page.total - 1),
-            })),
+            items: current.items.filter((item) => item.id !== audioId),
+            total: Math.max(0, current.total - 1),
           };
         },
       );
+      await queryClient.invalidateQueries({ queryKey: AUDIO_HISTORY_QUERY_KEY });
       setTakes((current) => current.filter((take) => fileName(take.audioPath) !== audioId));
       if (result && fileName(result.audio_path) === audioId) {
         setResult(null);
@@ -4020,7 +4091,7 @@ function App() {
         new_name: request.newName,
       }),
     onSuccess: async (response, request) => {
-      await queryClient.resetQueries({ queryKey: AUDIO_HISTORY_QUERY_KEY, exact: true });
+      await queryClient.resetQueries({ queryKey: AUDIO_HISTORY_QUERY_KEY });
       setTakes((current) =>
         current.map((take) =>
           fileName(take.audioPath) === request.fileName
@@ -4355,14 +4426,14 @@ function App() {
   async function refreshAudioHistory() {
     deleteHistoryMutation.reset();
     renameHistoryMutation.reset();
-    await queryClient.resetQueries({ queryKey: AUDIO_HISTORY_QUERY_KEY, exact: true });
+    await queryClient.resetQueries({ queryKey: AUDIO_HISTORY_QUERY_KEY });
   }
 
-  async function loadMoreAudioHistory() {
-    if (!historyQuery.hasNextPage || historyQuery.isFetchingNextPage) return;
+  function changeAudioHistoryPage(page: number) {
+    if (page === audioHistoryPage || historyQuery.isFetching) return;
     deleteHistoryMutation.reset();
     renameHistoryMutation.reset();
-    await historyQuery.fetchNextPage();
+    setAudioHistoryPage(page);
   }
 
   function navigateTo(nextView: AppView) {
@@ -4370,7 +4441,8 @@ function App() {
     if (nextView === "history") {
       deleteHistoryMutation.reset();
       renameHistoryMutation.reset();
-      queryClient.removeQueries({ queryKey: AUDIO_HISTORY_QUERY_KEY, exact: true });
+      setAudioHistoryPage(1);
+      queryClient.removeQueries({ queryKey: AUDIO_HISTORY_QUERY_KEY });
     }
     setView(nextView);
   }
@@ -5249,14 +5321,14 @@ function App() {
                     appLanguage={appLanguage}
                     items={audioHistory}
                     total={audioHistoryTotal}
-                    nextCursor={audioHistoryCursor}
+                    page={audioHistoryPage}
+                    pageCount={audioHistoryPageCount}
                     isLoading={isLoadingAudioHistory}
-                    isLoadingMore={isLoadingMoreAudioHistory}
                     error={audioHistoryError}
                     deletingFileName={deletingAudioFile}
                     renamingFileName={renamingAudioFile}
                     onRetry={() => void refreshAudioHistory()}
-                    onLoadMore={() => void loadMoreAudioHistory()}
+                    onPageChange={changeAudioHistoryPage}
                     onDelete={(fileName) => void deleteAudioHistory(fileName)}
                     onRename={renameAudioHistory}
                   />

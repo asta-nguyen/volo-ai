@@ -45,12 +45,24 @@ the Python worker as a Tauri sidecar and stores model/audio data locally.
   `delete_audio_history` sidecar operations. It plays generated files, includes
   legacy WAV/MP3 files without synthesis metadata, lets users rename an output
   to an unaccented ASCII stem while keeping its extension, copies the output's
-  local path, and asks for confirmation before deleting it.
+  local path, and asks for confirmation before deleting it. It shows newest-first
+  numbered pages of 20 items through the local Pagination component; see the
+  [Desktop audio history workflow](../workflows/desktop-audio-history.md).
   Workspace separately retains only the five latest takes for the current app
   session; pruning that list does not delete files.
 - `apps/desktop/src/components/ui/` contains source-owned shadcn components
   backed by Base UI, `src/lib/utils.ts` owns class composition, and
   `src/styles.css` loads Tailwind CSS v4 and the Volo AI theme tokens.
+- `.github/workflows/ci.yml` runs on pull requests, pushes to any branch, and
+  manual dispatch. Its Ubuntu job runs the Python unit tests and compile
+  check, builds the desktop frontend, and `cargo check`s the Tauri crate
+  against placeholder sidecar binaries. The non-release `windows-installer`
+  job on `windows-2025` builds the baseline audio.cpp CLI, packages the
+  sidecar with a real FFmpeg binary, and smoke-tests the staged folder with
+  `scripts/smoke_sidecar.py` (bundled FFmpeg launch plus a JSONL `status`
+  round-trip), then builds the Tauri MSI, installs it silently, re-runs the
+  smoke test on the installed sidecar resources, and launches the app to
+  confirm it spawns `tts-sidecar.exe`.
 - `.github/workflows/release.yml` starts on a `v*` tag push, checks that the
   strict `vX.Y.Z` tag matches all three desktop version fields and that the
   tagged commit has non-empty `release.md`, then builds macOS ARM64, Windows
@@ -124,8 +136,11 @@ the Python worker as a Tauri sidecar and stores model/audio data locally.
 - `scripts/build_sidecar.py` packages the desktop worker and FFmpeg into a
   PyInstaller onedir folder under `apps/desktop/src-tauri/sidecar/` and can
   stage the matching audio.cpp CLI inside it; the Tauri bundle ships that
-  folder as a resource. The separate CUDA build omits that CLI and Tauri
-  bundle.
+  folder as a resource. A Windows target accepts only
+  `x86_64-pc-windows-msvc` on a matching native host triple with a 64-bit
+  Python interpreter; the script rejects other Windows triples and
+  cross-host Windows builds before invoking PyInstaller, which is not a
+  cross-compiler. The separate CUDA build omits that CLI and Tauri bundle.
 
 ## Runtime boundaries
 
@@ -205,14 +220,15 @@ plugins, including WAV parsing, playback, typefind, and the plugin scanner. The
 artifact used placeholder sidecars, so release installation and Linux runtime
 playback remain unverified; Windows/macOS playback was not retested.
 The React root provides one in-memory TanStack Query client. `App.tsx` queries
-sidecar status and voice profiles, and loads cursor-paginated Audio History
-only while that view is active. Successful profile and preparation mutations
-invalidate their related queries; synthesis invalidates History, while a
-confirmed History deletion removes the item from cached pages. Queries and
-mutations run for the local sidecar while the OS is offline, do not retry
-automatically, and do not refetch on focus or reconnect. `SidecarClient` keeps
-its single retry when the child process has stopped. Progress and logs remain
-event-driven UI state.
+sidecar status and voice profiles, and loads one numbered Audio History page
+only while that view is active. Each page request includes a 1-based page
+number; the sidecar returns at most 20 newest-first items, the total, and the
+page count. Successful profile and preparation mutations invalidate their
+related queries; synthesis invalidates History, and a confirmed History
+deletion invalidates its page queries. Queries and mutations run for the local
+sidecar while the OS is offline, do not retry automatically, and do not refetch
+on focus or reconnect. `SidecarClient` keeps its single retry when the child
+process has stopped. Progress and logs remain event-driven UI state.
 
 The desktop sidecar keeps bounded diagnostic events locally, and the frontend
 keeps bounded process and interface errors in local storage. Logs can clear
@@ -265,7 +281,9 @@ all require the new stem to use only ASCII letters, digits, spaces, hyphens,
 and underscores, while existing files keep any Unicode names for listing,
 deletion, or renaming to a valid stem. Copy path copies its local
 absolute path. Deleting a history item removes the selected output and its
-metadata. The SQLite database is `volo.db`.
+metadata. Paginated listing uses fixed pages of 20 items and reports the total
+and page count; page numbers are 1-based and an out-of-range page is clamped to
+the last page. The SQLite database is `volo.db`.
 Voice metadata lives in `voice_profiles` and
 installed bundled seeds in `app_seeds`; Clone profiles keep copied reference
 audio and clone prompts under `voices/<profile-name>/`, while Design profiles
@@ -324,6 +342,7 @@ synthesis target remains `volo-ai.synthesis-language`.
 - `tests/test_desktop_diagnostics.py`
 - `scripts/build_sidecar.py`
 - `scripts/package_cuda_runtime.py`
+- `scripts/smoke_sidecar.py`
 - `requirements-linux-cpu.txt`
 - `requirements-linux-cuda.txt`
 - `docs/desktop-development.md`
@@ -331,6 +350,7 @@ synthesis target remains `volo-ai.synthesis-language`.
 - `apps/desktop/vite.config.ts`
 - `apps/desktop/src/styles.css`
 - `apps/desktop/src/components/ui/button.tsx`
+- `apps/desktop/src/components/ui/pagination.tsx`
 - `apps/desktop/src/components/ui/tabs.tsx`
 - `apps/desktop/src/components/ui/toggle-group.tsx`
 - `apps/desktop/src/lib/utils.ts`
@@ -347,6 +367,7 @@ synthesis target remains `volo-ai.synthesis-language`.
 - `apps/desktop/src/lib/sidecar.ts`
 - `docs/desktop-local-api.md`
 - `apps/desktop/src/lib/diagnostics.ts`
+- `.github/workflows/ci.yml`
 - `.github/workflows/release.yml`
 - `release.md`
 - `apps/web/package.json`

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import queue
 import subprocess
 import sys
@@ -15,6 +16,8 @@ from pathlib import Path
 TOTAL_TIMEOUT = 120.0
 EXIT_TIMEOUT = 20.0
 _EOF = object()
+_WINDOWS_X64_MACHINES = {"amd64", "x86_64"}
+_WINDOWS_X64_AUDIOCPP = "audiocpp-cli-x86_64-pc-windows-msvc.exe"
 
 
 def _read_reply(
@@ -49,14 +52,77 @@ def _fail(proc: subprocess.Popen, message: str) -> int:
     return 1
 
 
+def _check_bundled_ffmpeg(sidecar_dir: Path) -> int:
+    ffmpeg_name = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+    ffmpeg = sidecar_dir / "_internal" / ffmpeg_name
+    if not ffmpeg.is_file():
+        print(f"smoke_sidecar: bundled FFmpeg not found: {ffmpeg}", file=sys.stderr)
+        return 1
+    try:
+        check = subprocess.run(
+            [str(ffmpeg), "-version"], capture_output=True, text=True, timeout=60
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"smoke_sidecar: bundled FFmpeg failed to launch: {exc}", file=sys.stderr)
+        return 1
+    if check.returncode != 0:
+        detail = check.stderr.strip() or check.stdout.strip()
+        print(f"smoke_sidecar: bundled FFmpeg failed to launch: {detail}", file=sys.stderr)
+        return 1
+    version = check.stdout.splitlines() or ["<no output>"]
+    print(f"bundled FFmpeg: {version[0]}")
+    return 0
+
+
+def _audiocpp_cli_name() -> str | None:
+    """Return the audio.cpp filename the frozen resolver expects on this host."""
+    if os.name == "nt" and platform.machine().lower() in _WINDOWS_X64_MACHINES:
+        return _WINDOWS_X64_AUDIOCPP
+    return None
+
+
+def _check_bundled_audiocpp(sidecar_dir: Path) -> int:
+    audiocpp_name = _audiocpp_cli_name()
+    if audiocpp_name is None:
+        return 0
+    audiocpp = sidecar_dir / audiocpp_name
+    if not audiocpp.is_file():
+        print(f"smoke_sidecar: bundled audio.cpp CLI not found: {audiocpp}", file=sys.stderr)
+        return 1
+    try:
+        check = subprocess.run(
+            [str(audiocpp), "--help"], capture_output=True, text=True, timeout=60
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(
+            f"smoke_sidecar: bundled audio.cpp CLI failed to launch: {exc}",
+            file=sys.stderr,
+        )
+        return 1
+    if check.returncode != 0:
+        detail = check.stderr.strip() or check.stdout.strip()
+        print(
+            f"smoke_sidecar: bundled audio.cpp CLI failed to launch: {detail}",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"bundled audio.cpp CLI: {audiocpp.name}")
+    return 0
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: smoke_sidecar.py <staged sidecar folder>", file=sys.stderr)
         return 1
+    sidecar_dir = Path(sys.argv[1])
     name = "tts-sidecar.exe" if os.name == "nt" else "tts-sidecar"
-    executable = Path(sys.argv[1]) / name
+    executable = sidecar_dir / name
     if not executable.is_file():
         print(f"smoke_sidecar: executable not found: {executable}", file=sys.stderr)
+        return 1
+    if _check_bundled_ffmpeg(sidecar_dir) != 0:
+        return 1
+    if _check_bundled_audiocpp(sidecar_dir) != 0:
         return 1
 
     deadline = time.perf_counter() + TOTAL_TIMEOUT
@@ -72,6 +138,7 @@ def main() -> int:
             stderr=subprocess.DEVNULL,
             env=env,
             text=True,
+            encoding="utf-8",
             bufsize=1,
         )
         lines: queue.Queue[str | object] = queue.Queue()

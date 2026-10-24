@@ -661,27 +661,25 @@ class DesktopWorkerTests(unittest.TestCase):
                 patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
                 patch.object(Engine, "list_audio_history", return_value=metadata),
             ):
-                first = dispatch_request(
-                    {"id": "history-1", "type": "list_audio_history", "paginated": True},
-                    Mock(),
-                )
-                second = dispatch_request(
-                    {
-                        "id": "history-2",
-                        "type": "list_audio_history",
-                        "paginated": True,
-                        "cursor": first["result"]["next_cursor"],
-                    },
-                    Mock(),
-                )
+                pages = [
+                    dispatch_request(
+                        {
+                            "id": f"history-{page}",
+                            "type": "list_audio_history",
+                            "paginated": True,
+                            "page": page,
+                        },
+                        Mock(),
+                    )
+                    for page in range(1, 4)
+                ]
 
-        self.assertTrue(first["ok"])
-        self.assertTrue(second["ok"])
-        self.assertEqual(first["result"]["total"], 55)
-        self.assertEqual(len(first["result"]["items"]), 50)
-        self.assertEqual(len(second["result"]["items"]), 5)
-        self.assertIsNone(second["result"]["next_cursor"])
-        items = first["result"]["items"] + second["result"]["items"]
+        self.assertTrue(all(response["ok"] for response in pages))
+        self.assertEqual([response["result"]["total"] for response in pages], [55, 55, 55])
+        self.assertEqual([response["result"]["page_count"] for response in pages], [3, 3, 3])
+        self.assertEqual([response["result"]["page"] for response in pages], [1, 2, 3])
+        self.assertEqual([len(response["result"]["items"]) for response in pages], [20, 20, 15])
+        items = [item for response in pages for item in response["result"]["items"]]
         item_ids = [item["id"] for item in items]
         self.assertEqual(item_ids, expected_ids)
         self.assertEqual(len(item_ids), len(set(item_ids)))
@@ -703,35 +701,38 @@ class DesktopWorkerTests(unittest.TestCase):
                 full = dispatch_request(
                     {"id": "full", "type": "list_audio_history"}, Mock()
                 )["result"]["items"]
-                paged = []
-                cursor = None
-                total = None
-                while True:
-                    request = {
-                        "id": "page",
+                first_page = dispatch_request(
+                    {
+                        "id": "page-1",
                         "type": "list_audio_history",
                         "paginated": True,
+                        "page": 1,
+                    },
+                    Mock(),
+                )["result"]
+                pages = [first_page]
+                for page in range(2, first_page["page_count"] + 1):
+                    request = {
+                        "id": f"page-{page}",
+                        "type": "list_audio_history",
+                        "paginated": True,
+                        "page": page,
                     }
-                    if cursor is not None:
-                        request["cursor"] = cursor
-                    result = dispatch_request(request, Mock())["result"]
-                    total = result["total"]
-                    paged.extend(result["items"])
-                    cursor = result["next_cursor"]
-                    if cursor is None:
-                        break
+                    pages.append(dispatch_request(request, Mock())["result"])
+                paged = [item for result in pages for item in result["items"]]
 
-        self.assertEqual(total, len(full))
+        self.assertEqual(first_page["total"], len(full))
+        self.assertEqual(first_page["page_count"], 3)
         self.assertEqual([item["id"] for item in paged], [item["id"] for item in full])
         self.assertEqual(paged, full)
 
-    def test_list_audio_history_rejects_invalid_cursor(self):
+    def test_list_audio_history_rejects_invalid_page(self):
         response = dispatch_request(
             {
                 "id": "history",
                 "type": "list_audio_history",
                 "paginated": True,
-                "cursor": {"created_at": "", "id": "take.wav"},
+                "page": 0,
             },
             Mock(),
         )

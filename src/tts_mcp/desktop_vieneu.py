@@ -180,9 +180,11 @@ class VieNeuProvider:
 
     def _audio_cpp_path(self) -> Path | None:
         configured = os.environ.get("TTS_MCP_AUDIOCPP_PATH")
-        if configured:
-            return Path(configured).expanduser()
         target = _target_triple() if getattr(sys, "frozen", False) else None
+        if configured:
+            candidate = Path(configured).expanduser()
+            if candidate.is_file() or target is None:
+                return candidate
         if target:
             suffix = ".exe" if target.endswith("windows-msvc") else ""
             binary = Path(sys.executable).resolve().with_name(f"audiocpp-cli-{target}{suffix}")

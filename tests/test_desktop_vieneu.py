@@ -242,6 +242,56 @@ class VieNeuAssetTests(VieNeuAssetFixture, unittest.TestCase):
         ):
             self.assertEqual(self.provider._audio_cpp_path(), binary.resolve())
 
+    def test_frozen_sidecar_falls_back_when_configured_path_missing(self):
+        bundled = self.root / "audiocpp-cli-aarch64-apple-darwin"
+        bundled.touch()
+        stale = self.root / "stale" / "audiocpp-cli"
+        with (
+            patch.dict("os.environ", {"TTS_MCP_AUDIOCPP_PATH": str(stale)}),
+            patch("tts_mcp.desktop_vieneu.sys.executable", str(self.root / "tts-sidecar")),
+            patch("tts_mcp.desktop_vieneu.sys.frozen", True, create=True),
+            patch(
+                "tts_mcp.desktop_vieneu._target_triple",
+                return_value="aarch64-apple-darwin",
+            ),
+        ):
+            self.assertEqual(self.provider._audio_cpp_path(), bundled.resolve())
+
+    def test_frozen_sidecar_keeps_valid_configured_path(self):
+        configured = self.root / "audiocpp_cli"
+        configured.touch()
+        (self.root / "audiocpp-cli-aarch64-apple-darwin").touch()
+        with (
+            patch.dict("os.environ", {"TTS_MCP_AUDIOCPP_PATH": str(configured)}),
+            patch("tts_mcp.desktop_vieneu.sys.executable", str(self.root / "tts-sidecar")),
+            patch("tts_mcp.desktop_vieneu.sys.frozen", True, create=True),
+            patch(
+                "tts_mcp.desktop_vieneu._target_triple",
+                return_value="aarch64-apple-darwin",
+            ),
+        ):
+            self.assertEqual(self.provider._audio_cpp_path(), configured)
+
+    def test_frozen_sidecar_reports_missing_when_nothing_resolves(self):
+        stale = self.root / "stale" / "audiocpp-cli"
+        with (
+            patch.dict("os.environ", {"TTS_MCP_AUDIOCPP_PATH": str(stale)}),
+            patch("tts_mcp.desktop_vieneu.sys.executable", str(self.root / "tts-sidecar")),
+            patch("tts_mcp.desktop_vieneu.sys.frozen", True, create=True),
+            patch(
+                "tts_mcp.desktop_vieneu._target_triple",
+                return_value="aarch64-apple-darwin",
+            ),
+        ):
+            available, reason = self.provider._runtime_status()
+        self.assertFalse(available)
+        self.assertIn("audio.cpp CLI is missing", reason)
+
+    def test_missing_configured_path_still_wins_outside_frozen_sidecar(self):
+        stale = self.root / "stale" / "audiocpp-cli"
+        with patch.dict("os.environ", {"TTS_MCP_AUDIOCPP_PATH": str(stale)}):
+            self.assertEqual(self.provider._audio_cpp_path(), stale)
+
 
 class VieNeuSynthesisTests(VieNeuAssetFixture, unittest.TestCase):
     def setUp(self):

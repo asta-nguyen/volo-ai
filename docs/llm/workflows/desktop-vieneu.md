@@ -320,6 +320,10 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
   frozen sidecar restores pre-launch library-path environment values at
   startup so spawned helpers such as FFmpeg and `audiocpp_cli` resolve their
   own libraries instead of the bundled ones.
+- Windows x64 package smoke verifies the bundled CLI: the staged sidecar
+  folder and the installed Tauri resource folder must contain
+  `audiocpp-cli-x86_64-pc-windows-msvc.exe` — the exact filename the frozen
+  resolver probes — and the binary must answer `--help`.
 - VieNeu status caches its expensive probes — the `audiocpp_cli --help` run
   and the preset/model asset reads — keyed by the probed files' paths,
   modification times, and sizes, so repeated `status` requests stay cheap and
@@ -396,6 +400,10 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
   adapter and is rejected by OmniVoice before engine generation.
 - `tests/test_build_sidecar.py` checks target-named sidecar and audio.cpp
   staging and collection of the optional VieNeu packages.
+- `tests/test_smoke_sidecar.py` checks the package smoke gate: bundled FFmpeg
+  launch, sidecar JSONL replies, and the Windows x64 requirement for
+  `audiocpp-cli-x86_64-pc-windows-msvc.exe` beside the sidecar plus its
+  `--help` launch.
 - `tests/test_cli.py` covers terminal command behavior and VieNeu preset
   profile labels.
 
@@ -410,8 +418,10 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
 - `src/tts_mcp/desktop_vieneu.py`
 - `src/tts_mcp/engine.py`
 - `src/tts_mcp/convert.py`
+- `scripts/smoke_sidecar.py`
 - `tests/test_desktop.py`
 - `tests/test_desktop_vieneu.py`
+- `tests/test_smoke_sidecar.py`
 - `src/tts_mcp/cli.py`
 - `apps/desktop/src/App.tsx`
 - `apps/desktop/src/lib/i18n.ts`
