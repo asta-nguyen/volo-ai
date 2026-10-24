@@ -1,6 +1,8 @@
 import json
 import sqlite3
 import tempfile
+import threading
+import time
 import unittest
 import wave
 from concurrent.futures import ThreadPoolExecutor
@@ -9,7 +11,7 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 
-from tts_mcp.engine import Engine, validate_language
+from tts_mcp.engine import DownloadCancelled, Engine, validate_language
 
 
 class FakeModel:
@@ -188,6 +190,76 @@ class EngineTests(unittest.TestCase):
         for key, value in generation_config.items():
             if key != "text":
                 self.assertEqual(model.kwargs[key], value)
+
+    def test_generate_cancels_while_waiting_for_inference_lock(self):
+        model = FakeModel()
+        engine = Engine()
+        engine._model = model
+        engine._inference_lock.acquire()
+        cancel = threading.Event()
+        errors = []
+
+        def call():
+            try:
+                engine.generate("hello", should_cancel=cancel.is_set)
+            except DownloadCancelled as exc:
+                errors.append(str(exc))
+
+        thread = threading.Thread(target=call)
+        try:
+            thread.start()
+            time.sleep(0.3)
+            cancel.set()
+            thread.join(timeout=3)
+        finally:
+            engine._inference_lock.release()
+            thread.join(timeout=3)
+
+        self.assertEqual(errors, ["Synthesis cancelled"])
+        self.assertIsNone(model.kwargs)
+
+    def test_download_progress_throttled_but_cancellation_checked_every_update(self):
+        from tts_mcp.engine import _download_asset
+
+        events = []
+        cancel_checks = []
+        ticks = iter(i * 0.01 for i in range(200))
+
+        def fake_download(*, tqdm_class, **_kwargs):
+            bar = tqdm_class(total=50)
+            for _ in range(50):
+                bar.update(1)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with (
+                patch("huggingface_hub.snapshot_download", side_effect=fake_download),
+                patch("tts_mcp.engine.time.monotonic", side_effect=lambda: next(ticks)),
+            ):
+                _download_asset(
+                    "repo",
+                    Path(tmp) / "dest",
+                    on_progress=events.append,
+                    should_cancel=lambda: cancel_checks.append(1) or False,
+                )
+
+        self.assertEqual(len(cancel_checks), 50)
+        self.assertEqual(events[0]["progress"], 0.0)
+        self.assertLessEqual(len(events), 7)
+        self.assertGreaterEqual(len(events), 3)
+        self.assertEqual(events[-1]["progress"], 1.0)
+
+    def test_generate_releases_inference_lock_on_model_error(self):
+        class FailingModel(FakeModel):
+            def generate(self, **kwargs):
+                self.kwargs = kwargs
+                raise RuntimeError("boom")
+
+        engine = Engine()
+        engine._model = FailingModel()
+        with self.assertRaises(RuntimeError):
+            engine.generate("hello")
+        self.assertTrue(engine._inference_lock.acquire(timeout=0.1))
+        engine._inference_lock.release()
 
     def test_language_boundary_accepts_only_supported_languages(self):
         self.assertEqual(validate_language("en"), "en")
@@ -812,12 +884,35 @@ class EngineTests(unittest.TestCase):
                     ("take.wav", "renamed.flac"),
                     ("take.wav", ""),
                     ("take.wav", "nested/renamed.wav"),
+                    ("take.wav", "bản.wav"),
+                    ("take.wav", "naïve.wav"),
+                    ("take.wav", "take 🎵.wav"),
+                    ("take.wav", "renamed.part.wav"),
+                    ("bản.wav", "mới.wav"),
                 ):
                     with self.subTest(old=old_name, new=new_name), self.assertRaises(
                         ValueError
                     ):
                         Engine.rename_audio_history(old_name, new_name)
                 self.assertEqual(Engine.list_audio_history(), [entry])
+
+    def test_audio_history_rename_accepts_unicode_source_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.storage_patches(Path(tmp)):
+                entry = {
+                    "file_name": "bản cũ.wav",
+                    "provider": "omnivoice",
+                    "voice_name": "auto",
+                    "format": "wav",
+                    "text": "hello",
+                    "created_at": "2026-10-08T12:00:00+00:00",
+                }
+                Engine.record_audio_history(**entry)
+
+                self.assertTrue(Engine.rename_audio_history("bản cũ.wav", "ban cu.wav"))
+                self.assertEqual(
+                    Engine.list_audio_history(), [{**entry, "file_name": "ban cu.wav"}]
+                )
 
     def test_audio_history_rename_collision_keeps_existing_rows(self):
         with tempfile.TemporaryDirectory() as tmp:

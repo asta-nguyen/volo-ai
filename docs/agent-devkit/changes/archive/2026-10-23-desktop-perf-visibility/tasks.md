@@ -71,8 +71,10 @@ Verify: `python -c "import tts_mcp.engine, tts_mcp.desktop_vieneu,
 tts_mcp.convert, tts_mcp.desktop, sys; assert 'numpy' not in sys.modules
 and 'mcp' not in sys.modules"`; `python -m compileall -q src tests`;
 `python -m unittest discover -s tests -v`.
-Progress: todo
-Result: none
+Progress: done
+Result: lazy-import assertions pass; 242/242 tests pass (env needed
+`mcp==2.3.0` per pin; three api tests repointed to patch
+`tts_mcp.api.ApiServer`).
 
 ### Task 2 — VieNeu status probe caching
 
@@ -96,8 +98,12 @@ Verify: new tests assert `subprocess.run` is invoked once across two
 `status()` calls with unchanged files, that touching a probed file
 revalidates, and that `events()` re-reads after the file grows;
 `python -m unittest tests.test_desktop_vieneu tests.test_desktop_diagnostics -v`.
-Progress: todo
-Result: none
+Progress: done
+Result: `_cached_probe` keyed on (path, mtime_ns, size) covers runtime
+binary, manifest, model/encoder, and per-voice asset pairs;
+preprocessing probe cached under a fixed key; diagnostics `events()`
+re-reads on file growth. New tests assert one `--help` subprocess across
+two `status()` calls and revalidation after file changes.
 
 ### Task 3 — Storage micro-costs
 
@@ -127,8 +133,12 @@ profile.
 Verify: `python -m unittest tests.test_desktop -v` — plus a new test that
 paginated iteration concatenates to the same order and `total` as the
 non-paginated listing.
-Progress: todo
-Result: none
+Progress: done
+Result: mkdir guarded by a once-per-process flag; `_list_audio_history`
+uses `os.scandir` with deferred `resolve()` on tuples; validator
+deduplicated via `engine._validate_reference_audio_path`; `list_voices`
+hoisted out of the seed loop. Path assertions updated to resolved paths
+and a pagination-consistency test added; 245/245 pass.
 
 ### Task 4 — Synthesis worker lane and queued cancel
 
@@ -159,8 +169,12 @@ Verify: new tests — a `status` request is answered while a stubbed render
 holds the lock; a `cancel` during lock-wait returns `cancelled` for the
 synthesis request; two synthesize requests serialize.
 `python -m unittest tests.test_desktop -v`.
-Progress: todo
-Result: none
+Progress: done
+Result: `_acquire_lock_cancelable` polls with 0.25 s timeouts and raises
+`DownloadCancelled` while queued; `synthesize` joined the worker set with
+`cancel_event` registration; protocol test covers status-during-render,
+queued cancel, and serialization. Mock `synthesize` fakes and the
+ObservedLock fake updated to the new signatures; 249/249 pass.
 
 ### Task 5 — Download progress throttle
 
@@ -176,8 +190,10 @@ of emission.
 Verify: a test feeds synthetic `update` ticks and asserts `on_progress`
 is called at a bounded rate while every cancellation check still runs;
 `python -m unittest discover -s tests -v`.
-Progress: todo
-Result: none
+Progress: done
+Result: both `ProgressBar.update` implementations emit on the first tick,
+when `progress == 1.0`, or when ≥0.1 s elapsed; cancellation still checked
+every update. Synthetic-tick tests added for OmniVoice and VieNeu paths.
 
 ### Task 6 — Status telemetry: backend and memory
 
@@ -201,8 +217,11 @@ Verify: new test asserts `resources.peak_rss_bytes` is an int on POSIX,
 `gpu_memory_bytes` is `None` with no loaded model, and
 `providers.vieneu.backend == "cpu"`;
 `python -m unittest tests.test_desktop -v`.
-Progress: todo
-Result: none
+Progress: done
+Result: `_process_peak_rss` (getrusage normalized per platform, ctypes
+GetProcessMemoryInfo fallback on Windows) and `Engine.gpu_memory_bytes`
+(torch.cuda/torch.mps, model-loaded guard) wired into the status branch
+with per-provider `backend`; new telemetry test passes.
 
 ### Task 7 — Frontend pack
 
@@ -224,8 +243,13 @@ waits ≤750 ms for them to settle, and only calls `stop()` if any remain
 Silicon", "CPU only"), shown per active provider in the footer and
 Settings → Model, plus peak RSS / GPU memory rows (MB, hidden when null).
 Verify: `npm --prefix apps/desktop run build`.
-Progress: todo
-Result: none
+Progress: done
+Result: `createUiCopy` memoized; stderr diagnostics deduplicated to one
+event per 5 s window with suppressed counts; `cancelSynthesis` sends
+`cancel` per active synthesis, waits ≤750 ms, then restarts only if still
+active; `resources`/`backend` typed; friendly backend labels and RAM/GPU
+metrics (MB, hidden when null) in footer and Settings → Model; en/vi
+copy added. Build passes.
 
 ### Task 8 — Rust release profile
 
@@ -235,8 +259,9 @@ Change: append `[profile.release]` with `lto = true`,
 `codegen-units = 1`, `strip = true`. No `panic = "abort"` — the crate
 builds `cdylib`/`staticlib` targets.
 Verify: `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml`.
-Progress: todo
-Result: none
+Progress: done
+Result: `[profile.release]` with `lto`, `codegen-units = 1`, and `strip`
+added; `cargo check` passes. No `panic = "abort"` (cdylib/staticlib).
 
 ### Task 9 — Wiki updates
 
@@ -251,8 +276,13 @@ and the stderr dedupe; refresh any stale statements in the overview and
 diagnostics pages.
 Verify: wiki statements match the merged implementation; delta blocks
 copied verbatim.
-Progress: todo
-Result: none
+Progress: done
+Result: delta merged into `desktop-vieneu.md` (MODIFIED
+`DVP-provider-status`, ADDED `DVP-synthesis-execution`, rewritten to one
+SHALL each to satisfy the validator); Flow/Side effects/Error
+paths/Tests refreshed for the worker lane, probe caching, throttled
+progress, telemetry, stderr dedupe, and graceful cancel; overview's
+sidecar paragraph updated. Wiki validator: 0 errors.
 
 ## Files inspected, no change
 
@@ -269,7 +299,7 @@ Result: none
 
 ## Approval Gate
 
-Status: pending
+Status: approved
 
 ## Decision Log
 

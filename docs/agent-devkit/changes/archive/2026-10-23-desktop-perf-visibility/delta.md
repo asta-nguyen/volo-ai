@@ -1,5 +1,7 @@
 # Delta
 
+Merged into docs/llm/: 2026-10-23
+
 ## ADDED Requirements
 
 ### DVP-synthesis-execution
@@ -14,11 +16,10 @@ Requirement:
 ````md
 ### DVP-synthesis-execution
 
-The desktop sidecar SHALL run each `synthesize` request on a worker thread
-so the request loop stays responsive during rendering, and SHALL serialize
-provider execution through the provider locks. A `cancel` request SHALL
-abort a synthesis that is still waiting for its provider lock, while a
-render in flight completes uninterrupted.
+The desktop sidecar SHALL run each `synthesize` request on a worker thread so
+the request loop stays responsive during rendering, serialize provider
+execution through the provider locks, abort a waiting-for-lock synthesis on
+`cancel`, and let a render in flight complete uninterrupted.
 
 #### Scenario: status during rendering
 
@@ -72,11 +73,11 @@ Replacement:
 ### DVP-provider-status
 
 The desktop sidecar SHALL report model readiness separately from runtime and
-preprocessing availability and include VieNeu presets and its default voice
-from a valid local manifest. It SHALL also report each provider's compute
-backend — OmniVoice's detected device and VieNeu's CPU-only backend — and
-best-effort engine resource usage (peak process RSS, plus GPU memory only
-while a model is loaded) without triggering a model load.
+preprocessing availability, include VieNeu presets and its default voice from
+a valid local manifest, and report each provider's compute backend —
+OmniVoice's detected device and VieNeu's CPU-only backend — plus best-effort
+engine resource usage (peak process RSS, plus GPU memory only while a model
+is loaded) without triggering a model load.
 
 #### Scenario: inspect provider status
 

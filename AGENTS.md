@@ -23,6 +23,16 @@ terminal CLI, an MCP server, and a Volo AI Tauri desktop app.
 - Rust toolchain for Tauri.
 - FFmpeg for MP3 export during source development; release sidecars bundle it.
 
+## VieNeu dependency
+
+Desktop and MCP VieNeu support requires `vieneu>=3.8.3,<4` from the
+`desktop-vieneu` extra; VieNeu 2.x does not provide the v3 Turbo engine used by
+this project. Install the extra into the exact Python environment running the
+desktop/MCP process or building the sidecar with
+`python -m pip install -e '.[desktop-vieneu]'`. When diagnosing a missing
+VieNeu module, check that interpreter's package version first. Rebuild a
+bundled sidecar after changing its Python dependencies.
+
 ## Verified commands
 
 ```sh
@@ -43,6 +53,15 @@ OpenEZ is indexed for this repository. Prefer MCP tools
 (`code_query`, `code_context`, `graph_neighbors`) for semantic code
 questions. Use `memory_recall` for previously recorded decisions.
 Fall back to direct file reads and `rg` when OpenEZ is unavailable.
+
+## GitHub issue tracking
+
+Before starting a task, create a GitHub issue for it or reuse an existing issue
+that already tracks the work. Record its number as `#<number>` in the active
+task description or plan, include the numeric ID in any Agent Devkit change
+folder name according to the
+[using-devkit workflow](.agents/skills/using-devkit/SKILL.md), and reference
+the issue in the pull request.
 
 ## Skills
 

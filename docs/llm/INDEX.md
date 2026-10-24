@@ -100,8 +100,10 @@ overview but do not yet have dedicated wiki feature pages:
   and the no-token trust boundary.
 - [x] Desktop NVIDIA runtime and diagnostics — Linux x64 uses CPU PyTorch by
   default and can install a version-matched NVIDIA sidecar from Settings;
-  failed GPU checks fall back to CPU. Logs retains bounded local diagnostics
-  and exports a redacted report only when requested. See [Desktop runtime and
+  failed GPU checks fall back to CPU. Logs is available during first-run setup
+  before providers are ready and exports bounded, sanitized diagnostics only
+  when requested, including failed-request context and an incomplete
+  frontend-only report if the sidecar cannot respond. See [Desktop runtime and
   diagnostics](workflows/desktop-runtime-diagnostics.md).
 
 ## Sources

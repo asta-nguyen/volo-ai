@@ -12,15 +12,21 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import threading
 import uuid
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
-import numpy as np
+if TYPE_CHECKING:
+    import numpy as np
 
 from tts_mcp.convert import save_audio
-from tts_mcp.engine import DownloadCancelled, validate_language
+from tts_mcp.engine import (
+    DownloadCancelled,
+    _acquire_lock_cancelable,
+    validate_language,
+)
 
 REPO_ID = "pnnbao-ump/VieNeu-TTS-v3-Turbo"
 REVISION = "61b85e3d937fbbacb387714180e8182823512523"
@@ -30,6 +36,18 @@ ENCODER_FILE = "speaker_encoder.onnx"
 VOICE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 REFERENCE_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg"}
 OUTPUT_FORMATS = {"wav", "mp3"}
+_PROBE_CACHE_LIMIT = 128
+
+
+def _file_key(path: Path | None) -> tuple:
+    """Return an (mtime, size) identity for caching file-backed probes."""
+    if path is None:
+        return ("missing",)
+    try:
+        stat = path.stat()
+    except OSError:
+        return (str(path), -1, -1)
+    return (str(path), stat.st_mtime_ns, stat.st_size)
 
 
 def _resolve_ffmpeg() -> str | None:
@@ -136,6 +154,17 @@ class VieNeuProvider:
         self._download_lock = threading.Lock()
         self._synthesis_lock = threading.Lock()
         self._speaker_encoder: Any = None
+        self._probe_cache: dict[tuple, Any] = {}
+
+    def _cached_probe(self, key: tuple, probe: Callable[[], Any]) -> Any:
+        """Memoize an expensive probe until the files behind it change."""
+        if key in self._probe_cache:
+            return self._probe_cache[key]
+        result = probe()
+        if len(self._probe_cache) >= _PROBE_CACHE_LIMIT:
+            self._probe_cache.clear()
+        self._probe_cache[key] = result
+        return result
 
     @property
     def model_path(self) -> Path:
@@ -220,19 +249,44 @@ class VieNeuProvider:
             and _read_embedding(voice_dir / "speaker.emb.txt") is not None
         )
 
+    def _cached_voice_assets(self, voice_id: str) -> bool:
+        voice_dir = self.root / "gguf" / "voices" / voice_id
+        return self._cached_probe(
+            (
+                "voice",
+                voice_id,
+                _file_key(voice_dir / "ref_codes.txt"),
+                _file_key(voice_dir / "speaker.emb.txt"),
+            ),
+            lambda: self._valid_voice_assets(voice_id),
+        )
+
     def _model_ready(self) -> bool:
-        manifest = self._manifest()
+        manifest = self._cached_probe(
+            ("manifest", _file_key(self.manifest_path)), self._manifest
+        )
         return bool(
             manifest
-            and self._valid_model_asset()
-            and self._valid_encoder(self.encoder_path)
-            and all(self._valid_voice_assets(voice["id"]) for voice in manifest[0])
+            and self._cached_probe(
+                ("model", _file_key(self.model_path)), self._valid_model_asset
+            )
+            and self._cached_probe(
+                ("encoder", _file_key(self.encoder_path)),
+                lambda: self._valid_encoder(self.encoder_path),
+            )
+            and all(self._cached_voice_assets(voice["id"]) for voice in manifest[0])
         )
 
     def status(self) -> dict[str, Any]:
-        runtime_available, runtime_reason = self._runtime_status()
-        preprocessing_available, preprocessing_reason = self._preprocessing_status()
-        manifest = self._manifest()
+        runtime_available, runtime_reason = self._cached_probe(
+            ("runtime", _file_key(self._audio_cpp_path())), self._runtime_status
+        )
+        preprocessing_available, preprocessing_reason = self._cached_probe(
+            ("preprocessing",), self._preprocessing_status
+        )
+        manifest = self._cached_probe(
+            ("manifest", _file_key(self.manifest_path)), self._manifest
+        )
         model_ready = self._model_ready()
         reason = runtime_reason or preprocessing_reason
         if reason is None and not model_ready:
@@ -267,14 +321,18 @@ class VieNeuProvider:
                     progress = None
                     if progress_bar.total:
                         progress = min(1.0, progress_bar.n / progress_bar.total)
-                    on_progress(
-                        {
-                            "phase": "download",
-                            "asset": "VieNeu-TTS v3 Turbo",
-                            "progress": progress,
-                            "message": progress_bar.desc or "Downloading VieNeu assets",
-                        }
-                    )
+                    now = time.monotonic()
+                    last_emit = getattr(progress_bar, "_last_progress_emit", None)
+                    if last_emit is None or progress == 1.0 or now - last_emit >= 0.1:
+                        progress_bar._last_progress_emit = now
+                        on_progress(
+                            {
+                                "phase": "download",
+                                "asset": "VieNeu-TTS v3 Turbo",
+                                "progress": progress,
+                                "message": progress_bar.desc or "Downloading VieNeu assets",
+                            }
+                        )
                 return result
 
         if should_cancel and should_cancel():
@@ -482,6 +540,7 @@ class VieNeuProvider:
             self._speaker_encoder = OnnxSpeakerEncoder.from_pretrained(
                 str(self.root), filename=ENCODER_FILE
             )
+        import numpy as np
         import soundfile as sf
 
         audio, sample_rate = sf.read(str(normalized), dtype="float32", always_2d=True)
@@ -505,9 +564,16 @@ class VieNeuProvider:
         voices: list[dict[str, Any]],
         output_dir: Path,
         output_path: Path | str | None = None,
+        *,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> dict[str, str]:
-        with self._synthesis_lock:
+        _acquire_lock_cancelable(
+            self._synthesis_lock, should_cancel, "Synthesis cancelled"
+        )
+        try:
             return self._synthesize(request, voices, output_dir, output_path)
+        finally:
+            self._synthesis_lock.release()
 
     def _synthesize(
         self,
@@ -645,6 +711,8 @@ class VieNeuProvider:
                 info = sf.info(str(native_output))
                 if info.frames <= 0 or info.samplerate != 48000:
                     raise RuntimeError("audio.cpp produced an unreadable or non-48 kHz WAV")
+                import numpy as np
+
                 audio, sample_rate = sf.read(str(native_output), dtype="float32", always_2d=True)
                 save_audio(
                     np.asarray(audio, dtype=np.float32),

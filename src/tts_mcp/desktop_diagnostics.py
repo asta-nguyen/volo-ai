@@ -67,7 +67,20 @@ def _load(data_dir: Path) -> list[dict[str, Any]]:
         if not isinstance(item, dict) or not isinstance(item.get("category"), str):
             _READ_FAILED = True
             continue
-        allowed = ("time", "category", "operation", "code", "message", "traceback")
+        allowed = (
+            "time",
+            "category",
+            "operation",
+            "code",
+            "message",
+            "traceback",
+            "request_id",
+            "provider",
+            "stage",
+            "asset",
+            "error_type",
+            "duration_ms",
+        )
         if set(item) - set(allowed):
             _READ_FAILED = True
         event: dict[str, Any] = {"category": _token(item["category"])}
@@ -77,15 +90,21 @@ def _load(data_dir: Path) -> list[dict[str, Any]]:
             value = item.get(key)
             if value is None:
                 continue
-            if not isinstance(value, str):
+            if key == "duration_ms":
+                if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                    _READ_FAILED = True
+                    continue
+                event[key] = min(value, 2**31 - 1)
+                continue
+            elif not isinstance(value, str):
                 _READ_FAILED = True
                 continue
-            if key in {"operation", "code"}:
+            if key in {"operation", "code", "request_id", "provider", "error_type"}:
                 event[key] = _token(value)
             elif key == "time":
                 event[key] = value[:80]
             else:
-                event[key] = _redact(value)
+                event[key] = _redact(value)[:12_000 if key == "traceback" else 500]
         events.append(event)
     return events
 
@@ -98,6 +117,12 @@ def record(
     code: str | None = None,
     message: str | None = None,
     traceback: str | None = None,
+    request_id: str | None = None,
+    provider: str | None = None,
+    stage: str | None = None,
+    asset: str | None = None,
+    error_type: str | None = None,
+    duration_ms: int | None = None,
 ) -> None:
     """Append a bounded event; diagnostics must never fail the caller."""
     global _WRITE_FAILED
@@ -112,7 +137,22 @@ def record(
     if message:
         event["message"] = _redact(message)
     if traceback:
-        event["traceback"] = _redact(traceback)
+        event["traceback"] = _redact(traceback)[:12_000]
+    for key, value in (
+        ("request_id", request_id),
+        ("provider", provider),
+        ("stage", stage),
+        ("asset", asset),
+        ("error_type", error_type),
+    ):
+        if value:
+            event[key] = (
+                _token(value)
+                if key in {"request_id", "provider", "error_type"}
+                else _redact(value)[:500]
+            )
+    if duration_ms is not None:
+        event["duration_ms"] = max(0, min(duration_ms, 2**31 - 1))
     try:
         with _LOCK:
             events = [*_load(data_dir), event]
@@ -143,10 +183,27 @@ def _token(value: str) -> str:
     return _SAFE_TOKEN.sub("_", str(value))[:80] or "unknown"
 
 
+_EVENTS_CACHE: dict[tuple, list[dict[str, Any]]] = {}
+_EVENTS_CACHE_LIMIT = 8
+
+
 def events(data_dir: Path) -> list[dict[str, Any]]:
+    """Return sanitized events, caching the read until the file changes."""
+    path = _path(data_dir)
+    try:
+        stat = path.stat()
+        cache_key = (str(path), stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        cache_key = (str(path), -1, -1)
+    loaded = _EVENTS_CACHE.get(cache_key)
+    if loaded is None:
+        loaded = _load(data_dir)
+        if len(_EVENTS_CACHE) >= _EVENTS_CACHE_LIMIT:
+            _EVENTS_CACHE.clear()
+        _EVENTS_CACHE[cache_key] = loaded
     return [
         {key: value for key, value in item.items() if key != "traceback"}
-        for item in _load(data_dir)
+        for item in loaded
     ]
 
 
@@ -154,18 +211,36 @@ def is_complete() -> bool:
     return not _WRITE_FAILED and not _READ_FAILED
 
 
-def _frontend_events(value: Any) -> list[dict[str, str]]:
+def _frontend_events(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     result = []
     for item in value[-MAX_EVENTS:]:
         if not isinstance(item, dict):
             continue
-        event = {
-            key: _redact(str(item[key]))[:500]
-            for key in ("time", "category", "operation", "code", "message")
-            if isinstance(item.get(key), str)
-        }
+        event = {}
+        for key in (
+            "time",
+            "category",
+            "operation",
+            "code",
+            "message",
+            "traceback",
+            "request_id",
+            "provider",
+            "stage",
+            "asset",
+            "error_type",
+        ):
+            if isinstance(item.get(key), str):
+                value = item[key]
+                if key in {"category", "operation", "code", "request_id", "provider", "error_type"}:
+                    event[key] = _token(value)
+                else:
+                    event[key] = _redact(value)[:12_000 if key == "traceback" else 500]
+        duration = item.get("duration_ms")
+        if isinstance(duration, int) and not isinstance(duration, bool) and duration >= 0:
+            event["duration_ms"] = min(duration, 2**31 - 1)
         if "category" in event:
             event["category"] = _token(event["category"])
             if "operation" in event:

@@ -204,13 +204,13 @@ used because the crate also builds `cdylib`/`staticlib` targets.
 
 ## Related context
 
-- [Desktop speech providers](../../../llm/workflows/desktop-vieneu.md) —
+- [Desktop speech providers](../../../../llm/workflows/desktop-vieneu.md) —
   `DVP-provider-status` gains the backend/memory reporting; the new
   `DVP-synthesis-execution` requirement covers the worker lane.
-- [Desktop runtime and diagnostics](../../../llm/workflows/desktop-runtime-diagnostics.md) —
+- [Desktop runtime and diagnostics](../../../../llm/workflows/desktop-runtime-diagnostics.md) —
   `DSET-local-diagnostics` stays valid; the stderr dedupe refines how
   frontend events are recorded.
-- [Video transcription](../../../llm/workflows/desktop-video-transcription.md) —
+- [Video transcription](../../../../llm/workflows/desktop-video-transcription.md) —
   `DVT-concurrency-cancellation` defines the worker-lane pattern this
   change extends to synthesis.
-- [Architecture overview](../../../llm/architecture/overview.md)
+- [Architecture overview](../../../../llm/architecture/overview.md)

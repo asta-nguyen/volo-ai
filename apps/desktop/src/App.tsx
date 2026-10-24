@@ -8,7 +8,7 @@ import {
   type InfiniteData,
 } from "@tanstack/react-query";
 import { getVersion } from "@tauri-apps/api/app";
-import { appDataDir, resolveResource } from "@tauri-apps/api/path";
+import { appDataDir, homeDir, resolveResource } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { copyFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
@@ -120,6 +120,7 @@ import {
 } from "./lib/sidecar";
 import {
   frontendDiagnosticsComplete,
+  frontendDiagnosticsForExport,
   getFrontendDiagnostics,
   recordFrontendDiagnostic,
 } from "./lib/diagnostics";
@@ -378,6 +379,18 @@ function providerIsReady(status: ProviderStatus | undefined): boolean {
   return Boolean(status?.model_ready && status.runtime_available && status.preprocessing_available);
 }
 
+function backendLabel(backend: string, copy: UiCopy): string {
+  const normalized = backend.toLowerCase();
+  if (normalized.startsWith("cuda")) return copy.backendCuda;
+  if (normalized === "mps") return copy.backendMps;
+  if (normalized === "cpu") return copy.backendCpu;
+  return backend.toUpperCase();
+}
+
+function formatMegabytes(bytes: number): string {
+  return `${Math.round(bytes / 1048576).toLocaleString()} MB`;
+}
+
 function formatLogTime(timestamp: number): string {
   return new Intl.DateTimeFormat(undefined, {
     hour: "2-digit",
@@ -576,6 +589,7 @@ function SetupScreen({
   onOpenProfiles,
   onOpenHistory,
   onOpenSettings,
+  onOpenLogs,
   onOpenTranscribe,
 }: {
   copy: UiCopy;
@@ -595,6 +609,7 @@ function SetupScreen({
   onOpenProfiles: () => void;
   onOpenHistory: () => void;
   onOpenSettings: () => void;
+  onOpenLogs: () => void;
   onOpenTranscribe: () => void;
 }) {
   const providerChoices: Array<[ProviderId, string, string[], string]> = [
@@ -740,6 +755,10 @@ function SetupScreen({
                 <Button variant="ghost" onClick={onOpenSettings}>
                   <Settings2 className="size-4" />
                   {copy.settings}
+                </Button>
+                <Button variant="ghost" onClick={onOpenLogs}>
+                  <Logs className="size-4" />
+                  {copy.logs}
                 </Button>
               </div>
               <p className="mt-4 text-xs leading-5 text-(--muted-foreground)">
@@ -957,9 +976,12 @@ function LogsView({
                   <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] uppercase tracking-[0.08em] text-(--muted-foreground)">
                     <span>{entry.operation}</span>
                     <span>
-                      {copy.request} / {entry.id}
+                      {copy.request} / {entry.requestId ?? entry.id}
                     </span>
                     <span>{formatLogTime(entry.startedAt)}</span>
+                    {entry.provider && <span>{entry.provider}</span>}
+                    {entry.stage && <span>{entry.stage}</span>}
+                    {entry.asset && <span>{entry.asset}</span>}
                     {entry.durationMs !== undefined && (
                       <span>
                         {entry.durationMs} {copy.milliseconds}
@@ -1547,6 +1569,7 @@ function SettingsView({
   modelReady,
   engineOnline,
   device,
+  resources,
   dataDir,
   modelId,
   tokenizerId,
@@ -1592,6 +1615,7 @@ function SettingsView({
   modelReady: boolean;
   engineOnline: boolean;
   device: string;
+  resources: StatusResult["resources"];
   dataDir: string | null;
   modelId: string;
   tokenizerId: string;
@@ -2052,7 +2076,25 @@ function SettingsView({
                     label={copy.connection}
                     value={engineOnline ? copy.offlineEngine : copy.unavailable}
                   />
-                  <Metric label={copy.device} value={device.toUpperCase()} />
+                  <Metric
+                    label={copy.device}
+                    value={backendLabel(
+                      providers?.[selectedProvider]?.backend ?? device,
+                      copy,
+                    )}
+                  />
+                  {resources?.peak_rss_bytes != null && (
+                    <Metric
+                      label={copy.peakMemory}
+                      value={formatMegabytes(resources.peak_rss_bytes)}
+                    />
+                  )}
+                  {resources?.gpu_memory_bytes != null && (
+                    <Metric
+                      label={copy.gpuMemory}
+                      value={formatMegabytes(resources.gpu_memory_bytes)}
+                    />
+                  )}
                   <Metric label={copy.languages} value="EN · VI" />
                   <Metric label={copy.sampleRate} value="24 KHZ" />
                 </div>
@@ -2351,6 +2393,10 @@ function ConfirmDialog({
   );
 }
 
+// Audio History rename targets become filenames, so new names accept only
+// unaccented ASCII letters, digits, spaces, hyphens, and underscores.
+const AUDIO_HISTORY_STEM_PATTERN = /^[A-Za-z0-9 _-]+$/;
+
 function AudioHistoryView({
   copy,
   appLanguage,
@@ -2407,12 +2453,12 @@ function AudioHistoryView({
     if (!renameTargetId) return;
     const stem = renameDraft.trim();
     const currentStem = renameTargetId.replace(/\.[^.]+$/, "");
-    if (!stem) {
-      setRenameError(copy.audioHistoryRenameInvalid);
-      return;
-    }
     if (stem === currentStem) {
       closeRenameDialog();
+      return;
+    }
+    if (!stem || !AUDIO_HISTORY_STEM_PATTERN.test(stem)) {
+      setRenameError(copy.audioHistoryRenameInvalid);
       return;
     }
     try {
@@ -3760,7 +3806,7 @@ function App() {
   }, [theme]);
 
   const appLanguage: AppLanguage = translator.language === "vi" ? "vi" : "en";
-  const copy: UiCopy = createUiCopy(t);
+  const copy: UiCopy = useMemo(() => createUiCopy(t), [t]);
   const queryClient = useQueryClient();
   const statusQuery = useQuery<StatusResult | null>({
     queryKey: STATUS_QUERY_KEY,
@@ -4676,12 +4722,15 @@ function App() {
     setIsExportingDiagnostics(true);
     setDiagnosticsIncomplete(false);
     try {
+      const homePath = await homeDir().catch(() => null);
+      const frontendEvents = frontendDiagnosticsForExport(homePath);
+      const frontendComplete = frontendDiagnosticsComplete() && homePath !== null;
       let report: unknown;
       try {
         report = await client.request({
           type: "get_diagnostics",
-          frontend_events: getFrontendDiagnostics(),
-          frontend_complete: frontendDiagnosticsComplete(),
+          frontend_events: frontendEvents,
+          frontend_complete: frontendComplete,
         });
         if (
           typeof report === "object" &&
@@ -4699,7 +4748,7 @@ function App() {
           platform: { os: navigator.platform, architecture: "unknown" },
           runtime: { state: "unavailable" },
           diagnostics_complete: false,
-          events: getFrontendDiagnostics(),
+          events: frontendEvents,
         };
         setDiagnosticsIncomplete(true);
       }
@@ -4961,6 +5010,7 @@ function App() {
     view !== "profiles" &&
     view !== "history" &&
     view !== "settings" &&
+    view !== "logs" &&
     !(view === "transcribe" && omniVoiceReady)
   )
     return (
@@ -4995,6 +5045,7 @@ function App() {
           onOpenProfiles={() => navigateTo("profiles")}
           onOpenHistory={() => navigateTo("history")}
           onOpenSettings={() => navigateTo("settings")}
+          onOpenLogs={() => navigateTo("logs")}
           onOpenTranscribe={() => navigateTo("transcribe")}
         />
       </>
@@ -5121,6 +5172,7 @@ function App() {
                     modelReady={omniVoiceReady}
                     engineOnline={engineOnline}
                     device={device}
+                    resources={engineStatus?.resources}
                     dataDir={dataDir}
                     modelId={engineStatus?.model ?? "OmniVoice"}
                     tokenizerId={engineStatus?.tokenizer ?? "Audio tokenizer"}
@@ -5309,7 +5361,10 @@ function App() {
                 {engineOnline && modelReady ? copy.engineReady : copy.engineUnavailable}
               </span>
               <span>
-                {copy.device} / {engineOnline ? device.toUpperCase() : "OFFLINE"}
+                {copy.device} /{" "}
+                {engineOnline
+                  ? backendLabel(providerStatuses?.[provider]?.backend ?? device, copy)
+                  : "OFFLINE"}
               </span>
               <span>
                 {copy.sampleRate} / {provider === "vieneu" ? 48000 : 24000} HZ

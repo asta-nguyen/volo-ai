@@ -2,6 +2,7 @@ import io
 import json
 import os
 import queue
+import sys
 import tempfile
 import threading
 import time
@@ -63,6 +64,7 @@ class DesktopWorkerTests(unittest.TestCase):
             "tokenizer": "tokenizer-id",
             "asr_model": "asr-id",
         }
+        engine.gpu_memory_bytes.return_value = None
 
         response = dispatch_request(
             {"id": "1", "type": "status"}, engine, vieneu_provider=vieneu_provider
@@ -78,6 +80,39 @@ class DesktopWorkerTests(unittest.TestCase):
             "minh_quan_pro",
         )
         self.assertIn("omnivoice", response["result"]["providers"])
+
+    def test_status_reports_backend_and_resource_telemetry(self):
+        engine = Mock()
+        engine.model_status.return_value = {
+            "ready": True,
+            "device": "mps",
+            "model": "model-id",
+            "tokenizer": "tokenizer-id",
+            "asr_model": "asr-id",
+        }
+        engine.gpu_memory_bytes.return_value = None
+        vieneu_provider = Mock()
+        vieneu_provider.status.return_value = {
+            "model_ready": True,
+            "runtime_available": True,
+            "preprocessing_available": True,
+            "preset_voices": [],
+            "unavailable_reason": None,
+        }
+
+        response = dispatch_request(
+            {"id": "s", "type": "status"}, engine, vieneu_provider=vieneu_provider
+        )
+
+        self.assertTrue(response["ok"])
+        result = response["result"]
+        self.assertEqual(result["providers"]["omnivoice"]["backend"], "mps")
+        self.assertEqual(result["providers"]["vieneu"]["backend"], "cpu")
+        if sys.platform == "win32":
+            self.assertIn(result["resources"]["peak_rss_bytes"], (None, int))
+        else:
+            self.assertIsInstance(result["resources"]["peak_rss_bytes"], int)
+        self.assertIsNone(result["resources"]["gpu_memory_bytes"])
 
     def test_prepare_and_synthesis_require_known_provider(self):
         engine = Mock()
@@ -272,7 +307,9 @@ class DesktopWorkerTests(unittest.TestCase):
                 )
 
             self.assertTrue(response["ok"])
-            self.assertEqual(engine.generate.call_args.kwargs["ref_audio"], str(reference))
+            self.assertEqual(
+                engine.generate.call_args.kwargs["ref_audio"], str(reference.resolve())
+            )
             self.assertEqual(engine.generate.call_args.kwargs["ref_text"], "Xin chào")
 
             engine.load_voice_profile.return_value = {
@@ -349,7 +386,7 @@ class DesktopWorkerTests(unittest.TestCase):
         provider.status.return_value = self.ready_vieneu_status(presets)
         calls = []
 
-        def synthesize(request, _voices, _output_dir, output_path=None):
+        def synthesize(request, _voices, _output_dir, output_path=None, should_cancel=None):
             calls.append((request, Path(output_path)))
             self.write_wav(Path(output_path))
             return {"audio_path": str(output_path), "format": "wav"}
@@ -408,7 +445,7 @@ class DesktopWorkerTests(unittest.TestCase):
             provider = Mock()
             provider.status.return_value = self.ready_vieneu_status(presets)
             provider.synthesize.side_effect = (
-                lambda request, _voices, _output_dir, output_path=None: (
+                lambda request, _voices, _output_dir, output_path=None, should_cancel=None: (
                     self.write_wav(Path(output_path))
                     or {"audio_path": str(output_path), "format": "wav"}
                 )
@@ -448,7 +485,7 @@ class DesktopWorkerTests(unittest.TestCase):
         engine = Mock()
         provider = Mock()
         provider.status.return_value = self.ready_vieneu_status(presets)
-        provider.synthesize.side_effect = lambda _request, _voices, _output_dir, output_path=None: (
+        provider.synthesize.side_effect = lambda _request, _voices, _output_dir, output_path=None, should_cancel=None: (
             self.write_wav(Path(output_path)) or {"audio_path": str(output_path), "format": "wav"}
         )
         voices = [{"name": "conflict", "kind": "clone"}]
@@ -474,7 +511,7 @@ class DesktopWorkerTests(unittest.TestCase):
         provider = Mock()
         provider.status.return_value = self.ready_vieneu_status(presets)
         cancelled = threading.Event()
-        provider.synthesize.side_effect = lambda _request, _voices, _output_dir, output_path=None: (
+        provider.synthesize.side_effect = lambda _request, _voices, _output_dir, output_path=None, should_cancel=None: (
             self.write_wav(Path(output_path)) or {"audio_path": str(output_path), "format": "wav"}
         )
         engine.save_vieneu_seed_reference.side_effect = lambda *_args: cancelled.set()
@@ -507,7 +544,7 @@ class DesktopWorkerTests(unittest.TestCase):
                 Path(path).write_bytes(b"audio")
                 return path
 
-            def vieneu_synthesize(_request, _voices, target_dir):
+            def vieneu_synthesize(_request, _voices, target_dir, should_cancel=None):
                 target_dir.mkdir(parents=True, exist_ok=True)
                 path = target_dir / "vieneu.wav"
                 path.write_bytes(b"audio")
@@ -652,6 +689,42 @@ class DesktopWorkerTests(unittest.TestCase):
         self.assertFalse(legacy_item["metadata_available"])
         self.assertIsNone(legacy_item["text"])
 
+    def test_paginated_history_matches_full_listing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            base_timestamp = 1_700_000_000
+            for index in range(60):
+                output = output_dir / f"take_{index:02}.wav"
+                output.write_bytes(b"audio")
+                timestamp = base_timestamp + index
+                os.utime(output, (timestamp, timestamp))
+            with patch("tts_mcp.desktop.OUTPUT_DIR", output_dir):
+                full = dispatch_request(
+                    {"id": "full", "type": "list_audio_history"}, Mock()
+                )["result"]["items"]
+                paged = []
+                cursor = None
+                total = None
+                while True:
+                    request = {
+                        "id": "page",
+                        "type": "list_audio_history",
+                        "paginated": True,
+                    }
+                    if cursor is not None:
+                        request["cursor"] = cursor
+                    result = dispatch_request(request, Mock())["result"]
+                    total = result["total"]
+                    paged.extend(result["items"])
+                    cursor = result["next_cursor"]
+                    if cursor is None:
+                        break
+
+        self.assertEqual(total, len(full))
+        self.assertEqual([item["id"] for item in paged], [item["id"] for item in full])
+        self.assertEqual(paged, full)
+
     def test_list_audio_history_rejects_invalid_cursor(self):
         response = dispatch_request(
             {
@@ -768,20 +841,119 @@ class DesktopWorkerTests(unittest.TestCase):
                         "id": "rename",
                         "type": "rename_audio_history",
                         "file_name": "take.wav",
-                        "new_name": "bản ghi mới",
+                        "new_name": "david hoang",
                     },
                     Mock(),
                 )
 
             self.assertTrue(response["ok"])
-            self.assertEqual(response["result"]["file_name"], "bản ghi mới.wav")
+            self.assertEqual(response["result"]["file_name"], "david hoang.wav")
             self.assertEqual(
                 Path(response["result"]["audio_path"]),
-                (output_dir / "bản ghi mới.wav").resolve(),
+                (output_dir / "david hoang.wav").resolve(),
             )
             self.assertFalse(audio.exists())
-            self.assertTrue((output_dir / "bản ghi mới.wav").is_file())
-            rename_metadata.assert_called_once_with("take.wav", "bản ghi mới.wav")
+            self.assertTrue((output_dir / "david hoang.wav").is_file())
+            rename_metadata.assert_called_once_with("take.wav", "david hoang.wav")
+
+    def test_rename_audio_history_accepts_ascii_digits_hyphens_underscores(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(
+                    Engine, "rename_audio_history", return_value=True
+                ) as rename_metadata,
+            ):
+                for new_name in ("file-01", "take_02"):
+                    with self.subTest(new_name=new_name):
+                        source = output_dir / "take.wav"
+                        source.write_bytes(b"audio")
+                        response = dispatch_request(
+                            {
+                                "id": "rename",
+                                "type": "rename_audio_history",
+                                "file_name": "take.wav",
+                                "new_name": new_name,
+                            },
+                            Mock(),
+                        )
+                        self.assertTrue(response["ok"])
+                        self.assertEqual(
+                            response["result"]["file_name"], f"{new_name}.wav"
+                        )
+                        renamed = output_dir / f"{new_name}.wav"
+                        self.assertTrue(renamed.is_file())
+                        renamed.unlink()
+
+            self.assertEqual(rename_metadata.call_count, 2)
+
+    def test_rename_audio_history_rejects_non_ascii_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "take.wav"
+            audio.write_bytes(b"audio")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(Engine, "rename_audio_history") as rename_metadata,
+            ):
+                for new_name in (
+                    "bản ghi mới",
+                    "đêm nay",
+                    "naïve",
+                    "take 🎵",
+                    "take.v2",
+                    "take,more",
+                ):
+                    with self.subTest(new_name=new_name):
+                        response = dispatch_request(
+                            {
+                                "id": "rename",
+                                "type": "rename_audio_history",
+                                "file_name": "take.wav",
+                                "new_name": new_name,
+                            },
+                            Mock(),
+                        )
+                        self.assertFalse(response["ok"])
+                        self.assertEqual(response["error"]["code"], "invalid_input")
+                        self.assertIn("ASCII", response["error"]["message"])
+
+            self.assertEqual(
+                [path.name for path in output_dir.iterdir()], ["take.wav"]
+            )
+            self.assertEqual(audio.read_bytes(), b"audio")
+            rename_metadata.assert_not_called()
+
+    def test_rename_audio_history_unicode_source_renames_to_ascii(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "outputs"
+            output_dir.mkdir()
+            audio = output_dir / "bản cũ.wav"
+            audio.write_bytes(b"audio")
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch.object(
+                    Engine, "rename_audio_history", return_value=True
+                ) as rename_metadata,
+            ):
+                response = dispatch_request(
+                    {
+                        "id": "rename",
+                        "type": "rename_audio_history",
+                        "file_name": "bản cũ.wav",
+                        "new_name": "ban cu",
+                    },
+                    Mock(),
+                )
+
+            self.assertTrue(response["ok"])
+            self.assertEqual(response["result"]["file_name"], "ban cu.wav")
+            self.assertFalse(audio.exists())
+            self.assertTrue((output_dir / "ban cu.wav").is_file())
+            rename_metadata.assert_called_once_with("bản cũ.wav", "ban cu.wav")
 
     def test_rename_audio_history_legacy_file_stays_file_only(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1525,6 +1697,7 @@ class DesktopWorkerTests(unittest.TestCase):
             "tokenizer": "tokenizer-id",
             "asr_model": "asr-id",
         }
+        engine.gpu_memory_bytes.return_value = None
         source = io.StringIO(json.dumps({"id": "1", "type": "status"}) + "\n")
         target = io.StringIO()
 
@@ -1616,7 +1789,9 @@ class DesktopWorkerTests(unittest.TestCase):
         self.assertTrue(response["ok"])
         self.assertEqual(response["result"]["format"], "wav")
         self.assertEqual(engine.generate.call_args.kwargs["language"], "vi")
-        self.assertEqual(engine.generate.call_args.kwargs["ref_audio"], str(reference))
+        self.assertEqual(
+            engine.generate.call_args.kwargs["ref_audio"], str(reference.resolve())
+        )
         save_audio.assert_called_once()
 
     def test_synthesize_supports_voice_design_and_advanced_config(self):
@@ -1768,6 +1943,40 @@ class DesktopWorkerTests(unittest.TestCase):
             ],
         )
 
+    def test_prepare_model_failure_records_report_context(self):
+        engine = Mock()
+        home_path = str(Path.home())
+
+        def ensure_model(**kwargs):
+            kwargs["on_progress"](
+                {"phase": "download", "asset": "org/omnivoice", "progress": 0.4}
+            )
+            raise RuntimeError(f"Could not load {home_path}/models/omnivoice")
+
+        engine.ensure_model.side_effect = ensure_model
+        response = dispatch_request(
+            {"id": "prepare-27", "type": "prepare_model", "provider": "omnivoice"},
+            engine,
+            emit=lambda _event: None,
+        )
+
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["message"], f"Could not load {home_path}/models/omnivoice")
+        report = desktop_module.desktop_diagnostics.report(
+            desktop_module.DATA_DIR,
+            app_version="0.1.1",
+            runtime={},
+        )
+        event = report["events"][-1]
+        self.assertEqual(event["request_id"], "prepare-27")
+        self.assertEqual(event["provider"], "omnivoice")
+        self.assertEqual(event["stage"], "download")
+        self.assertEqual(event["asset"], "org/omnivoice")
+        self.assertEqual(event["error_type"], "RuntimeError")
+        self.assertIn("~/models/omnivoice", event["message"])
+        self.assertIsInstance(event["duration_ms"], int)
+        self.assertNotIn(home_path, json.dumps(report))
+
     def test_save_and_delete_voice_requests(self):
         engine = Mock()
         engine.save_voice.return_value = "/tmp/demo.pt"
@@ -1907,7 +2116,7 @@ class DesktopWorkerTests(unittest.TestCase):
             ]
         )
 
-        def synthesize(_request, _voices, _output_dir, output_path=None):
+        def synthesize(_request, _voices, _output_dir, output_path=None, should_cancel=None):
             started.set()
             if not release.wait(timeout=3):
                 raise RuntimeError("test synth timed out")
@@ -1953,7 +2162,7 @@ class DesktopWorkerTests(unittest.TestCase):
             )
             barrier = threading.Barrier(2)
 
-            def synthesize(_request, _voices, _output_dir, output_path=None):
+            def synthesize(_request, _voices, _output_dir, output_path=None, should_cancel=None):
                 barrier.wait(timeout=3)
                 self.write_wav(Path(output_path))
                 return {"audio_path": str(output_path), "format": "wav"}
@@ -2209,6 +2418,41 @@ class DesktopWorkerTests(unittest.TestCase):
         )
         self.assertIn("could not start", fallback.kwargs["message"])
 
+    def test_main_reconfigures_cp1252_stdio_to_utf8(self):
+        request = json.dumps({"id": "xử-1", "type": "list_voices"}, ensure_ascii=False) + "\n"
+        source = io.TextIOWrapper(io.BytesIO(request.encode("utf-8")), encoding="cp1252")
+        outgoing = io.BytesIO()
+        target = io.TextIOWrapper(outgoing, encoding="cp1252")
+        errors = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+        with (
+            patch.object(desktop_module.sys, "stdin", source),
+            patch.object(desktop_module.sys, "stdout", target),
+            patch.object(desktop_module.sys, "stderr", errors),
+            patch.object(desktop_module.sys, "argv", ["desktop.py"]),
+            patch.object(
+                desktop_module.desktop_runtime, "select", return_value=(None, None)
+            ),
+            patch.object(desktop_module, "VieNeuProvider", return_value=Mock()),
+            patch.object(desktop_module, "get_engine", return_value=Mock()),
+            patch.object(
+                desktop_module.Engine,
+                "list_voices",
+                return_value=[{"name": "Giọng ự"}],
+            ),
+        ):
+            desktop_module.main()
+
+        self.assertEqual(source.encoding, "utf-8")
+        self.assertEqual(target.encoding, "utf-8")
+        self.assertEqual(errors.encoding, "utf-8")
+        [response] = [
+            json.loads(line)
+            for line in outgoing.getvalue().decode("utf-8").splitlines()
+        ]
+        self.assertEqual(response["id"], "xử-1")
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["result"]["voices"], [{"name": "Giọng ự"}])
+
     def test_protocol_cancels_selected_provider_preparation(self):
         class BlockingProvider:
             def ensure_model(self, on_progress=None, should_cancel=None):
@@ -2273,7 +2517,7 @@ class DesktopWorkerTests(unittest.TestCase):
         engine = Mock()
         self.addCleanup(setattr, desktop_module, "_api_server", None)
         desktop_module._api_server = None
-        with patch.object(desktop_module, "ApiServer", return_value=fake) as factory:
+        with patch("tts_mcp.api.ApiServer", return_value=fake) as factory:
             first = dispatch_request({"id": "s1", "type": "start_api"}, engine)
             second = dispatch_request({"id": "s2", "type": "start_api"}, engine)
             status = dispatch_request({"id": "st", "type": "api_status"}, engine)
@@ -2313,7 +2557,7 @@ class DesktopWorkerTests(unittest.TestCase):
 
         self.addCleanup(setattr, desktop_module, "_api_server", None)
         desktop_module._api_server = None
-        with patch.object(desktop_module, "ApiServer", return_value=ConflictedServer()):
+        with patch("tts_mcp.api.ApiServer", return_value=ConflictedServer()):
             response = dispatch_request({"id": "api", "type": "start_api"}, Mock())
 
         self.assertFalse(response["ok"])
@@ -2391,7 +2635,7 @@ class DesktopWorkerTests(unittest.TestCase):
             target=run_protocol, args=(source, target, BlockingEngine()), daemon=True
         )
         try:
-            with patch.object(desktop_module, "ApiServer", return_value=fake):
+            with patch("tts_mcp.api.ApiServer", return_value=fake):
                 worker.start()
                 source.lines.put(json.dumps({"id": "api", "type": "start_api"}) + "\n")
                 deadline = time.time() + 3
@@ -2414,6 +2658,126 @@ class DesktopWorkerTests(unittest.TestCase):
             release.set()
             worker.join(timeout=5)
         self.assertFalse(worker.is_alive())
+
+    def test_synthesize_worker_lane_status_and_queued_cancel(self):
+        class QueueLines:
+            def __init__(self):
+                self.lines = queue.Queue()
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                line = self.lines.get()
+                if line is None:
+                    raise StopIteration
+                return line
+
+        gate = threading.Event()
+        started = threading.Event()
+        lock = threading.Lock()
+
+        engine = Mock()
+        engine.model_status.return_value = {
+            "ready": True,
+            "device": "cpu",
+            "model": "m",
+            "tokenizer": "t",
+            "asr_model": "a",
+        }
+        engine.gpu_memory_bytes.return_value = None
+
+        def generate(*args, should_cancel=None, **kwargs):
+            while not lock.acquire(timeout=0.05):
+                if should_cancel and should_cancel():
+                    raise DownloadCancelled("Synthesis cancelled")
+            try:
+                started.set()
+                if not gate.wait(timeout=10):
+                    raise RuntimeError("test render timed out")
+                return [object()]
+            finally:
+                lock.release()
+
+        engine.generate.side_effect = generate
+        provider = Mock()
+        provider.status.return_value = {
+            "model_ready": True,
+            "runtime_available": True,
+            "preprocessing_available": True,
+            "preset_voices": [],
+            "default_voice": None,
+            "unavailable_reason": None,
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "outputs"
+            with (
+                patch("tts_mcp.desktop.OUTPUT_DIR", output_dir),
+                patch(
+                    "tts_mcp.desktop.save_audio",
+                    side_effect=lambda audio, path, **kw: path,
+                ),
+            ):
+                source = QueueLines()
+                target = io.StringIO()
+                worker = threading.Thread(
+                    target=run_protocol,
+                    args=(source, target, engine, provider),
+                    daemon=True,
+                )
+                worker.start()
+                try:
+                    put = lambda request: source.lines.put(json.dumps(request) + "\n")
+                    put(
+                        {
+                            "id": "a",
+                            "type": "synthesize",
+                            "provider": "omnivoice",
+                            "text": "hello",
+                        }
+                    )
+                    self.assertTrue(started.wait(timeout=3))
+                    put(
+                        {
+                            "id": "b",
+                            "type": "synthesize",
+                            "provider": "omnivoice",
+                            "text": "queued",
+                        }
+                    )
+                    put({"id": "s", "type": "status"})
+                    put({"id": "c", "type": "cancel", "request_id": "b"})
+                    source.lines.put(None)
+                    deadline = time.time() + 3
+                    responses = []
+                    while len(responses) < 3 and time.time() < deadline:
+                        time.sleep(0.01)
+                        responses = [
+                            json.loads(line)
+                            for line in target.getvalue().splitlines()
+                            if line.strip()
+                        ]
+                    self.assertGreaterEqual(len(responses), 3)
+                    gate.set()
+                    worker.join(timeout=5)
+                finally:
+                    gate.set()
+
+        self.assertFalse(worker.is_alive())
+        responses = [
+            json.loads(line) for line in target.getvalue().splitlines() if line.strip()
+        ]
+        by_id = {response["id"]: response for response in responses}
+        order = [response["id"] for response in responses]
+        self.assertTrue(by_id["s"]["ok"])
+        self.assertEqual(by_id["s"]["result"]["device"], "cpu")
+        self.assertTrue(by_id["c"]["ok"])
+        self.assertEqual(by_id["c"]["result"], {"cancelled": "b"})
+        self.assertFalse(by_id["b"]["ok"])
+        self.assertEqual(by_id["b"]["error"]["code"], "cancelled")
+        self.assertTrue(by_id["a"]["ok"])
+        self.assertLess(order.index("s"), order.index("a"))
 
     def test_stop_local_api_server_retries_after_stop_failure(self):
         class FlakyApiServer:

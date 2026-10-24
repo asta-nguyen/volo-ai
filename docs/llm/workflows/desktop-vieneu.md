@@ -67,8 +67,11 @@ Evidence: `src/tts_mcp/desktop.py`, `tests/test_desktop.py`
 ### DVP-provider-status
 
 The desktop sidecar SHALL report model readiness separately from runtime and
-preprocessing availability and include VieNeu presets and its default voice
-from a valid local manifest.
+preprocessing availability, include VieNeu presets and its default voice from
+a valid local manifest, and report each provider's compute backend —
+OmniVoice's detected device and VieNeu's CPU-only backend — plus best-effort
+engine resource usage (peak process RSS, plus GPU memory only while a model
+is loaded) without triggering a model load.
 
 #### Scenario: inspect provider status
 
@@ -77,7 +80,14 @@ from a valid local manifest.
 - THEN the response includes VieNeu preset entries and the default preset,
   independently of runtime and model readiness
 
-Evidence: `src/tts_mcp/desktop.py`, `src/tts_mcp/desktop_vieneu.py`, `tests/test_desktop.py`, `tests/test_desktop_vieneu.py`
+#### Scenario: inspect backend and memory
+
+- GIVEN the sidecar is running
+- WHEN the UI requests `status`
+- THEN the response reports the OmniVoice backend, the VieNeu `cpu` backend,
+  and the engine's peak RSS, with GPU memory null until a model is loaded
+
+Evidence: `src/tts_mcp/desktop.py`, `src/tts_mcp/engine.py`, `src/tts_mcp/desktop_vieneu.py`, `tests/test_desktop.py`, `tests/test_desktop_vieneu.py`
 
 ### DVP-provider-surface
 
@@ -124,6 +134,33 @@ OmniVoice when present.
 - THEN the sidecar returns guidance to use VieNeu or seed the profile
 
 Evidence: `src/tts_mcp/desktop.py`, `src/tts_mcp/engine.py`, `tests/test_desktop.py`
+
+### DVP-synthesis-execution
+
+The desktop sidecar SHALL run each `synthesize` request on a worker thread so
+the request loop stays responsive during rendering, serialize provider
+execution through the provider locks, abort a waiting-for-lock synthesis on
+`cancel`, and let a render in flight complete uninterrupted.
+
+#### Scenario: status during rendering
+
+- GIVEN a `synthesize` request is rendering on a worker
+- WHEN a `status` or `list_voices` request arrives
+- THEN the loop answers it without waiting for the render
+
+#### Scenario: cancel a queued synthesis
+
+- GIVEN a `synthesize` request is waiting for its provider lock
+- WHEN a `cancel` request names its id
+- THEN the waiting request raises cancellation and answers `cancelled`
+
+#### Scenario: render in flight is not interrupted
+
+- GIVEN a `synthesize` request has acquired its provider lock
+- WHEN a `cancel` request names its id
+- THEN the render continues to completion and answers normally
+
+Evidence: `src/tts_mcp/desktop.py`, `src/tts_mcp/engine.py`, `src/tts_mcp/desktop_vieneu.py`, `tests/test_desktop.py`
 
 ### DVP-vieneu-generation-config
 
@@ -212,7 +249,10 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
 1. The UI asks the sidecar for `status`, displays both providers, and persists
    the selected provider as `volo-ai.provider`. The default selection is
    OmniVoice. The synthesis workspace remains unavailable until both providers
-   report model, runtime, and preprocessing readiness. MCP provider behavior
+   report model, runtime, and preprocessing readiness. Status also reports each
+   provider's compute backend — OmniVoice's detected device and VieNeu's
+   CPU-only backend — plus best-effort engine peak RSS and GPU memory once a
+   model is loaded, without triggering a model load. MCP provider behavior
    is documented in the [MCP voice library](mcp-voice-library.md).
 2. The user starts one preparation action from the first-run screen. The UI
    sends concurrent `prepare_model` requests only for providers with incomplete
@@ -230,7 +270,13 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
    the voice. Clone profiles without a VieNeu preset ID use their reference
    audio with VieNeu. One-off references are normalized before VieNeu calls
    `audiocpp_cli`. Design profiles are not supported by VieNeu.
-4. The provider phonemizes text and invokes `audiocpp_cli` with its `tts` task.
+4. The `synthesize` request runs on a worker thread so the JSONL loop keeps
+   answering `status` and other requests while a render is in flight.
+   OmniVoice rendering serializes behind the engine's inference lock and
+   VieNeu behind the provider's synthesis lock. A `cancel` request aborts a
+   synthesis that is still waiting for its provider lock and answers
+   `cancelled`; a render that already holds the lock completes uninterrupted.
+   The provider phonemizes text and invokes `audiocpp_cli` with its `tts` task.
    It requires a readable 48 kHz WAV, then writes WAV or MP3 through
    `save_audio` and returns `{audio_path, format}`.
 5. With VieNeu selected, the workspace exposes separate sampler controls for
@@ -274,6 +320,13 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
   frozen sidecar restores pre-launch library-path environment values at
   startup so spawned helpers such as FFmpeg and `audiocpp_cli` resolve their
   own libraries instead of the bundled ones.
+- VieNeu status caches its expensive probes — the `audiocpp_cli --help` run
+  and the preset/model asset reads — keyed by the probed files' paths,
+  modification times, and sizes, so repeated `status` requests stay cheap and
+  invalidate automatically when a probed file changes.
+- Model download progress events are throttled to roughly ten per second,
+  except first and terminal updates, while cancellation is still checked on
+  every progress tick.
 - Changed VieNeu sampler fields and an optional seed are passed through the
   request options interface; default sampler values are omitted so the CLI
   keeps its defaults.
@@ -321,6 +374,9 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
 - Unknown presets, missing references, unsupported Design profiles, invalid
   language or format, incompatible generation settings, and malformed or
   cross-provider sampler settings return structured errors before inference.
+- A `cancel` naming a synthesis that still waits for its provider lock answers
+  `cancelled`; a render in flight is not interruptible, so cancelling it makes
+  the desktop client restart the sidecar after a short grace period.
 
 ## Tests
 
@@ -328,11 +384,14 @@ Evidence: `src/tts_mcp/desktop_vieneu.py`, `src/tts_mcp/desktop.py`, `tests/test
   concurrent provider preparation and per-provider progress, provider routing,
   seeded-profile asset selection, pure-preset OmniVoice
   guidance, Design rejection, seed retries/cancellation, and preparation
-  behavior.
+  behavior. It also covers the synthesis worker lane — answering `status`
+  while a render holds the provider lock and cancelling a queued render — and
+  the status backend and memory telemetry.
 - `tests/test_desktop_vieneu.py` checks asset and manifest validation,
   cancellation and retry, runtime reporting, preset and Clone synthesis,
   reference normalization, VieNeu sampler validation and request-option
-  mapping, output cleanup, and 48 kHz WAV/MP3 paths.
+  mapping, output cleanup, and 48 kHz WAV/MP3 paths. It also covers the status
+  probe cache invalidation and the throttled download progress.
 - `tests/test_desktop.py` checks that VieNeu configuration routes to the VieNeu
   adapter and is rejected by OmniVoice before engine generation.
 - `tests/test_build_sidecar.py` checks target-named sidecar and audio.cpp
